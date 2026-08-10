@@ -55,10 +55,10 @@ export class AssetsController {
   @RequirePermission('asset:write')
   create(@Body() dto: CreateAssetDto, @Req() req: any) {
     return this.assets.createAsset(req.authContext, dto.assetTypeId, {
+      ...(dto.fields ?? {}),
       locationId: dto.locationId,
       departmentId: dto.departmentId,
       vendorId: dto.vendorId,
-      ...(dto.fields ?? {}),
     });
   }
 
