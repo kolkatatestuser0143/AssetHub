@@ -35,7 +35,11 @@ export class RbacController {
 
   @Post(':roleId/assign/:userId')
   @RequirePermission('role:write')
-  assignRole(@Param('roleId') roleId: string, @Param('userId') userId: string) {
-    return this.rbac.assignRole(userId, roleId);
+  assignRole(
+    @Param('roleId') roleId: string,
+    @Param('userId') userId: string,
+    @Req() req: any,
+  ) {
+    return this.rbac.assignRole(req.authContext, userId, roleId);
   }
 }
