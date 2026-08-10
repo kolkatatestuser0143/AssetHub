@@ -20,9 +20,7 @@ export class AssetsService extends TenantScopedRepository {
   }
 
   async listAssetTypes(auth: AuthContext) {
-    const docs = await this.db.assetType
-      .find(this.scope(auth))
-      .lean();
+    const docs = await this.db.assetType.find(this.scope(auth)).lean();
     return toDtoArray(docs);
   }
 
@@ -44,15 +42,7 @@ export class AssetsService extends TenantScopedRepository {
     return toDto(doc.toObject());
   }
 
-  async createAsset(
-    auth: AuthContext,
-    assetTypeId: string,
-    fields: Record<string, unknown>,
-  ) {
-    // assetTypeId is caller-supplied input — never trust it belongs to
-    // the caller's own company without checking. MongoDB has no RLS, so
-    // this application-level ownership check is part of the security
-    // boundary.
+  async createAsset(auth: AuthContext, assetTypeId: string, fields: Record<string, unknown>) {
     const assetType = await this.db.assetType
       .findOne({ _id: assetTypeId, companyId: auth.companyId })
       .lean();
@@ -65,21 +55,30 @@ export class AssetsService extends TenantScopedRepository {
     if (locationId) {
       const location = await this.db.location.findById(locationId).lean();
       if (!location) throw new NotFoundException('Location not found');
-      const department = await this.db.department.findOne({ locationId: location._id }).lean();
       const plant = await this.db.plant.findById(location.plantId).lean();
-      const businessUnit = plant ? await this.db.businessUnit.findById(plant.businessUnitId).lean() : null;
+      const businessUnit = plant
+        ? await this.db.businessUnit.findById(plant.businessUnitId).lean()
+        : null;
       if (!plant || !businessUnit || businessUnit.companyId !== auth.companyId) {
         throw new ForbiddenException('locationId does not belong to your company');
       }
-      if (departmentId && (!department || String(department._id) !== departmentId)) {
-        throw new ForbiddenException('departmentId does not belong to the selected location');
+
+      if (departmentId) {
+        const department = await this.db.department
+          .findOne({ _id: departmentId, locationId: location._id })
+          .lean();
+        if (!department) {
+          throw new ForbiddenException('departmentId does not belong to the selected location');
+        }
       }
     } else if (departmentId) {
       const department = await this.db.department.findById(departmentId).lean();
       if (!department) throw new NotFoundException('Department not found');
       const location = await this.db.location.findById(department.locationId).lean();
       const plant = location ? await this.db.plant.findById(location.plantId).lean() : null;
-      const businessUnit = plant ? await this.db.businessUnit.findById(plant.businessUnitId).lean() : null;
+      const businessUnit = plant
+        ? await this.db.businessUnit.findById(plant.businessUnitId).lean()
+        : null;
       if (!location || !plant || !businessUnit || businessUnit.companyId !== auth.companyId) {
         throw new ForbiddenException('departmentId does not belong to your company');
       }
@@ -93,7 +92,6 @@ export class AssetsService extends TenantScopedRepository {
     }
 
     const assetNumber = await this.generateAssetNumber(assetTypeId);
-
     const customFields = { ...fields };
     delete customFields.locationId;
     delete customFields.departmentId;
@@ -119,11 +117,6 @@ export class AssetsService extends TenantScopedRepository {
     return value;
   }
 
-  /**
-   * Numbering must survive concurrent asset creation without producing
-   * duplicates. MongoDB single-document atomicity via $inc serializes
-   * concurrent sequence allocation.
-   */
   private async generateAssetNumber(assetTypeId: string): Promise<string> {
     const assetType = await this.db.assetType
       .findOneAndUpdate(
@@ -139,7 +132,6 @@ export class AssetsService extends TenantScopedRepository {
 
     const sequence = assetType.numberingRule.nextSequence - 1;
     const rule = assetType.numberingRule;
-
     const company = await this.db.company.findById(assetType.companyId).lean();
     if (!company) throw new NotFoundException('Company not found');
 
@@ -155,21 +147,22 @@ export class AssetsService extends TenantScopedRepository {
     reason?: string,
   ) {
     const filter = this.scope(auth);
-
     const before = await this.db.asset.findOne({ _id: assetId, ...filter }).lean();
     if (!before) throw new NotFoundException('Asset not found in your scope');
 
-    const updated = await this.db.asset.findOneAndUpdate(
-      { _id: assetId, ...filter },
-      { $set: { status: toState } },
-      { new: true },
-    ).lean();
+    const updated = await this.db.asset
+      .findOneAndUpdate(
+        { _id: assetId, ...filter },
+        { $set: { status: toState } },
+        { new: true },
+      )
+      .lean();
     if (!updated) throw new NotFoundException('Asset not found in your scope');
 
     await this.db.assetAuditEvent.create({
       tenantId: auth.tenantId,
       companyId: auth.companyId,
-      assetId: assetId,
+      assetId,
       fromState: before.status as AssetLifecycleState,
       toState,
       actorUserId,
