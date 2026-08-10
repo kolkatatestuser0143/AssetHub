@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Post, Req } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler'; // rate limiting — see note in README
 import { AuthService } from './auth.service';
 import { LoginDto, RefreshDto } from './auth.dto';
@@ -19,9 +19,8 @@ export class AuthController {
   }
 
   @Post('logout')
-  @UseGuards() // TenantContextGuard applied at module level, see auth.module.ts
   async logout(@Req() req: any) {
-    await this.authService.logout(req.authContext.sessionId);
+    await this.authService.logout(req.authContext.sessionId, req.authContext.userId);
     return { ok: true };
   }
 }
