@@ -13,6 +13,10 @@ class CreateAssetDto {
   @IsOptional() @IsString() vendorId?: string;
   @IsObject() @IsOptional() fields?: Record<string, unknown>;
 }
+class AssignAssetDto {
+  @IsString() userId: string;
+  @IsString() @IsOptional() notes?: string;
+}
 class TransitionDto {
   @IsIn(Object.values(AssetLifecycleState)) toState: AssetLifecycleState;
   @IsString() @IsOptional() reason?: string;
@@ -31,23 +35,17 @@ export class AssetsController {
 
   @Get()
   @RequirePermission('asset:read')
-  list(@Req() req: any) {
-    return this.assets.listAssets(req.authContext);
-  }
+  list(@Req() req: any) { return this.assets.listAssets(req.authContext); }
 
   @Get('types')
   @RequirePermission('asset:read')
-  listTypes(@Req() req: any) {
-    return this.assets.listAssetTypes(req.authContext);
-  }
+  listTypes(@Req() req: any) { return this.assets.listAssetTypes(req.authContext); }
 
   @Post('types')
   @RequirePermission('asset:write')
   createType(@Body() dto: CreateAssetTypeDto, @Req() req: any) {
     return this.assets.createAssetType(req.authContext, dto.name, {
-      prefix: dto.prefix,
-      separator: dto.separator,
-      padding: dto.padding,
+      prefix: dto.prefix, separator: dto.separator, padding: dto.padding,
     });
   }
 
@@ -55,11 +53,32 @@ export class AssetsController {
   @RequirePermission('asset:write')
   create(@Body() dto: CreateAssetDto, @Req() req: any) {
     return this.assets.createAsset(req.authContext, dto.assetTypeId, {
-      ...(dto.fields ?? {}),
-      locationId: dto.locationId,
-      departmentId: dto.departmentId,
-      vendorId: dto.vendorId,
+      ...(dto.fields ?? {}), locationId: dto.locationId, departmentId: dto.departmentId, vendorId: dto.vendorId,
     });
+  }
+
+  @Post(':assetId/assign')
+  @RequirePermission('asset:write')
+  assign(@Param('assetId') assetId: string, @Body() dto: AssignAssetDto, @Req() req: any) {
+    return this.assets.assignAsset(req.authContext, assetId, dto.userId, dto.notes);
+  }
+
+  @Get(':assetId/assignment')
+  @RequirePermission('asset:read')
+  currentAssignment(@Param('assetId') assetId: string, @Req() req: any) {
+    return this.assets.getCurrentAssignment(req.authContext, assetId);
+  }
+
+  @Post(':assetId/unassign')
+  @RequirePermission('asset:write')
+  unassign(@Param('assetId') assetId: string, @Body() dto: AssignAssetDto, @Req() req: any) {
+    return this.assets.unassignAsset(req.authContext, assetId, dto.notes);
+  }
+
+  @Get(':assetId/assignment/history')
+  @RequirePermission('asset:read')
+  history(@Param('assetId') assetId: string, @Req() req: any) {
+    return this.assets.listAssignmentHistory(req.authContext, assetId);
   }
 
   @Post(':assetId/transition')
