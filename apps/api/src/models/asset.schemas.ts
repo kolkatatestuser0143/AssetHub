@@ -7,12 +7,9 @@ export type AssetTypeDocument = HydratedDocument<AssetType>;
 
 @Schema({ _id: false, versionKey: false })
 export class AssetNumberingRule {
-  @Prop({ required: true }) prefix!: string; // "LAP"
+  @Prop({ required: true }) prefix!: string;
   @Prop({ default: '-' }) separator!: string;
   @Prop({ default: 6 }) padding!: number;
-  // nextSequence is incremented atomically with $inc on a
-  // findOneAndUpdate — MongoDB single-document atomicity replaces the
-  // Postgres SELECT ... FOR UPDATE serialization (assets.service.ts).
   @Prop({ default: 1 }) nextSequence!: number;
 }
 
@@ -21,7 +18,7 @@ export const AssetNumberingRuleSchema = SchemaFactory.createForClass(AssetNumber
 @Schema({ collection: 'asset_types', timestamps: true, versionKey: false })
 export class AssetType {
   @Prop({ required: true, index: true }) companyId!: string;
-  @Prop({ required: true }) name!: string; // "Laptop", "Router", ...
+  @Prop({ required: true }) name!: string;
   @Prop({ type: AssetNumberingRuleSchema }) numberingRule?: AssetNumberingRule;
 }
 
@@ -36,25 +33,18 @@ export class Asset {
   @Prop({ required: true, index: true }) tenantId!: string;
   @Prop({ required: true, index: true }) companyId!: string;
   @Prop({ required: true, index: true }) assetTypeId!: string;
-  @Prop({ required: true }) assetNumber!: string; // "LAP-XYZ-000001"
-
+  @Prop({ required: true }) assetNumber!: string;
   @Prop() serialNumber?: string;
   @Prop() model?: string;
   @Prop({ enum: AssetLifecycleState, default: AssetLifecycleState.IN_STOCK }) status!: string;
-
   @Prop() locationId?: string;
   @Prop() departmentId?: string;
   @Prop() vendorId?: string;
   @Prop() purchaseDate?: Date;
   @Prop({ type: { provider: String, expiresAt: Date }, _id: false })
-  warranty?: {
-    provider?: string;
-    expiresAt?: Date;
-  };
+  warranty?: { provider?: string; expiresAt?: Date };
   @Prop() qrCodeUrl?: string;
   @Prop() barcodeValue?: string;
-
-  // Flexible per-company custom fields: fieldKey -> value
   @Prop({ type: Object, default: {} }) customFields?: Record<string, string>;
 }
 
@@ -67,11 +57,6 @@ export type AssetAuditEventDocument = HydratedDocument<AssetAuditEvent>;
 
 @Schema({ collection: 'asset_audit_events', timestamps: true, versionKey: false })
 export class AssetAuditEvent {
-  // tenantId/companyId are denormalized from the asset at write time so
-  // any future "list audit events" query can scope directly on this
-  // collection instead of joining back through assetId first. MongoDB
-  // has no RLS, so a query here without these fields is a cross-tenant
-  // leak waiting to happen — see tenant-scoped.repository.ts.
   @Prop({ required: true, index: true }) tenantId!: string;
   @Prop({ required: true, index: true }) companyId!: string;
   @Prop({ required: true, index: true }) assetId!: string;
@@ -99,3 +84,8 @@ export class AssetAssignment {
 }
 
 export const AssetAssignmentSchema = SchemaFactory.createForClass(AssetAssignment);
+AssetAssignmentSchema.index(
+  { assetId: 1 },
+  { unique: true, partialFilterExpression: { returnedAt: { $exists: false } } },
+);
+AssetAssignmentSchema.index({ assetId: 1, assignedAt: -1 });
