@@ -7,9 +7,13 @@ implementation rather than speculative scaffolding.
 
 ## What's real and functional here
 
-- **DB schema** (`apps/api/prisma/schema.prisma`) — full multi-tenant model.
-- **RLS policies** (`prisma/migrations/0001_rls_policies/`) — Postgres
-  row-level security as the isolation backstop.
+- **DB schema** (`apps/api/src/models/*.schemas.ts`) — full multi-tenant
+  model as Mongoose schemas (MongoDB Atlas).
+- **Tenant isolation** — MongoDB has no row-level-security equivalent,
+  so isolation is application-level filtering only, enforced via
+  `TenantScopedRepository`/`scope()` in every service. See
+  `apps/api/src/common/tenant-scoped.repository.ts` for the full
+  rationale — there is no backstop layer, so this is the whole story.
 - **Tenant context + RBAC guards** (`common/guards/`) — every mutating
   route resolves auth context from a verified JWT and re-checks
   permissions server-side.
@@ -17,11 +21,13 @@ implementation rather than speculative scaffolding.
   tokens, rotating single-use refresh tokens, login history, lockout
   hook points. **MFA (TOTP) enforcement is not yet wired into the login
   flow** — see the NOTE in `auth.service.ts`.
-- **Assets** (`modules/assets/`) — asset numbering with row-level
-  locking (prevents duplicate numbers under concurrent creates) and
+- **Assets** (`modules/assets/`) — asset numbering via an atomic
+  `findOneAndUpdate`/`$inc` on the numbering rule (prevents duplicate
+  numbers under concurrent creates — MongoDB has no `SELECT ... FOR
+  UPDATE`, so two concurrent requests serialize on this instead) and
   lifecycle-transition audit events.
-- **Seed script** (`prisma/seed.ts`) — system roles/permissions + a
-  demo tenant/company/admin user.
+- **Seed script** (`apps/api/db/seed.ts`) — system roles/permissions +
+  a demo tenant/company/admin user.
 - **Tenancy** (`modules/tenancy/`) — Company/BusinessUnit/Plant/Location/
   Department CRUD, each write re-verifying the caller's company scope
   server-side before touching the DB (not just trusting RLS).
@@ -58,30 +64,30 @@ is worse than an honest gap:
 
 ## Before this touches real data
 
-1. Run the RLS migration against a **non-owner** DB role (see comment
-   in the migration file) — RLS is silently bypassed for table owners.
-2. Rotate the seeded demo admin password immediately
+1. Rotate the seeded demo admin password immediately
    (`forcePasswordReset: true` is set, but don't rely on that alone).
-3. Wire MFA enforcement into `AuthService.login()` before exposing this
+2. Wire MFA enforcement into `AuthService.login()` before exposing this
    past a local dev environment.
-4. Run the cross-tenant isolation suite against a disposable Postgres
-   test DB before every deploy — `pnpm test:security` (see below).
-   It already caught and fixed one real gap during authoring (see
-   `test/security/tenant-isolation.spec.ts` comments): `AssetType`
+3. Run the cross-tenant isolation suite against a disposable MongoDB
+   test database before every deploy — `pnpm test:security` (see
+   below). It already caught and fixed one real gap during authoring
+   (see `test/security/tenant-isolation.spec.ts` comments): `AssetType`
    was reachable by ID substitution across tenants because it had no
-   RLS policy and no app-level ownership check. Treat any future
-   failure here the same way — a security incident, not a normal
+   app-level ownership check. MongoDB has no RLS equivalent, so this
+   suite is the *only* thing that catches a missing `scope()` call —
+   treat any future failure here as a security incident, not a normal
    test failure.
+4. Rotate any credentials that were ever committed to `.env` in this
+   repo's history (Atlas URI, Redis token, JWT secret) before using
+   this past local dev — see `.env.example` for the variables that
+   should be filled with fresh secrets, never the committed ones.
 
 ## Prerequisites (no Docker)
 
-- **PostgreSQL 16** — any Postgres 16 works (local install below, or a
-  managed provider such as Neon / Upstash Postgres — just put the
-  connection string in `DATABASE_URL`). The RLS backstop requires
-  **two DB roles**: an owner role that runs migrations/seed, and the
-  non-owner `itam_app` role the application connects as. The app role
-  must NOT own tables or be a superuser, or RLS is silently bypassed
-  (see `prisma/migrations/0001_rls_policies/migration.sql`).
+- **MongoDB Atlas** (or any MongoDB 6+) — put the connection string in
+  `MONGODB_URI` (see `.env.example`). There is no RLS-equivalent role
+  split here — the app connects with one role, and isolation is
+  entirely the application-level `scope()` filtering described above.
 - **Redis 7** (managed or self-hosted, reachable via `REDIS_URL`). This
   project uses **Upstash Redis** by default. Redis backs the identity
   module's OIDC state/nonce store and SAML assertion-ID replay
@@ -94,62 +100,42 @@ is worse than an honest gap:
   - Any Redis 7+ works: set `REDIS_URL` to your instance. Local
     `redis://localhost:6379` also works if no `REDIS_URL` is set.
 
-## Setting up PostgreSQL
+## Setting up MongoDB
 
-### Option A — local install (Windows)
+### Option A — MongoDB Atlas (recommended, matches `.env` default)
 
-1. Install PostgreSQL 16 with the EDB installer
-   (https://www.enterprisedb.com/downloads/postgres-postgresql-archive);
-   remember the `postgres` superuser password you set during install.
-2. Open the SQL Shell (psql) or pgAdmin query tool and run:
+1. Create a free/shared cluster at https://cloud.mongodb.com.
+2. Database Access → add a user with a strong generated password
+   (read/write on this project's database only — don't reuse the
+   Atlas org admin credentials here).
+3. Network Access → add your current IP (or `0.0.0.0/0` only for
+   throwaway local dev, never for anything shared).
+4. Connect → Drivers → copy the `mongodb+srv://...` connection string
+   into `MONGODB_URI` in `.env`, and set `MONGODB_DB` to your database
+   name (e.g. `itam`).
+5. Seed it:
 
-   ```sql
-   CREATE ROLE itam_owner LOGIN PASSWORD 'devpassword';
-   CREATE ROLE itam_app LOGIN PASSWORD 'changeme';
-   CREATE DATABASE itam OWNER itam_owner;
-
-   -- App role: DML only, never an owner/superuser (RLS requirement).
-   GRANT USAGE ON SCHEMA public TO itam_app;
-   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO itam_app;
-   ALTER DEFAULT PRIVILEGES IN SCHEMA public
-     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO itam_app;
+   ```
+   pnpm --filter api exec ts-node db/seed.ts
    ```
 
-3. Run migrations and seed as the **owner** role (PowerShell):
+### Option B — local MongoDB
 
-   ```powershell
-   $env:DATABASE_URL="postgresql://itam_owner:devpassword@localhost:5432/itam"
-   pnpm prisma:migrate
-   pnpm prisma:seed
-   ```
+Run MongoDB 6+ locally or via a container image, then point
+`MONGODB_URI` at it, e.g. `mongodb://localhost:27017/itam`. Everything
+else (seed script, app startup) is identical to Option A.
 
-4. Start the app as the **app** role (the one in `.env`):
-
-   ```powershell
-   $env:DATABASE_URL="postgresql://itam_app:changeme@localhost:5432/itam"
-   pnpm dev:api
-   ```
-
-### Option B — managed Postgres
-
-Create a database on a managed provider (Neon, Supabase, Upstash
-Postgres, …) and put its connection string in `DATABASE_URL`. Two
-connection strings are needed:
-
-- **Owner role** (created by default) — use ONLY for
-  `pnpm prisma:migrate` and `pnpm prisma:seed`.
-- **Non-owner role** — create a second role with DML-only grants on the
-  `public` schema, and use it for `DATABASE_URL` when running the app.
-  If the app connects as the owner, RLS is bypassed and the tenant
-  isolation backstop is silently off.
+Unlike the old Postgres setup, there's no owner-vs-app role split to
+worry about — MongoDB isolation is entirely the application-level
+`scope()` filtering in the service layer, not a DB-level grant, so one
+connection string covers migrations/seed and the running app.
 
 ## Running locally
 
 ```
-cp .env.example .env      # fill in real secrets; point at your local Postgres+Redis
+cp .env.example .env      # fill in real secrets; point at your MongoDB Atlas + Redis
 pnpm install
-# Migrate + seed first, as the OWNER role (see "Setting up PostgreSQL"),
-# then start the API with .env's DATABASE_URL (itam_app, non-owner):
+pnpm --filter api exec ts-node db/seed.ts   # seed roles/permissions + demo tenant
 pnpm dev:api
 ```
 
@@ -161,9 +147,7 @@ The API's `IdentitySecurityCacheService` defaults to
 ```
 # Point at a DISPOSABLE test database, never the dev/prod one —
 # the suite creates and deletes real tenants/companies/users.
-DATABASE_URL=postgresql://itam_app:...@localhost:5432/itam_test \
-  pnpm --filter api exec prisma migrate deploy
-DATABASE_URL=postgresql://itam_app:...@localhost:5432/itam_test \
+MONGODB_URI=mongodb+srv://.../itam_test \
   pnpm --filter api test:security
 ```
 
@@ -209,5 +193,16 @@ QR/barcode → import/export → AD/Entra connector.
 - `ForbiddenException` in `tenancy.service.ts` scope checks — confirm
   this surfaces as a clean 403 through Nest's exception filters (it
   should by default, but verify once other modules add custom filters).
-- No automated cross-tenant isolation tests yet — still the single
-  highest-priority thing to add before trusting this with real data.
+- `AssetsService.listAssetTypes` filters by `companyId` only, doesn't
+  go through `scope()`/`TenantScopedRepository`, and isn't covered by
+  `test/security/tenant-isolation.spec.ts`. Not currently exploitable
+  (Mongo `companyId`s are globally-unique ObjectIds) but inconsistent
+  with the rest of the service layer and untested — fix before relying
+  on it.
+- `AssetsService` reimplements its own private `scope()` instead of
+  extending `TenantScopedRepository` like `TenancyService` does — two
+  copies of the same logic that can silently drift apart.
+- `assetAuditEvent` documents carry no `tenantId`/`companyId`. Fine
+  today since nothing queries the collection directly, but the
+  planned "audit query API" (see Next steps) will need those fields
+  added before it can be scoped safely.
