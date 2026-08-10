@@ -1,14 +1,18 @@
 import 'dotenv/config';
 import mongoose from 'mongoose';
 
-const uri = process.env.MONGODB_URI ?? process.env.DATABASE_URL;
-
-async function main() {
+function getMongoUri(): string {
+  const uri = process.env.MONGODB_URI ?? process.env.DATABASE_URL;
   if (!uri) {
     throw new Error('MONGODB_URI or DATABASE_URL must be configured');
   }
+  return uri;
+}
 
+async function main() {
+  const uri = getMongoUri();
   await mongoose.connect(uri);
+
   const db = mongoose.connection.db;
   if (!db) throw new Error('MongoDB database handle unavailable');
 
