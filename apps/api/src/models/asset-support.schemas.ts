@@ -18,12 +18,14 @@ export type WarrantyDocument = HydratedDocument<Warranty>;
 
 @Schema({ collection: 'warranties', timestamps: true, versionKey: false })
 export class Warranty {
-  @Prop({ required: true, unique: true }) assetId!: string;
+  @Prop({ required: true, index: true }) companyId!: string;
+  @Prop({ required: true, index: true }) assetId!: string;
   @Prop() provider?: string;
   @Prop() expiresAt?: Date;
 }
 
 export const WarrantySchema = SchemaFactory.createForClass(Warranty);
+WarrantySchema.index({ companyId: 1, assetId: 1 }, { unique: true });
 
 export const CustomFieldDefModelName = 'CustomFieldDefinition';
 export type CustomFieldDefDocument = HydratedDocument<CustomFieldDefinition>;
@@ -33,7 +35,7 @@ export class CustomFieldDefinition {
   @Prop({ required: true, index: true }) companyId!: string;
   @Prop({ required: true }) key!: string;
   @Prop({ required: true }) label!: string;
-  @Prop({ required: true }) fieldType!: string; // "text" | "number" | "date" | "select" ...
+  @Prop({ required: true }) fieldType!: string;
 }
 
 export const CustomFieldDefSchema = SchemaFactory.createForClass(CustomFieldDefinition);
@@ -45,7 +47,7 @@ export type AssetCustomFieldValueDocument = HydratedDocument<AssetCustomFieldVal
 @Schema({ collection: 'asset_custom_field_values', timestamps: true, versionKey: false })
 export class AssetCustomFieldValue {
   @Prop({ required: true, unique: true }) assetId!: string;
-  @Prop({ type: Map, of: String }) values!: Record<string, string>; // fieldId -> value
+  @Prop({ type: Map, of: String }) values!: Record<string, string>;
 }
 
 export const AssetCustomFieldValueSchema = SchemaFactory.createForClass(AssetCustomFieldValue);
