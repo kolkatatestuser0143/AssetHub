@@ -50,7 +50,7 @@ export type AssetCustomFieldValueDocument = HydratedDocument<AssetCustomFieldVal
 export class AssetCustomFieldValue {
   @Prop({ required: true, index: true }) tenantId!: string;
   @Prop({ required: true, index: true }) companyId!: string;
-  @Prop({ required: true, index: true, unique: true }) assetId!: string;
+  @Prop({ required: true, index: true }) assetId!: string;
   @Prop({ type: Map, of: String }) values!: Record<string, string>;
 }
 
