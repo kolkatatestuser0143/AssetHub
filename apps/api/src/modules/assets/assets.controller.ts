@@ -8,6 +8,9 @@ import { RequirePermission } from '../../common/decorators/require-permission.de
 
 class CreateAssetDto {
   @IsString() assetTypeId: string;
+  @IsOptional() @IsString() locationId?: string;
+  @IsOptional() @IsString() departmentId?: string;
+  @IsOptional() @IsString() vendorId?: string;
   @IsObject() @IsOptional() fields?: Record<string, unknown>;
 }
 class TransitionDto {
@@ -51,7 +54,12 @@ export class AssetsController {
   @Post()
   @RequirePermission('asset:write')
   create(@Body() dto: CreateAssetDto, @Req() req: any) {
-    return this.assets.createAsset(req.authContext, dto.assetTypeId, dto.fields ?? {});
+    return this.assets.createAsset(req.authContext, dto.assetTypeId, {
+      locationId: dto.locationId,
+      departmentId: dto.departmentId,
+      vendorId: dto.vendorId,
+      ...(dto.fields ?? {}),
+    });
   }
 
   @Post(':assetId/transition')
