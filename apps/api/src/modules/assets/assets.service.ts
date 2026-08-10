@@ -44,20 +44,60 @@ export class AssetsService extends TenantScopedRepository {
     return toDto(doc.toObject());
   }
 
-  async createAsset(auth: AuthContext, assetTypeId: string, fields: Record<string, unknown>) {
+  async createAsset(
+    auth: AuthContext,
+    assetTypeId: string,
+    fields: Record<string, unknown>,
+  ) {
     // assetTypeId is caller-supplied input — never trust it belongs to
-    // the caller's own company without checking. This exact gap was
-    // caught by test/security/tenant-isolation.spec.ts before it
-    // shipped: a caller could mint an asset numbered against another
-    // tenant's numbering rule. MongoDB has no RLS, so this app-level
-    // check IS the only isolation — never remove it.
-    const assetType = await this.db.assetType.findById(assetTypeId).lean();
-    if (!assetType) throw new NotFoundException('Asset type not found');
-    if (assetType.companyId !== auth.companyId) {
-      throw new ForbiddenException('assetTypeId does not belong to your company');
+    // the caller's own company without checking. MongoDB has no RLS, so
+    // this application-level ownership check is part of the security
+    // boundary.
+    const assetType = await this.db.assetType
+      .findOne({ _id: assetTypeId, companyId: auth.companyId })
+      .lean();
+    if (!assetType) throw new NotFoundException('Asset type not found in your company');
+
+    const locationId = this.readOptionalId(fields.locationId);
+    const departmentId = this.readOptionalId(fields.departmentId);
+    const vendorId = this.readOptionalId(fields.vendorId);
+
+    if (locationId) {
+      const location = await this.db.location.findById(locationId).lean();
+      if (!location) throw new NotFoundException('Location not found');
+      const department = await this.db.department.findOne({ locationId: location._id }).lean();
+      const plant = await this.db.plant.findById(location.plantId).lean();
+      const businessUnit = plant ? await this.db.businessUnit.findById(plant.businessUnitId).lean() : null;
+      if (!plant || !businessUnit || businessUnit.companyId !== auth.companyId) {
+        throw new ForbiddenException('locationId does not belong to your company');
+      }
+      if (departmentId && (!department || String(department._id) !== departmentId)) {
+        throw new ForbiddenException('departmentId does not belong to the selected location');
+      }
+    } else if (departmentId) {
+      const department = await this.db.department.findById(departmentId).lean();
+      if (!department) throw new NotFoundException('Department not found');
+      const location = await this.db.location.findById(department.locationId).lean();
+      const plant = location ? await this.db.plant.findById(location.plantId).lean() : null;
+      const businessUnit = plant ? await this.db.businessUnit.findById(plant.businessUnitId).lean() : null;
+      if (!location || !plant || !businessUnit || businessUnit.companyId !== auth.companyId) {
+        throw new ForbiddenException('departmentId does not belong to your company');
+      }
+    }
+
+    if (vendorId) {
+      const vendor = await this.db.vendor
+        .findOne({ _id: vendorId, companyId: auth.companyId })
+        .lean();
+      if (!vendor) throw new ForbiddenException('vendorId does not belong to your company');
     }
 
     const assetNumber = await this.generateAssetNumber(assetTypeId);
+
+    const customFields = { ...fields };
+    delete customFields.locationId;
+    delete customFields.departmentId;
+    delete customFields.vendorId;
 
     const doc = await this.db.asset.create({
       tenantId: auth.tenantId,
@@ -65,18 +105,24 @@ export class AssetsService extends TenantScopedRepository {
       assetTypeId,
       assetNumber,
       status: AssetLifecycleState.IN_STOCK,
-      customFields: (fields as Record<string, string>) ?? {},
+      locationId,
+      departmentId,
+      vendorId,
+      customFields: customFields as Record<string, string>,
     });
     return toDto(doc.toObject());
   }
 
+  private readOptionalId(value: unknown): string | undefined {
+    if (value === undefined || value === null || value === '') return undefined;
+    if (typeof value !== 'string') throw new ForbiddenException('Relationship IDs must be strings');
+    return value;
+  }
+
   /**
    * Numbering must survive concurrent asset creation without producing
-   * duplicates (architecture doc §12). MongoDB has no SELECT ... FOR
-   * UPDATE, but a findOneAndUpdate is atomic per document: `$inc` the
-   * embedded rule's nextSequence and read the pre-increment value in
-   * the same op. Two concurrent requests serialize here instead of
-   * racing.
+   * duplicates. MongoDB single-document atomicity via $inc serializes
+   * concurrent sequence allocation.
    */
   private async generateAssetNumber(assetTypeId: string): Promise<string> {
     const assetType = await this.db.assetType
@@ -91,7 +137,6 @@ export class AssetsService extends TenantScopedRepository {
       throw new NotFoundException('No numbering rule configured for this asset type');
     }
 
-    // pre-increment value = the new value minus one
     const sequence = assetType.numberingRule.nextSequence - 1;
     const rule = assetType.numberingRule;
 
@@ -111,13 +156,9 @@ export class AssetsService extends TenantScopedRepository {
   ) {
     const filter = this.scope(auth);
 
-    // Read the current status BEFORE the update — the audit event must
-    // record the true fromState (the pre-transition status).
     const before = await this.db.asset.findOne({ _id: assetId, ...filter }).lean();
     if (!before) throw new NotFoundException('Asset not found in your scope');
 
-    // Scope-filtered atomic update: only succeeds if the asset still
-    // belongs to the caller's tenant/company at write time.
     const updated = await this.db.asset.findOneAndUpdate(
       { _id: assetId, ...filter },
       { $set: { status: toState } },
@@ -125,9 +166,6 @@ export class AssetsService extends TenantScopedRepository {
     ).lean();
     if (!updated) throw new NotFoundException('Asset not found in your scope');
 
-    // Lifecycle transitions are the single source of truth for asset
-    // history (architecture doc §12) — every transition writes here,
-    // nowhere else maintains a separate "history" table.
     await this.db.assetAuditEvent.create({
       tenantId: auth.tenantId,
       companyId: auth.companyId,
