@@ -44,7 +44,6 @@ export type SessionDocument = HydratedDocument<Session>;
 
 @Schema({ collection: 'sessions', timestamps: true, versionKey: false })
 export class Session {
-  @Prop({ required: true, unique: true }) id!: string;
   @Prop({ required: true, index: true }) userId!: string;
   @Prop({ required: true, unique: true }) refreshTokenHash!: string;
   @Prop() ipAddress?: string;
