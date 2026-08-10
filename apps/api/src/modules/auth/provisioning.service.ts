@@ -15,15 +15,17 @@ export class ProvisioningService {
   constructor(private readonly db: MongooseDatabaseService) {}
 
   async upsertFromIdentity(companyId: string, tenantId: string, identity: NormalizedIdentity) {
-    // 1. Match by (companyId, externalScimId) — the SCIM/SSO stable key.
+    // External identity records are always scoped to the company that owns
+    // the IdP configuration. Never fall back to a global email lookup or
+    // an _id-only update: either can mutate a user from another company.
     const existing = await this.db.user
-      .findOne({ companyId, externalScimId: identity.externalId })
+      .findOne({ companyId, tenantId, externalScimId: identity.externalId })
       .lean();
 
     if (existing) {
       const doc = await this.db.user
         .findOneAndUpdate(
-          { _id: existing._id },
+          { _id: existing._id, companyId, tenantId },
           {
             $set: {
               email: identity.email,
@@ -37,13 +39,16 @@ export class ProvisioningService {
       return doc;
     }
 
-    // 2. Fall back to matching by email — avoids duplicate User rows for
-    //    someone already created manually.
-    const byEmail = await this.db.user.findOne({ email: identity.email }).lean();
+    // Fall back to matching by email, but only inside the same tenant and
+    // company. This prevents an SSO login in Company A from attaching an
+    // identity to a same-email account owned by Company B.
+    const byEmail = await this.db.user
+      .findOne({ email: identity.email, tenantId, companyId })
+      .lean();
     if (byEmail) {
       const doc = await this.db.user
         .findOneAndUpdate(
-          { _id: byEmail._id },
+          { _id: byEmail._id, tenantId, companyId },
           { $set: { externalScimId: identity.externalId } },
           { new: true },
         )
@@ -51,7 +56,7 @@ export class ProvisioningService {
       return doc;
     }
 
-    // 3. Brand-new SSO user: no local password (passwordHash absent).
+    // Brand-new SSO user: no local password (passwordHash absent).
     return this.db.user.create({
       tenantId,
       companyId,
