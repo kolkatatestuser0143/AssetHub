@@ -44,6 +44,7 @@ export type SessionDocument = HydratedDocument<Session>;
 
 @Schema({ collection: 'sessions', timestamps: true, versionKey: false })
 export class Session {
+  @Prop({ required: true, unique: true }) id!: string;
   @Prop({ required: true, index: true }) userId!: string;
   @Prop({ required: true, unique: true }) refreshTokenHash!: string;
   @Prop() ipAddress?: string;
@@ -56,6 +57,7 @@ export class Session {
 }
 
 export const SessionSchema = SchemaFactory.createForClass(Session);
+SessionSchema.index({ userId: 1, revokedAt: 1, expiresAt: 1 });
 
 export const LoginHistoryModelName = 'LoginHistory';
 export type LoginHistoryDocument = HydratedDocument<LoginHistory>;
