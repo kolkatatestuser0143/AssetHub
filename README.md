@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # ITAM SaaS — Foundation Scaffold
 
 This is a **working foundation**, not a finished product. It covers the
@@ -139,3 +140,6 @@ QR/barcode → import/export → AD/Entra connector.
   should by default, but verify once other modules add custom filters).
 - No automated cross-tenant isolation tests yet — still the single
   highest-priority thing to add before trusting this with real data.
+=======
+# AssetHub
+>>>>>>> 39a8550a03acfaff4b54ba7e5db58f71947db63a
