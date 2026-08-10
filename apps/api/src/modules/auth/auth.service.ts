@@ -51,16 +51,15 @@ export class AuthService {
     }
 
     // Reuse detection: once a refresh token is exchanged we immediately
-    // revoke it (single-use). If the SAME raw token is presented again
-    // after that, findByRefreshToken still finds the row (revoked, not
-    // deleted) — the revokedAt check above is what catches replay.
-    await this.sessions.revokeSession(session.id, 'rotated');
+    // revoke it (single-use). If the SAME raw token is presented again, the
+    // revoked session remains in MongoDB and the revokedAt check catches it.
+    await this.sessions.revokeSession(session.id, session.userId, 'rotated');
 
     return this.sessions.issueSession(session.userId, ip, userAgent);
   }
 
-  async logout(sessionId: string) {
-    await this.sessions.revokeSession(sessionId, 'user_logout');
+  async logout(sessionId: string, userId: string) {
+    await this.sessions.revokeSession(sessionId, userId, 'user_logout');
   }
 
   private async recordLoginAttempt(
