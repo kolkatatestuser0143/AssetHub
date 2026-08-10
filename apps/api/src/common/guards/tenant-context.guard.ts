@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 
 export interface AuthContext {
   userId: string;
+  sessionId: string;
   tenantId: string;
   companyId: string;
   crossCompany: boolean; // tenant-admin widened scope
@@ -28,8 +29,13 @@ export class TenantContextGuard implements CanActivate {
 
     try {
       const payload = this.jwt.verify(authHeader.slice(7));
+      if (!payload.sub || !payload.sessionId || !payload.tenantId || !payload.companyId) {
+        throw new UnauthorizedException('Invalid access token claims');
+      }
+
       const authContext: AuthContext = {
         userId: payload.sub,
+        sessionId: payload.sessionId,
         tenantId: payload.tenantId,
         companyId: payload.companyId,
         crossCompany: !!payload.crossCompany,
@@ -37,7 +43,8 @@ export class TenantContextGuard implements CanActivate {
       };
       req.authContext = authContext;
       return true;
-    } catch {
+    } catch (error) {
+      if (error instanceof UnauthorizedException) throw error;
       throw new UnauthorizedException('Invalid or expired access token');
     }
   }
