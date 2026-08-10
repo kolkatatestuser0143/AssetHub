@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
@@ -22,20 +22,17 @@ export class SessionService {
   ) {}
 
   async issueSession(userId: string, ip: string, userAgent: string) {
-    const rawUser = await this.db.findByIdOrThrow<{ id: string; tenantId: string; companyId: string; roleIds: string[] }>(
-      this.db.user,
-      userId,
-      'User',
-    );
-    const permissions = await this.resolvePermissions(rawUser.roleIds ?? []);
-    const accessToken = this.jwt.sign(
-      {
-        sub: rawUser.id,
-        tenantId: rawUser.tenantId,
-        companyId: rawUser.companyId,
-        permissions,
-      },
-      { expiresIn: ACCESS_TOKEN_TTL },
+    const rawUser = await this.db.findByIdOrThrow<{
+      id: string;
+      tenantId: string;
+      companyId: string;
+      roleIds: string[];
+    }>(this.db.user, userId, 'User');
+
+    const permissions = await this.resolvePermissions(
+      rawUser.tenantId,
+      rawUser.companyId,
+      rawUser.roleIds ?? [],
     );
 
     const rawRefreshToken = crypto.randomBytes(48).toString('hex');
@@ -48,12 +45,24 @@ export class SessionService {
       expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
     });
 
-    return { accessToken, refreshToken: rawRefreshToken, sessionId: String(session._id) };
+    const sessionId = String(session._id);
+    const accessToken = this.jwt.sign(
+      {
+        sub: rawUser.id,
+        sessionId,
+        tenantId: rawUser.tenantId,
+        companyId: rawUser.companyId,
+        permissions,
+      },
+      { expiresIn: ACCESS_TOKEN_TTL },
+    );
+
+    return { accessToken, refreshToken: rawRefreshToken, sessionId };
   }
 
-  async revokeSession(sessionId: string, reason: string) {
+  async revokeSession(sessionId: string, userId: string, reason: string) {
     await this.db.session.updateOne(
-      { _id: sessionId },
+      { _id: sessionId, userId, revokedAt: { $exists: false } },
       { $set: { revokedAt: new Date(), revokedReason: reason } },
     );
   }
@@ -71,10 +80,18 @@ export class SessionService {
     return crypto.createHash('sha256').update(raw).digest('hex');
   }
 
-  private async resolvePermissions(roleIds: string[]): Promise<string[]> {
+  private async resolvePermissions(
+    tenantId: string,
+    companyId: string,
+    roleIds: string[],
+  ): Promise<string[]> {
     if (roleIds.length === 0) return [];
     const roles = await this.db.role
-      .find({ _id: { $in: roleIds } })
+      .find({
+        _id: { $in: roleIds },
+        tenantId,
+        $or: [{ companyId }, { companyId: null }],
+      })
       .lean();
     const perms = new Set<string>();
     for (const role of roles) {
