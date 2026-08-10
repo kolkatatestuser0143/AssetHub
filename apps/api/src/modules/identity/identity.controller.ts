@@ -1,7 +1,18 @@
-import { Body, Controller, ForbiddenException, Get, Param, Post, Query, Redirect, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Param,
+  Post,
+  Query,
+  Redirect,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { IsIn, IsObject, IsString } from 'class-validator';
 import { IdentityService } from './identity.service';
-import { PrismaService } from '../../common/prisma.service';
+import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 import { RbacGuard } from '../../common/guards/rbac.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
@@ -17,7 +28,7 @@ class CreateIdpConfigDto {
 export class IdentityController {
   constructor(
     private readonly identity: IdentityService,
-    private readonly prisma: PrismaService,
+    private readonly db: MongooseDatabaseService,
   ) {}
 
   // --- Admin config management: guarded, tenant-scoped ---
@@ -29,15 +40,15 @@ export class IdentityController {
     if (!req.authContext.crossCompany && req.authContext.companyId !== companyId) {
       throw new ForbiddenException('Company out of scope');
     }
-    return this.prisma.identityProviderConfig.create({
-      data: {
-        companyId,
-        protocol: dto.protocol,
-        name: dto.name,
-        config: dto.config as any,
-        attributeMapping: dto.attributeMapping as any,
-      },
+    const doc = await this.db.identityProviderConfig.create({
+      companyId,
+      protocol: dto.protocol,
+      name: dto.name,
+      config: dto.config,
+      attributeMapping: dto.attributeMapping,
+      isEnabled: true,
     });
+    return { id: String(doc._id), ...doc.toObject() };
   }
 
   // --- Public SSO flow: unauthenticated by definition, this IS the login ---

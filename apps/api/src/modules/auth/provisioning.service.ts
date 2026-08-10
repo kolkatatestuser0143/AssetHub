@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../common/prisma.service';
+import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 import { NormalizedIdentity } from '../identity/identity-provider.interface';
 
 /**
@@ -12,44 +12,56 @@ import { NormalizedIdentity } from '../identity/identity-provider.interface';
  */
 @Injectable()
 export class ProvisioningService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly db: MongooseDatabaseService) {}
 
   async upsertFromIdentity(companyId: string, tenantId: string, identity: NormalizedIdentity) {
-    const existing = await this.prisma.user.findFirst({
-      where: { companyId, externalScimId: identity.externalId },
-    });
+    // 1. Match by (companyId, externalScimId) — the SCIM/SSO stable key.
+    const existing = await this.db.user
+      .findOne({ companyId, externalScimId: identity.externalId })
+      .lean();
+
     if (existing) {
-      return this.prisma.user.update({
-        where: { id: existing.id },
-        data: {
-          email: identity.email,
-          firstName: identity.firstName ?? existing.firstName,
-          lastName: identity.lastName ?? existing.lastName,
-        },
-      });
+      const doc = await this.db.user
+        .findOneAndUpdate(
+          { _id: existing._id },
+          {
+            $set: {
+              email: identity.email,
+              firstName: identity.firstName ?? existing.firstName,
+              lastName: identity.lastName ?? existing.lastName,
+            },
+          },
+          { new: true },
+        )
+        .lean();
+      return doc;
     }
 
-    // Fall back to matching by email for a user that already exists
-    // locally (e.g. created manually) before assuming this is brand new —
-    // avoids creating duplicate User rows for the same person.
-    const byEmail = await this.prisma.user.findUnique({ where: { email: identity.email } });
+    // 2. Fall back to matching by email — avoids duplicate User rows for
+    //    someone already created manually.
+    const byEmail = await this.db.user.findOne({ email: identity.email }).lean();
     if (byEmail) {
-      return this.prisma.user.update({
-        where: { id: byEmail.id },
-        data: { externalScimId: identity.externalId },
-      });
+      const doc = await this.db.user
+        .findOneAndUpdate(
+          { _id: byEmail._id },
+          { $set: { externalScimId: identity.externalId } },
+          { new: true },
+        )
+        .lean();
+      return doc;
     }
 
-    return this.prisma.user.create({
-      data: {
-        tenantId,
-        companyId,
-        email: identity.email,
-        firstName: identity.firstName ?? '',
-        lastName: identity.lastName ?? '',
-        externalScimId: identity.externalId,
-        passwordHash: null, // SSO-only user, no local password
-      },
+    // 3. Brand-new SSO user: no local password (passwordHash absent).
+    return this.db.user.create({
+      tenantId,
+      companyId,
+      email: identity.email,
+      firstName: identity.firstName ?? '',
+      lastName: identity.lastName ?? '',
+      externalScimId: identity.externalId,
+      isActive: true,
+      forcePasswordReset: false,
+      roleIds: [],
     });
   }
 }

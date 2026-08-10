@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # ITAM SaaS — Foundation Scaffold
 
 This is a **working foundation**, not a finished product. It covers the
@@ -74,16 +73,88 @@ is worse than an honest gap:
    failure here the same way — a security incident, not a normal
    test failure.
 
+## Prerequisites (no Docker)
+
+- **PostgreSQL 16** — any Postgres 16 works (local install below, or a
+  managed provider such as Neon / Upstash Postgres — just put the
+  connection string in `DATABASE_URL`). The RLS backstop requires
+  **two DB roles**: an owner role that runs migrations/seed, and the
+  non-owner `itam_app` role the application connects as. The app role
+  must NOT own tables or be a superuser, or RLS is silently bypassed
+  (see `prisma/migrations/0001_rls_policies/migration.sql`).
+- **Redis 7** (managed or self-hosted, reachable via `REDIS_URL`). This
+  project uses **Upstash Redis** by default. Redis backs the identity
+  module's OIDC state/nonce store and SAML assertion-ID replay
+  protection — it is a hard runtime dependency of the API.
+  - `.env` uses Upstash's wire-protocol URL (`rediss://…:6379`), which
+    `ioredis` connects to over TLS. See `.env.example` for the exact
+    variables (`REDIS_URL`, `UPSTASH_REDIS_REST_URL`,
+    `UPSTASH_REDIS_REST_TOKEN`) — get the values from Upstash console
+    → Database → **Connect**.
+  - Any Redis 7+ works: set `REDIS_URL` to your instance. Local
+    `redis://localhost:6379` also works if no `REDIS_URL` is set.
+
+## Setting up PostgreSQL
+
+### Option A — local install (Windows)
+
+1. Install PostgreSQL 16 with the EDB installer
+   (https://www.enterprisedb.com/downloads/postgres-postgresql-archive);
+   remember the `postgres` superuser password you set during install.
+2. Open the SQL Shell (psql) or pgAdmin query tool and run:
+
+   ```sql
+   CREATE ROLE itam_owner LOGIN PASSWORD 'devpassword';
+   CREATE ROLE itam_app LOGIN PASSWORD 'changeme';
+   CREATE DATABASE itam OWNER itam_owner;
+
+   -- App role: DML only, never an owner/superuser (RLS requirement).
+   GRANT USAGE ON SCHEMA public TO itam_app;
+   GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO itam_app;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA public
+     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO itam_app;
+   ```
+
+3. Run migrations and seed as the **owner** role (PowerShell):
+
+   ```powershell
+   $env:DATABASE_URL="postgresql://itam_owner:devpassword@localhost:5432/itam"
+   pnpm prisma:migrate
+   pnpm prisma:seed
+   ```
+
+4. Start the app as the **app** role (the one in `.env`):
+
+   ```powershell
+   $env:DATABASE_URL="postgresql://itam_app:changeme@localhost:5432/itam"
+   pnpm dev:api
+   ```
+
+### Option B — managed Postgres
+
+Create a database on a managed provider (Neon, Supabase, Upstash
+Postgres, …) and put its connection string in `DATABASE_URL`. Two
+connection strings are needed:
+
+- **Owner role** (created by default) — use ONLY for
+  `pnpm prisma:migrate` and `pnpm prisma:seed`.
+- **Non-owner role** — create a second role with DML-only grants on the
+  `public` schema, and use it for `DATABASE_URL` when running the app.
+  If the app connects as the owner, RLS is bypassed and the tenant
+  isolation backstop is silently off.
+
 ## Running locally
 
 ```
-cp .env.example .env      # fill in real secrets
-docker compose -f docker/docker-compose.dev.yml up -d postgres redis
+cp .env.example .env      # fill in real secrets; point at your local Postgres+Redis
 pnpm install
-pnpm prisma:migrate
-pnpm prisma:seed
+# Migrate + seed first, as the OWNER role (see "Setting up PostgreSQL"),
+# then start the API with .env's DATABASE_URL (itam_app, non-owner):
 pnpm dev:api
 ```
+
+The API's `IdentitySecurityCacheService` defaults to
+`redis://localhost:6379` when `REDIS_URL` is unset.
 
 ## Running the cross-tenant isolation test suite
 
@@ -140,6 +211,3 @@ QR/barcode → import/export → AD/Entra connector.
   should by default, but verify once other modules add custom filters).
 - No automated cross-tenant isolation tests yet — still the single
   highest-priority thing to add before trusting this with real data.
-=======
-# AssetHub
->>>>>>> 39a8550a03acfaff4b54ba7e5db58f71947db63a

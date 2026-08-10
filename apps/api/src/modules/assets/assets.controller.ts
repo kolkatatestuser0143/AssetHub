@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { IsIn, IsInt, IsObject, IsOptional, IsString, Min } from 'class-validator';
-import { AssetLifecycleState } from '@prisma/client';
+import { AssetLifecycleState } from '../../common/enums';
 import { AssetsService } from './assets.service';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 import { RbacGuard } from '../../common/guards/rbac.guard';

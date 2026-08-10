@@ -1,0 +1,20 @@
+import { MongooseDatabaseService } from '../../common/mongoose-database.service';
+import { SessionService } from './session.service';
+export declare class AuthService {
+    private readonly db;
+    private readonly sessions;
+    constructor(db: MongooseDatabaseService, sessions: SessionService);
+    hashPassword(plain: string): Promise<string>;
+    login(email: string, password: string, ip: string, userAgent: string): Promise<{
+        accessToken: string;
+        refreshToken: string;
+        sessionId: string;
+    }>;
+    refresh(rawRefreshToken: string, ip: string, userAgent: string): Promise<{
+        accessToken: string;
+        refreshToken: string;
+        sessionId: string;
+    }>;
+    logout(sessionId: string): Promise<void>;
+    private recordLoginAttempt;
+}

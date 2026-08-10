@@ -1,0 +1,74 @@
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { HydratedDocument } from 'mongoose';
+import { MfaMethod } from '../common/enums';
+
+export const UserModelName = 'User';
+export type UserDocument = HydratedDocument<User>;
+
+@Schema({ collection: 'users', timestamps: true, versionKey: false })
+export class User {
+  @Prop({ required: true, index: true }) tenantId!: string;
+  @Prop({ required: true, index: true }) companyId!: string;
+
+  @Prop({ required: true, unique: true }) email!: string;
+  @Prop() passwordHash?: string; // null/undefined => SSO-only user
+  @Prop({ required: true }) firstName!: string;
+  @Prop({ required: true }) lastName!: string;
+  @Prop() jobTitle?: string;
+  @Prop() phone?: string;
+
+  @Prop({ enum: MfaMethod, default: MfaMethod.NONE }) mfaMethod!: string;
+  @Prop() totpSecretEnc?: string;
+  @Prop({ type: [String], default: [] }) backupCodesHash!: string[];
+
+  @Prop({ default: true }) isActive!: boolean;
+  @Prop({ default: false }) forcePasswordReset!: boolean;
+
+  // SCIM externalId, unique per company (compound index below)
+  @Prop() externalScimId?: string;
+
+  // Denormalized role refs — MongoDB has no join tables. Assigning a
+  // role pushes its id here; permission resolution reads Role docs.
+  @Prop({ type: [String], default: [] }) roleIds!: string[];
+
+  // Optional hierarchy scoping (master prompt §4)
+  @Prop() departmentId?: string;
+  @Prop() locationId?: string;
+}
+
+export const UserSchema = SchemaFactory.createForClass(User);
+UserSchema.index({ companyId: 1, externalScimId: 1 }, { unique: true, sparse: true });
+
+export const SessionModelName = 'Session';
+export type SessionDocument = HydratedDocument<Session>;
+
+@Schema({ collection: 'sessions', timestamps: true, versionKey: false })
+export class Session {
+  @Prop({ required: true, index: true }) userId!: string;
+  @Prop({ required: true, unique: true }) refreshTokenHash!: string;
+  @Prop() ipAddress?: string;
+  @Prop() userAgent?: string;
+  @Prop() approxLocation?: string;
+  @Prop({ default: Date.now }) lastSeenAt!: Date;
+  @Prop({ required: true }) expiresAt!: Date;
+  @Prop() revokedAt?: Date;
+  @Prop() revokedReason?: string;
+}
+
+export const SessionSchema = SchemaFactory.createForClass(Session);
+
+export const LoginHistoryModelName = 'LoginHistory';
+export type LoginHistoryDocument = HydratedDocument<LoginHistory>;
+
+@Schema({ collection: 'login_history', timestamps: true, versionKey: false })
+export class LoginHistory {
+  @Prop({ required: true, index: true }) userId!: string;
+  @Prop({ required: true }) success!: boolean;
+  @Prop() ipAddress?: string;
+  @Prop() userAgent?: string;
+  @Prop() reason?: string; // failure reason if applicable
+  @Prop({ default: Date.now }) occurredAt!: Date;
+}
+
+export const LoginHistorySchema = SchemaFactory.createForClass(LoginHistory);
+LoginHistorySchema.index({ userId: 1, occurredAt: -1 });

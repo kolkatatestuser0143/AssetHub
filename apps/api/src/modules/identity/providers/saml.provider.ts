@@ -28,7 +28,7 @@ export class SamlProvider implements IdentityProvider {
     this.saml = new SAML({
       entryPoint: config.entryPoint,
       issuer: config.issuer,
-      idpCert: config.cert,
+      cert: config.cert,
       callbackUrl: config.callbackUrl,
       wantAssertionsSigned: true, // reject unsigned assertions — non-negotiable
       wantAuthnResponseSigned: true,

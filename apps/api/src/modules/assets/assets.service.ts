@@ -1,27 +1,26 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../../common/prisma.service';
+import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 import { AuthContext } from '../../common/guards/tenant-context.guard';
-import { AssetLifecycleState } from '@prisma/client';
+import { AssetLifecycleState } from '../../common/enums';
+import { toDto, toDtoArray } from '../../common/mongoose.utils';
 
 @Injectable()
 export class AssetsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly db: MongooseDatabaseService) {}
 
   async listAssets(auth: AuthContext) {
-    return this.prisma.asset.findMany({
-      where: auth.crossCompany
-        ? { tenantId: auth.tenantId }
-        : { tenantId: auth.tenantId, companyId: auth.companyId },
-      include: { assetType: true },
-      orderBy: { createdAt: 'desc' },
-    });
+    const docs = await this.db.asset
+      .find(this.scope(auth))
+      .sort({ createdAt: -1 })
+      .lean();
+    return toDtoArray(docs);
   }
 
   async listAssetTypes(auth: AuthContext) {
-    return this.prisma.assetType.findMany({
-      where: { companyId: auth.companyId },
-      include: { numberingRule: true },
-    });
+    const docs = await this.db.assetType
+      .find({ companyId: auth.companyId })
+      .lean();
+    return toDtoArray(docs);
   }
 
   async createAssetType(
@@ -29,77 +28,72 @@ export class AssetsService {
     name: string,
     numberingRule: { prefix: string; separator?: string; padding?: number },
   ) {
-    return this.prisma.assetType.create({
-      data: {
-        companyId: auth.companyId,
-        name,
-        numberingRule: {
-          create: {
-            prefix: numberingRule.prefix,
-            separator: numberingRule.separator ?? '-',
-            padding: numberingRule.padding ?? 6,
-          },
-        },
+    const doc = await this.db.assetType.create({
+      companyId: auth.companyId,
+      name,
+      numberingRule: {
+        prefix: numberingRule.prefix,
+        separator: numberingRule.separator ?? '-',
+        padding: numberingRule.padding ?? 6,
+        nextSequence: 1,
       },
     });
+    return toDto(doc.toObject());
   }
 
-  async createAsset(auth: AuthContext, assetTypeId: string, fields: Record<string, any>) {
-    return this.prisma.withTenantContext(auth.tenantId, auth.companyId, async (tx) => {
-      // assetTypeId is caller-supplied input — never trust it belongs to
-      // the caller's own company without checking. This exact gap was
-      // caught by test/security/tenant-isolation.spec.ts before it
-      // shipped: AssetType/AssetNumberingRule currently have no RLS
-      // policy (see migration TODO), so this app-level check is the
-      // ONLY thing preventing a caller from minting an asset numbered
-      // against another tenant's numbering rule.
-      const assetType = await (tx as any).assetType.findUniqueOrThrow({ where: { id: assetTypeId } });
-      if (assetType.companyId !== auth.companyId) {
-        throw new ForbiddenException('assetTypeId does not belong to your company');
-      }
+  async createAsset(auth: AuthContext, assetTypeId: string, fields: Record<string, unknown>) {
+    // assetTypeId is caller-supplied input — never trust it belongs to
+    // the caller's own company without checking. This exact gap was
+    // caught by test/security/tenant-isolation.spec.ts before it
+    // shipped: a caller could mint an asset numbered against another
+    // tenant's numbering rule. MongoDB has no RLS, so this app-level
+    // check IS the only isolation — never remove it.
+    const assetType = await this.db.assetType.findById(assetTypeId).lean();
+    if (!assetType) throw new NotFoundException('Asset type not found');
+    if (assetType.companyId !== auth.companyId) {
+      throw new ForbiddenException('assetTypeId does not belong to your company');
+    }
 
-      const assetNumber = await this.generateAssetNumber(tx as any, assetTypeId);
+    const assetNumber = await this.generateAssetNumber(assetTypeId);
 
-      return (tx as any).asset.create({
-        data: {
-          tenantId: auth.tenantId,
-          companyId: auth.companyId,
-          assetTypeId,
-          assetNumber,
-          status: AssetLifecycleState.IN_STOCK,
-          ...fields,
-        },
-      });
+    const doc = await this.db.asset.create({
+      tenantId: auth.tenantId,
+      companyId: auth.companyId,
+      assetTypeId,
+      assetNumber,
+      status: AssetLifecycleState.IN_STOCK,
+      customFields: (fields as Record<string, string>) ?? {},
     });
+    return toDto(doc.toObject());
   }
 
   /**
    * Numbering must survive concurrent asset creation without producing
-   * duplicates (architecture doc §12). We lock the specific
-   * AssetNumberingRule row (SELECT ... FOR UPDATE) for the duration of
-   * the enclosing transaction, increment, and use the pre-increment
-   * value — so two concurrent requests serialize instead of racing.
+   * duplicates (architecture doc §12). MongoDB has no SELECT ... FOR
+   * UPDATE, but a findOneAndUpdate is atomic per document: `$inc` the
+   * embedded rule's nextSequence and read the pre-increment value in
+   * the same op. Two concurrent requests serialize here instead of
+   * racing.
    */
-  private async generateAssetNumber(tx: any, assetTypeId: string): Promise<string> {
-    const rows: Array<{ id: string; prefix: string; separator: string; padding: number; nextSequence: number }> =
-      await tx.$queryRaw`
-        SELECT id, prefix, separator, padding, "nextSequence"
-        FROM "AssetNumberingRule"
-        WHERE "assetTypeId" = ${assetTypeId}
-        FOR UPDATE
-      `;
+  private async generateAssetNumber(assetTypeId: string): Promise<string> {
+    const assetType = await this.db.assetType
+      .findOneAndUpdate(
+        { _id: assetTypeId, 'numberingRule.nextSequence': { $exists: true } },
+        { $inc: { 'numberingRule.nextSequence': 1 } },
+        { new: true },
+      )
+      .lean();
 
-    const rule = rows[0];
-    if (!rule) throw new NotFoundException('No numbering rule configured for this asset type');
+    if (!assetType?.numberingRule) {
+      throw new NotFoundException('No numbering rule configured for this asset type');
+    }
 
-    const sequence = rule.nextSequence;
-    await tx.assetNumberingRule.update({
-      where: { id: rule.id },
-      data: { nextSequence: sequence + 1 },
-    });
+    // pre-increment value = the new value minus one
+    const sequence = assetType.numberingRule.nextSequence - 1;
+    const rule = assetType.numberingRule;
 
-    const assetType = await tx.assetType.findUniqueOrThrow({ where: { id: assetTypeId } });
-    const company = await tx.company.findUniqueOrThrow({ where: { id: assetType.companyId } });
+    const company = await this.db.company.findById(assetType.companyId).lean();
+    if (!company) throw new NotFoundException('Company not found');
 
     const padded = String(sequence).padStart(rule.padding, '0');
     return `${rule.prefix}${rule.separator}${company.code}${rule.separator}${padded}`;
@@ -112,21 +106,40 @@ export class AssetsService {
     actorUserId: string,
     reason?: string,
   ) {
-    return this.prisma.withTenantContext(auth.tenantId, auth.companyId, async (tx) => {
-      const asset = await (tx as any).asset.findFirstOrThrow({
-        where: { id: assetId, companyId: auth.companyId },
-      });
+    const filter = this.scope(auth);
 
-      await (tx as any).asset.update({ where: { id: assetId }, data: { status: toState } });
+    // Read the current status BEFORE the update — the audit event must
+    // record the true fromState (the pre-transition status).
+    const before = await this.db.asset.findOne({ _id: assetId, ...filter }).lean();
+    if (!before) throw new NotFoundException('Asset not found in your scope');
 
-      // Lifecycle transitions are the single source of truth for asset
-      // history (architecture doc §12) — every transition writes here,
-      // nowhere else maintains a separate "history" table.
-      await (tx as any).assetAuditEvent.create({
-        data: { assetId, fromState: asset.status, toState, actorUserId, reason },
-      });
+    // Scope-filtered atomic update: only succeeds if the asset still
+    // belongs to the caller's tenant/company at write time.
+    const updated = await this.db.asset.findOneAndUpdate(
+      { _id: assetId, ...filter },
+      { $set: { status: toState } },
+      { new: true },
+    ).lean();
+    if (!updated) throw new NotFoundException('Asset not found in your scope');
 
-      return { ok: true };
+    // Lifecycle transitions are the single source of truth for asset
+    // history (architecture doc §12) — every transition writes here,
+    // nowhere else maintains a separate "history" table.
+    await this.db.assetAuditEvent.create({
+      assetId: assetId,
+      fromState: before.status as AssetLifecycleState,
+      toState,
+      actorUserId,
+      reason,
+      occurredAt: new Date(),
     });
+
+    return { ok: true };
+  }
+
+  private scope(auth: AuthContext): { tenantId: string; companyId?: string } {
+    return auth.crossCompany
+      ? { tenantId: auth.tenantId }
+      : { tenantId: auth.tenantId, companyId: auth.companyId };
   }
 }

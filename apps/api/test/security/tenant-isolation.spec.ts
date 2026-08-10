@@ -1,8 +1,8 @@
-import { PrismaClient } from '@prisma/client';
-import { PrismaService } from '../../src/common/prisma.service';
 import { TenancyService } from '../../src/modules/tenancy/tenancy.service';
 import { AssetsService } from '../../src/modules/assets/assets.service';
-import { cleanupTenants, seedTwoTenants } from './isolation-fixture';
+import { connectTestDb, seedTwoTenants } from './isolation-fixture';
+
+type Fixture = Awaited<ReturnType<typeof seedTwoTenants>>;
 
 /**
  * This suite is the non-optional CI gate flagged throughout the
@@ -13,34 +13,43 @@ import { cleanupTenants, seedTwoTenants } from './isolation-fixture';
  * test here fails, that is a security incident, not a bug ticket —
  * fix before merging, never skip/xfail these.
  *
- * Requires a real Postgres test database (DATABASE_URL pointed at a
- * disposable DB) with migrations applied, including the RLS policy
- * migration. Run: `pnpm exec jest test/security --runInBand`.
+ * SECURITY MODEL CHANGE — read this before editing anything here:
+ * The Postgres original had TWO layers: application-level filtering
+ * (primary) + Postgres RLS (backstop). MongoDB has NO RLS, so the
+ * application-level scope checks in the services are now the ONLY
+ * isolation mechanism. That makes every test in this suite load-
+ * bearing: a missing `scope()` in one query is a full cross-tenant
+ * leak with nothing behind it to catch the mistake.
+ *
+ * The test "raw reads are NOT blocked at the DB layer" below
+ * deliberately documents that absence — it asserts the raw query
+ * SUCCEEDS. Do not delete it as "obviously passing"; it is the
+ * written-down proof that these service-level tests are mandatory.
+ *
+ * Requires MONGODB_URI pointed at a DISPOSABLE test database.
+ * Run: `pnpm exec jest test/security --runInBand`.
  */
 describe('Cross-tenant isolation', () => {
-  let prisma: PrismaService;
+  let testDb: Awaited<ReturnType<typeof connectTestDb>>;
   let tenancy: TenancyService;
   let assets: AssetsService;
-  let fixture: Awaited<ReturnType<typeof seedTwoTenants>>;
 
   beforeAll(async () => {
-    prisma = new PrismaService();
-    await prisma.onModuleInit();
-    tenancy = new TenancyService(prisma);
-    assets = new AssetsService(prisma);
+    testDb = await connectTestDb();
+    tenancy = new TenancyService(testDb.db);
+    assets = new AssetsService(testDb.db);
   });
 
   afterAll(async () => {
-    await prisma.onModuleDestroy();
+    await testDb.disconnect();
   });
 
   beforeEach(async () => {
-    fixture = await seedTwoTenants(prisma as unknown as PrismaClient);
+    await testDb.clearTestCollections();
+    fixture = await seedTwoTenants(testDb.db);
   });
 
-  afterEach(async () => {
-    await cleanupTenants(prisma as unknown as PrismaClient, [fixture.tenantA.id, fixture.tenantB.id]);
-  });
+  let fixture: Fixture;
 
   it('User B cannot list Company A via a scoped query (application-level filter)', async () => {
     const companies = await tenancy.listCompanies(fixture.authB);
@@ -53,7 +62,7 @@ describe('Cross-tenant isolation', () => {
     ).rejects.toThrow(/out of scope/i);
   });
 
-  it('User B cannot create an asset against Company A\'s asset type', async () => {
+  it("User B cannot create an asset against Company A's asset type", async () => {
     // Caught a real gap during authoring: assetTypeId is caller-supplied
     // input. AssetsService.createAsset now explicitly verifies the
     // asset type belongs to the caller's own company before proceeding
@@ -65,32 +74,24 @@ describe('Cross-tenant isolation', () => {
     ).rejects.toThrow(/does not belong to your company/i);
   });
 
-  it('RLS blocks a direct read of Tenant A rows even without app-level filtering', async () => {
-    // Bypass the service layer entirely — set the Postgres session to
-    // Tenant B's context and attempt a raw, unfiltered query for
-    // Tenant A's company. This is what proves the backstop (not just
-    // the primary defense) actually works.
-    const result = await prisma.withTenantContext(fixture.tenantB.id, fixture.companyB.id, async (tx) => {
-      return (tx as any).company.findUnique({ where: { id: fixture.companyA.id } });
-    });
-    expect(result).toBeNull();
+  it('RAW reads are not blocked at the DB layer — documents that MongoDB has no RLS backstop', async () => {
+    // This is NOT a passing security property. It is the explicit,
+    // test-encoded acknowledgment that the app-level scope checks
+    // above are the ONLY isolation. Postgres RLS used to sit behind
+    // these checks; MongoDB has no equivalent, so a future developer
+    // adding a query without scope() has NOTHING catching them except
+    // this suite. If this assertion ever confuses you, re-read the
+    // header comment on this describe block.
+    const rawCompanyA = await testDb.db.company
+      .findById(fixture.companyA.id)
+      .lean();
+    expect(rawCompanyA).not.toBeNull();
   });
 
   it('Tenant-admin (crossCompany) on Tenant A still cannot see Tenant B', async () => {
     const tenantAdminAuth = { ...fixture.authA, crossCompany: true };
     const companies = await tenancy.listCompanies(tenantAdminAuth);
     expect(companies.every((c) => c.id !== fixture.companyB.id)).toBe(true);
-  });
-
-  it('RLS also blocks a raw, unfiltered read of another tenant\'s AssetType', async () => {
-    // Direct regression test for the AssetType/AssetNumberingRule gap
-    // found while writing this suite (see migration.sql comment) —
-    // proves the RLS backstop covers it too, not just the app-level
-    // check in AssetsService.
-    const result = await prisma.withTenantContext(fixture.tenantB.id, fixture.companyB.id, async (tx) => {
-      return (tx as any).assetType.findUnique({ where: { id: fixture.assetTypeA.id } });
-    });
-    expect(result).toBeNull();
   });
 
   it('listAssets scopes correctly and never returns another tenant\'s assets', async () => {

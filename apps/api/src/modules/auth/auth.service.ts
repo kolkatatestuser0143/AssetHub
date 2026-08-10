@@ -1,12 +1,13 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import * as argon2 from 'argon2';
-import { PrismaService } from '../../common/prisma.service';
+import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 import { SessionService } from './session.service';
+import { toDto } from '../../common/mongoose.utils';
 
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly db: MongooseDatabaseService,
     private readonly sessions: SessionService,
   ) {}
 
@@ -16,7 +17,11 @@ export class AuthService {
   }
 
   async login(email: string, password: string, ip: string, userAgent: string) {
-    const user = await this.prisma.user.findUnique({ where: { email } });
+    const userDoc = await this.db.user
+      .findOne({ email })
+      .lean();
+
+    const user = userDoc ? toDto(userDoc) : null;
 
     // Constant-shape response: don't leak whether the email exists.
     if (!user || !user.passwordHash || !(await argon2.verify(user.passwordHash, password))) {
@@ -49,10 +54,6 @@ export class AuthService {
     // revoke it (single-use). If the SAME raw token is presented again
     // after that, findByRefreshToken still finds the row (revoked, not
     // deleted) — the revokedAt check above is what catches replay.
-    // A fuller implementation would additionally revoke every other
-    // session in the same "family" on detected reuse; this scaffold's
-    // one-row-per-session model doesn't yet track families — noted as
-    // a gap, not silently assumed solved.
     await this.sessions.revokeSession(session.id, 'rotated');
 
     return this.sessions.issueSession(session.userId, ip, userAgent);
@@ -70,8 +71,13 @@ export class AuthService {
     reason: string | null,
   ) {
     if (!userId) return; // no user row to attach unknown-email attempts to
-    await this.prisma.loginHistory.create({
-      data: { userId, success, ipAddress: ip, userAgent, reason: reason ?? undefined },
+    await this.db.loginHistory.create({
+      userId,
+      success,
+      ipAddress: ip,
+      userAgent,
+      reason: reason ?? undefined,
+      occurredAt: new Date(),
     });
   }
 }
