@@ -67,6 +67,13 @@ export type AssetAuditEventDocument = HydratedDocument<AssetAuditEvent>;
 
 @Schema({ collection: 'asset_audit_events', timestamps: true, versionKey: false })
 export class AssetAuditEvent {
+  // tenantId/companyId are denormalized from the asset at write time so
+  // any future "list audit events" query can scope directly on this
+  // collection instead of joining back through assetId first. MongoDB
+  // has no RLS, so a query here without these fields is a cross-tenant
+  // leak waiting to happen — see tenant-scoped.repository.ts.
+  @Prop({ required: true, index: true }) tenantId!: string;
+  @Prop({ required: true, index: true }) companyId!: string;
   @Prop({ required: true, index: true }) assetId!: string;
   @Prop({ enum: AssetLifecycleState }) fromState?: string;
   @Prop({ required: true, enum: AssetLifecycleState }) toState!: string;
@@ -77,6 +84,7 @@ export class AssetAuditEvent {
 
 export const AssetAuditEventSchema = SchemaFactory.createForClass(AssetAuditEvent);
 AssetAuditEventSchema.index({ assetId: 1, occurredAt: -1 });
+AssetAuditEventSchema.index({ tenantId: 1, companyId: 1, occurredAt: -1 });
 
 export const AssetAssignmentModelName = 'AssetAssignment';
 export type AssetAssignmentDocument = HydratedDocument<AssetAssignment>;
