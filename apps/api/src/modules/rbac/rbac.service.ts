@@ -1,12 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 import { AuthContext } from '../../common/guards/tenant-context.guard';
+import { TenantScopedRepository } from '../../common/tenant-scoped.repository';
 import { toDto, toDtoArray } from '../../common/mongoose.utils';
 
 @Injectable()
-export class RbacService {
-  constructor(private readonly db: MongooseDatabaseService) {}
+export class RbacService extends TenantScopedRepository {
+  constructor(private readonly db: MongooseDatabaseService) {
+    super();
+  }
 
   async listPermissions() {
     // Static catalog — not tenant-scoped, every tenant sees the same
@@ -16,10 +19,7 @@ export class RbacService {
   }
 
   async listRoles(auth: AuthContext) {
-    const filter = auth.crossCompany
-      ? { tenantId: auth.tenantId }
-      : { tenantId: auth.tenantId, companyId: auth.companyId };
-    const docs = await this.db.role.find(filter).lean();
+    const docs = await this.db.role.find(this.scope(auth)).lean();
     return toDtoArray(docs);
   }
 
@@ -45,19 +45,30 @@ export class RbacService {
     return toDto(doc.toObject());
   }
 
-  async assignRole(userId: string, roleId: string) {
+  async assignRole(auth: AuthContext, userId: string, roleId: string) {
     if (!Types.ObjectId.isValid(roleId) || !Types.ObjectId.isValid(userId)) {
-      // callers pass raw ids; leave validation to the caller's service.
-      // We still guard against malformed ids to avoid CastErrors later.
       throw new Error('Invalid roleId or userId');
     }
-    // Idempotent: pushes the role only if not already present.
+
+    const role = await this.db.role.findOne({ _id: roleId, ...this.scope(auth) }).lean();
+    if (!role) throw new NotFoundException('Role not found in your scope');
+
+    // Global/static system roles may be assigned across companies within
+    // the tenant, but never across tenants. Tenant/company roles must
+    // match the caller's company when the caller is company-scoped.
+    const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth) }).lean();
+    if (!user) throw new NotFoundException('User not found in your scope');
+
+    if (!auth.crossCompany && role.companyId !== auth.companyId) {
+      throw new ForbiddenException('Role out of scope for this user');
+    }
+
     const doc = await this.db.user.findOneAndUpdate(
-      { _id: userId, roleIds: { $ne: roleId } },
+      { _id: userId, ...this.scope(auth), roleIds: { $ne: roleId } },
       { $push: { roleIds: roleId } },
       { new: true },
     ).lean();
-    if (!doc) throw new Error('User not found or role already assigned');
+    if (!doc) throw new Error('Role already assigned');
     return toDto(doc);
   }
 }
