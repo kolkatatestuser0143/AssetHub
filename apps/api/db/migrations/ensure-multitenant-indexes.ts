@@ -2,9 +2,12 @@ import 'dotenv/config';
 import mongoose from 'mongoose';
 
 const uri = process.env.MONGODB_URI ?? process.env.DATABASE_URL;
-if (!uri) throw new Error('MONGODB_URI or DATABASE_URL must be configured');
 
 async function main() {
+  if (!uri) {
+    throw new Error('MONGODB_URI or DATABASE_URL must be configured');
+  }
+
   await mongoose.connect(uri);
   const db = mongoose.connection.db;
   if (!db) throw new Error('MongoDB database handle unavailable');
@@ -18,13 +21,15 @@ async function main() {
     (index) => index.name === 'assetId_1' && index.unique === true,
   );
 
-  if (legacy) {
+  if (legacy?.name) {
     await collection.dropIndex(legacy.name);
     console.log(`Dropped legacy index ${legacy.name}`);
   }
 
   const refreshed = await collection.listIndexes().toArray();
-  const scoped = refreshed.find((index) => index.name === 'tenantId_1_companyId_1_assetId_1');
+  const scoped = refreshed.find(
+    (index) => index.name === 'tenantId_1_companyId_1_assetId_1',
+  );
 
   if (!scoped) {
     await collection.createIndex(
