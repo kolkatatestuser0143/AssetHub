@@ -9,6 +9,8 @@ import { AuthService } from './modules/auth/auth.service';
 
 import { AssetsController } from './modules/assets/assets.controller';
 import { AssetsService } from './modules/assets/assets.service';
+import { WarrantyController } from './modules/assets/warranty.controller';
+import { WarrantyService } from './modules/assets/warranty.service';
 
 import { TenancyController } from './modules/tenancy/tenancy.controller';
 import { TenancyService } from './modules/tenancy/tenancy.service';
@@ -35,11 +37,12 @@ import { SessionService } from './modules/auth/session.service';
     }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
   ],
-  controllers: [AuthController, AssetsController, TenancyController, RbacController, IdentityController],
+  controllers: [AuthController, AssetsController, WarrantyController, TenancyController, RbacController, IdentityController],
   providers: [
     MongooseDatabaseService,
     AuthService,
     AssetsService,
+    WarrantyService,
     TenancyService,
     RbacService,
     IdentityService,
