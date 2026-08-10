@@ -1,12 +1,15 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 import { AuthContext } from '../../common/guards/tenant-context.guard';
+import { TenantScopedRepository } from '../../common/tenant-scoped.repository';
 import { AssetLifecycleState } from '../../common/enums';
 import { toDto, toDtoArray } from '../../common/mongoose.utils';
 
 @Injectable()
-export class AssetsService {
-  constructor(private readonly db: MongooseDatabaseService) {}
+export class AssetsService extends TenantScopedRepository {
+  constructor(private readonly db: MongooseDatabaseService) {
+    super();
+  }
 
   async listAssets(auth: AuthContext) {
     const docs = await this.db.asset
@@ -18,7 +21,7 @@ export class AssetsService {
 
   async listAssetTypes(auth: AuthContext) {
     const docs = await this.db.assetType
-      .find({ companyId: auth.companyId })
+      .find(this.scope(auth))
       .lean();
     return toDtoArray(docs);
   }
@@ -126,6 +129,8 @@ export class AssetsService {
     // history (architecture doc §12) — every transition writes here,
     // nowhere else maintains a separate "history" table.
     await this.db.assetAuditEvent.create({
+      tenantId: auth.tenantId,
+      companyId: auth.companyId,
       assetId: assetId,
       fromState: before.status as AssetLifecycleState,
       toState,
@@ -135,11 +140,5 @@ export class AssetsService {
     });
 
     return { ok: true };
-  }
-
-  private scope(auth: AuthContext): { tenantId: string; companyId?: string } {
-    return auth.crossCompany
-      ? { tenantId: auth.tenantId }
-      : { tenantId: auth.tenantId, companyId: auth.companyId };
   }
 }
