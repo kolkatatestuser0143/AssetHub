@@ -7,6 +7,7 @@
     "start:dev": "nest start --watch",
     "start:worker": "ts-node src/queue/worker.main.ts",
     "db:seed": "ts-node db/seed.ts",
+    "db:migrate:indexes": "ts-node db/migrations/ensure-multitenant-indexes.ts",
     "test": "jest",
     "test:security": "jest --config jest.security.config.js --runInBand"
   },
@@ -35,9 +36,7 @@
     "@nestjs/testing": "^10.4.0",
     "@types/jest": "^29.5.12",
     "@types/node": "^22.5.0",
-    "jest": "^29.7.0",
     "ts-jest": "^29.2.5",
-    "ts-node": "^10.9.2",
     "typescript": "^5.5.4"
   }
 }
