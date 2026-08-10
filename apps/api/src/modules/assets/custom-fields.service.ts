@@ -25,6 +25,7 @@ export class CustomFieldsService extends TenantScopedRepository {
     }
     try {
       const doc = await this.db.customFieldDefinition.create({
+        tenantId: auth.tenantId,
         companyId: auth.companyId,
         key: normalizedKey,
         label: label.trim(),
