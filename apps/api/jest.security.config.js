@@ -1,10 +1,10 @@
 module.exports = {
   rootDir: '.',
-  testMatch: ['<rootDir>/test/**/*.spec.ts'], // picks up both tenant-isolation.spec.ts and identity.spec.ts
+  testMatch: ['<rootDir>/test/**/*.spec.ts'],
   transform: { '^.+\\.ts$': 'ts-jest' },
   testEnvironment: 'node',
-  // Requires MONGODB_URI to point at a DISPOSABLE test database —
-  // the suite creates and deletes real tenants/companies/users.
-  // Not run against the dev database; use a separate DB name, e.g.
-  // .../itam_test.
+  setupFiles: ['<rootDir>/test/security/jest.security.setup.ts'],
+  // The setup file loads apps/api/.env, configures deterministic DNS, and
+  // points MONGODB_URI at a disposable *_test database. Security tests must
+  // never run against the normal development database.
 };
