@@ -35,7 +35,9 @@ export class AssetsService extends TenantScopedRepository {
 
   async createAsset(auth: AuthContext, assetTypeId: string, fields: Record<string, unknown>) {
     const assetType = await this.db.assetType.findOne({ _id: assetTypeId, companyId: auth.companyId }).lean();
-    if (!assetType) throw new NotFoundException('Asset type not found in your company');
+    if (!assetType) {
+      throw new ForbiddenException('Asset type does not belong to your company');
+    }
 
     const locationId = this.readOptionalId(fields.locationId);
     const departmentId = this.readOptionalId(fields.departmentId);
