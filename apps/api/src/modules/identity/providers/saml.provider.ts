@@ -3,54 +3,52 @@ import { IdentityProvider, NormalizedIdentity } from '../identity-provider.inter
 import { IdentitySecurityCacheService } from '../identity-security-cache.service';
 
 export interface SamlConfig {
-  entryPoint: string; // IdP SSO URL
-  issuer: string; // our SP entity ID
-  cert: string; // IdP's signing certificate (PEM) — REQUIRED, never skip
+  entryPoint: string;
+  issuer: string;
+  cert: string;
   callbackUrl: string;
   attributeMapping: Record<string, string>;
 }
 
-/**
- * @node-saml/node-saml does the actual signature/audience/issuer
- * validation and clock-skew handling — that is exactly the kind of
- * crypto logic that must come from a maintained library, not be
- * reimplemented here. This class's job is orchestration + the replay
- * check on top, not the cryptography itself.
- */
 export class SamlProvider implements IdentityProvider {
-  private saml: SAML;
+  private saml: SAML | null = null;
 
   constructor(
     private readonly config: SamlConfig,
     private readonly companyId: string,
     private readonly cache: IdentitySecurityCacheService,
-  ) {
+  ) {}
+
+  private getSaml(): SAML {
+    if (this.saml) return this.saml;
+    if (!this.config.cert) {
+      throw new Error('IdP signing certificate is required');
+    }
+    if (!this.config.entryPoint) {
+      throw new Error('entryPoint (IdP SSO URL) is required');
+    }
+
     this.saml = new SAML({
-      entryPoint: config.entryPoint,
-      issuer: config.issuer,
-      cert: config.cert,
-      callbackUrl: config.callbackUrl,
-      wantAssertionsSigned: true, // reject unsigned assertions — non-negotiable
+      entryPoint: this.config.entryPoint,
+      issuer: this.config.issuer,
+      cert: this.config.cert,
+      callbackUrl: this.config.callbackUrl,
+      wantAssertionsSigned: true,
       wantAuthnResponseSigned: true,
     });
+    return this.saml;
   }
 
   async getAuthorizationUrl(): Promise<string> {
-    return this.saml.getAuthorizeUrlAsync('', '', {});
+    return this.getSaml().getAuthorizeUrlAsync('', '', {});
   }
 
   async handleCallback(params: { SAMLResponse: string }): Promise<NormalizedIdentity> {
-    // validatePostResponseAsync verifies the signature against
-    // config.cert, checks audience/issuer/destination, and enforces
-    // the assertion's NotBefore/NotOnOrAfter window — we do NOT
-    // hand-roll any of that here.
-    const { profile } = await this.saml.validatePostResponseAsync({ SAMLResponse: params.SAMLResponse });
+    const { profile } = await this.getSaml().validatePostResponseAsync({ SAMLResponse: params.SAMLResponse });
     if (!profile) {
       throw new Error('SAML response produced no profile — rejected');
     }
 
-    // Replay protection: an assertion ID must only ever be accepted
-    // once, within its validity window (architecture doc §8).
     const assertionId = (profile as any).inResponseTo ?? (profile as any).sessionIndex ?? profile.nameID;
     const firstUse = await this.cache.setOnce(`saml-assertion:${this.companyId}:${assertionId}`, 300);
     if (!firstUse) {
