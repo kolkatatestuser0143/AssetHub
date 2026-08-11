@@ -1,4 +1,3 @@
-import { Injectable } from '@nestjs/common';
 import { Issuer, generators, Client } from 'openid-client';
 import { IdentityProvider, NormalizedIdentity } from '../identity-provider.interface';
 import { IdentitySecurityCacheService } from '../identity-security-cache.service';
@@ -8,16 +7,9 @@ export interface OidcConfig {
   clientId: string;
   clientSecret: string;
   redirectUri: string;
-  // providerAttr -> internalField, e.g. { "given_name": "firstName" }
   attributeMapping: Record<string, string>;
 }
 
-/**
- * State, nonce, AND PKCE on every flow — even for confidential
- * clients — is deliberate defense-in-depth (architecture doc §8), not
- * an OIDC requirement we're relaxing for convenience. Do not remove
- * any of the three to "simplify" this later.
- */
 export class OidcProvider implements IdentityProvider {
   private client: Client | null = null;
 
@@ -46,36 +38,27 @@ export class OidcProvider implements IdentityProvider {
     const codeVerifier = generators.codeVerifier();
     const codeChallenge = generators.codeChallenge(codeVerifier);
 
-    // Each value single-use, keyed by state, short TTL — the callback
-    // must present the matching state to retrieve nonce/verifier at all.
     await this.cache.storeValue(
       `oidc:${this.companyId}:${state}`,
       JSON.stringify({ nonce, codeVerifier }),
-      600, // 10 minutes — generous enough for a login flow, no more
+      600,
     );
 
     return client.authorizationUrl({
-      scope: 'openid email profile',
-      state,
-      nonce,
-      code_challenge: codeChallenge,
-      code_challenge_method: 'S256',
+      scope: 'openid email profile', state, nonce,
+      code_challenge: codeChallenge, code_challenge_method: 'S256',
     });
   }
 
   async handleCallback(params: { code: string; state: string }): Promise<NormalizedIdentity> {
-    const client = await this.getClient();
-
+    // Reject forged/expired state before any network discovery or token exchange.
     const cached = await this.cache.takeValue(`oidc:${this.companyId}:${params.state}`);
     if (!cached) {
       throw new Error('Invalid or expired OIDC state — possible CSRF or replay attempt');
     }
     const { nonce, codeVerifier } = JSON.parse(cached);
 
-    // openid-client validates: state match (implicitly, via us keying
-    // the cache by it), nonce match, ID token signature, issuer,
-    // audience, and expiry — this is exactly the validation that must
-    // NOT be hand-rolled.
+    const client = await this.getClient();
     const tokenSet = await client.callback(this.config.redirectUri, params, {
       state: params.state,
       nonce,
