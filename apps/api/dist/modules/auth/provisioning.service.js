@@ -18,11 +18,11 @@ let ProvisioningService = class ProvisioningService {
     }
     async upsertFromIdentity(companyId, tenantId, identity) {
         const existing = await this.db.user
-            .findOne({ companyId, externalScimId: identity.externalId })
+            .findOne({ companyId, tenantId, externalScimId: identity.externalId })
             .lean();
         if (existing) {
             const doc = await this.db.user
-                .findOneAndUpdate({ _id: existing._id }, {
+                .findOneAndUpdate({ _id: existing._id, companyId, tenantId }, {
                 $set: {
                     email: identity.email,
                     firstName: identity.firstName ?? existing.firstName,
@@ -32,10 +32,12 @@ let ProvisioningService = class ProvisioningService {
                 .lean();
             return doc;
         }
-        const byEmail = await this.db.user.findOne({ email: identity.email }).lean();
+        const byEmail = await this.db.user
+            .findOne({ email: identity.email, tenantId, companyId })
+            .lean();
         if (byEmail) {
             const doc = await this.db.user
-                .findOneAndUpdate({ _id: byEmail._id }, { $set: { externalScimId: identity.externalId } }, { new: true })
+                .findOneAndUpdate({ _id: byEmail._id, tenantId, companyId }, { $set: { externalScimId: identity.externalId } }, { new: true })
                 .lean();
             return doc;
         }

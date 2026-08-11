@@ -16,6 +16,10 @@ const auth_controller_1 = require("./modules/auth/auth.controller");
 const auth_service_1 = require("./modules/auth/auth.service");
 const assets_controller_1 = require("./modules/assets/assets.controller");
 const assets_service_1 = require("./modules/assets/assets.service");
+const warranty_controller_1 = require("./modules/assets/warranty.controller");
+const warranty_service_1 = require("./modules/assets/warranty.service");
+const custom_fields_controller_1 = require("./modules/assets/custom-fields.controller");
+const custom_fields_service_1 = require("./modules/assets/custom-fields.service");
 const tenancy_controller_1 = require("./modules/tenancy/tenancy.controller");
 const tenancy_service_1 = require("./modules/tenancy/tenancy.service");
 const rbac_controller_1 = require("./modules/rbac/rbac.controller");
@@ -38,11 +42,21 @@ exports.AppModule = AppModule = __decorate([
             }),
             throttler_1.ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
         ],
-        controllers: [auth_controller_1.AuthController, assets_controller_1.AssetsController, tenancy_controller_1.TenancyController, rbac_controller_1.RbacController, identity_controller_1.IdentityController],
+        controllers: [
+            auth_controller_1.AuthController,
+            assets_controller_1.AssetsController,
+            warranty_controller_1.WarrantyController,
+            custom_fields_controller_1.CustomFieldsController,
+            tenancy_controller_1.TenancyController,
+            rbac_controller_1.RbacController,
+            identity_controller_1.IdentityController,
+        ],
         providers: [
             mongoose_database_service_1.MongooseDatabaseService,
             auth_service_1.AuthService,
             assets_service_1.AssetsService,
+            warranty_service_1.WarrantyService,
+            custom_fields_service_1.CustomFieldsService,
             tenancy_service_1.TenancyService,
             rbac_service_1.RbacService,
             identity_service_1.IdentityService,

@@ -57,13 +57,7 @@ let SessionService = class SessionService {
     }
     async issueSession(userId, ip, userAgent) {
         const rawUser = await this.db.findByIdOrThrow(this.db.user, userId, 'User');
-        const permissions = await this.resolvePermissions(rawUser.roleIds ?? []);
-        const accessToken = this.jwt.sign({
-            sub: rawUser.id,
-            tenantId: rawUser.tenantId,
-            companyId: rawUser.companyId,
-            permissions,
-        }, { expiresIn: ACCESS_TOKEN_TTL });
+        const permissions = await this.resolvePermissions(rawUser.tenantId, rawUser.companyId, rawUser.roleIds ?? []);
         const rawRefreshToken = crypto.randomBytes(48).toString('hex');
         const session = await this.db.session.create({
             userId: rawUser.id,
@@ -73,10 +67,18 @@ let SessionService = class SessionService {
             lastSeenAt: new Date(),
             expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
         });
-        return { accessToken, refreshToken: rawRefreshToken, sessionId: String(session._id) };
+        const sessionId = String(session._id);
+        const accessToken = this.jwt.sign({
+            sub: rawUser.id,
+            sessionId,
+            tenantId: rawUser.tenantId,
+            companyId: rawUser.companyId,
+            permissions,
+        }, { expiresIn: ACCESS_TOKEN_TTL });
+        return { accessToken, refreshToken: rawRefreshToken, sessionId };
     }
-    async revokeSession(sessionId, reason) {
-        await this.db.session.updateOne({ _id: sessionId }, { $set: { revokedAt: new Date(), revokedReason: reason } });
+    async revokeSession(sessionId, userId, reason) {
+        await this.db.session.updateOne({ _id: sessionId, userId, revokedAt: { $exists: false } }, { $set: { revokedAt: new Date(), revokedReason: reason } });
     }
     async findByRefreshToken(rawRefreshToken) {
         const doc = await this.db.session
@@ -87,11 +89,15 @@ let SessionService = class SessionService {
     hashToken(raw) {
         return crypto.createHash('sha256').update(raw).digest('hex');
     }
-    async resolvePermissions(roleIds) {
+    async resolvePermissions(tenantId, companyId, roleIds) {
         if (roleIds.length === 0)
             return [];
         const roles = await this.db.role
-            .find({ _id: { $in: roleIds } })
+            .find({
+            _id: { $in: roleIds },
+            tenantId,
+            $or: [{ companyId }, { companyId: null }],
+        })
             .lean();
         const perms = new Set();
         for (const role of roles) {

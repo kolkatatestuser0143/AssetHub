@@ -13,9 +13,11 @@ exports.RbacService = void 0;
 const common_1 = require("@nestjs/common");
 const mongoose_1 = require("mongoose");
 const mongoose_database_service_1 = require("../../common/mongoose-database.service");
+const tenant_scoped_repository_1 = require("../../common/tenant-scoped.repository");
 const mongoose_utils_1 = require("../../common/mongoose.utils");
-let RbacService = class RbacService {
+let RbacService = class RbacService extends tenant_scoped_repository_1.TenantScopedRepository {
     constructor(db) {
+        super();
         this.db = db;
     }
     async listPermissions() {
@@ -23,10 +25,7 @@ let RbacService = class RbacService {
         return (0, mongoose_utils_1.toDtoArray)(docs);
     }
     async listRoles(auth) {
-        const filter = auth.crossCompany
-            ? { tenantId: auth.tenantId }
-            : { tenantId: auth.tenantId, companyId: auth.companyId };
-        const docs = await this.db.role.find(filter).lean();
+        const docs = await this.db.role.find(this.scope(auth)).lean();
         return (0, mongoose_utils_1.toDtoArray)(docs);
     }
     async createRole(auth, name, permissionKeys) {
@@ -45,13 +44,22 @@ let RbacService = class RbacService {
         });
         return (0, mongoose_utils_1.toDto)(doc.toObject());
     }
-    async assignRole(userId, roleId) {
+    async assignRole(auth, userId, roleId) {
         if (!mongoose_1.Types.ObjectId.isValid(roleId) || !mongoose_1.Types.ObjectId.isValid(userId)) {
             throw new Error('Invalid roleId or userId');
         }
-        const doc = await this.db.user.findOneAndUpdate({ _id: userId, roleIds: { $ne: roleId } }, { $push: { roleIds: roleId } }, { new: true }).lean();
+        const role = await this.db.role.findOne({ _id: roleId, ...this.scope(auth) }).lean();
+        if (!role)
+            throw new common_1.NotFoundException('Role not found in your scope');
+        const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth) }).lean();
+        if (!user)
+            throw new common_1.NotFoundException('User not found in your scope');
+        if (!auth.crossCompany && role.companyId !== auth.companyId) {
+            throw new common_1.ForbiddenException('Role out of scope for this user');
+        }
+        const doc = await this.db.user.findOneAndUpdate({ _id: userId, ...this.scope(auth), roleIds: { $ne: roleId } }, { $push: { roleIds: roleId } }, { new: true }).lean();
         if (!doc)
-            throw new Error('User not found or role already assigned');
+            throw new Error('Role already assigned');
         return (0, mongoose_utils_1.toDto)(doc);
     }
 };

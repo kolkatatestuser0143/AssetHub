@@ -133,6 +133,7 @@ exports.Session = Session = __decorate([
     (0, mongoose_1.Schema)({ collection: 'sessions', timestamps: true, versionKey: false })
 ], Session);
 exports.SessionSchema = mongoose_1.SchemaFactory.createForClass(Session);
+exports.SessionSchema.index({ userId: 1, revokedAt: 1, expiresAt: 1 });
 exports.LoginHistoryModelName = 'LoginHistory';
 let LoginHistory = class LoginHistory {
 };

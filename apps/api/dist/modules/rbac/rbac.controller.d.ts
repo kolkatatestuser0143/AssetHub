@@ -9,6 +9,6 @@ export declare class RbacController {
     listPermissions(): Promise<any[]>;
     listRoles(req: any): Promise<any[]>;
     createRole(dto: CreateRoleDto, req: any): Promise<any>;
-    assignRole(roleId: string, userId: string): Promise<any>;
+    assignRole(roleId: string, userId: string, req: any): Promise<any>;
 }
 export {};

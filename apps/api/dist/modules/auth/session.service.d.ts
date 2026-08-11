@@ -9,7 +9,7 @@ export declare class SessionService {
         refreshToken: string;
         sessionId: string;
     }>;
-    revokeSession(sessionId: string, reason: string): Promise<void>;
+    revokeSession(sessionId: string, userId: string, reason: string): Promise<void>;
     findByRefreshToken(rawRefreshToken: string): Promise<any>;
     hashToken(raw: string): string;
     private resolvePermissions;

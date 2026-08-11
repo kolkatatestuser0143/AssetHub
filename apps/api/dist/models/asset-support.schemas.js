@@ -36,7 +36,15 @@ let Warranty = class Warranty {
 };
 exports.Warranty = Warranty;
 __decorate([
-    (0, mongoose_1.Prop)({ required: true, unique: true }),
+    (0, mongoose_1.Prop)({ required: true, index: true }),
+    __metadata("design:type", String)
+], Warranty.prototype, "tenantId", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: true, index: true }),
+    __metadata("design:type", String)
+], Warranty.prototype, "companyId", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: true, index: true }),
     __metadata("design:type", String)
 ], Warranty.prototype, "assetId", void 0);
 __decorate([
@@ -51,10 +59,15 @@ exports.Warranty = Warranty = __decorate([
     (0, mongoose_1.Schema)({ collection: 'warranties', timestamps: true, versionKey: false })
 ], Warranty);
 exports.WarrantySchema = mongoose_1.SchemaFactory.createForClass(Warranty);
+exports.WarrantySchema.index({ companyId: 1, assetId: 1 }, { unique: true });
 exports.CustomFieldDefModelName = 'CustomFieldDefinition';
 let CustomFieldDefinition = class CustomFieldDefinition {
 };
 exports.CustomFieldDefinition = CustomFieldDefinition;
+__decorate([
+    (0, mongoose_1.Prop)({ required: true, index: true }),
+    __metadata("design:type", String)
+], CustomFieldDefinition.prototype, "tenantId", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ required: true, index: true }),
     __metadata("design:type", String)
@@ -81,7 +94,15 @@ let AssetCustomFieldValue = class AssetCustomFieldValue {
 };
 exports.AssetCustomFieldValue = AssetCustomFieldValue;
 __decorate([
-    (0, mongoose_1.Prop)({ required: true, unique: true }),
+    (0, mongoose_1.Prop)({ required: true, index: true }),
+    __metadata("design:type", String)
+], AssetCustomFieldValue.prototype, "tenantId", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: true, index: true }),
+    __metadata("design:type", String)
+], AssetCustomFieldValue.prototype, "companyId", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: true, index: true }),
     __metadata("design:type", String)
 ], AssetCustomFieldValue.prototype, "assetId", void 0);
 __decorate([
@@ -92,10 +113,19 @@ exports.AssetCustomFieldValue = AssetCustomFieldValue = __decorate([
     (0, mongoose_1.Schema)({ collection: 'asset_custom_field_values', timestamps: true, versionKey: false })
 ], AssetCustomFieldValue);
 exports.AssetCustomFieldValueSchema = mongoose_1.SchemaFactory.createForClass(AssetCustomFieldValue);
+exports.AssetCustomFieldValueSchema.index({ tenantId: 1, companyId: 1, assetId: 1 }, { unique: true });
 exports.AssetDocumentModelName = 'AssetDocument';
 let AssetDocumentMeta = class AssetDocumentMeta {
 };
 exports.AssetDocumentMeta = AssetDocumentMeta;
+__decorate([
+    (0, mongoose_1.Prop)({ required: true, index: true }),
+    __metadata("design:type", String)
+], AssetDocumentMeta.prototype, "tenantId", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: true, index: true }),
+    __metadata("design:type", String)
+], AssetDocumentMeta.prototype, "companyId", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ required: true, index: true }),
     __metadata("design:type", String)
@@ -108,8 +138,18 @@ __decorate([
     (0, mongoose_1.Prop)({ required: true }),
     __metadata("design:type", String)
 ], AssetDocumentMeta.prototype, "fileName", void 0);
+__decorate([
+    (0, mongoose_1.Prop)(),
+    __metadata("design:type", String)
+], AssetDocumentMeta.prototype, "contentType", void 0);
+__decorate([
+    (0, mongoose_1.Prop)(),
+    __metadata("design:type", Number)
+], AssetDocumentMeta.prototype, "sizeBytes", void 0);
 exports.AssetDocumentMeta = AssetDocumentMeta = __decorate([
     (0, mongoose_1.Schema)({ collection: 'asset_documents', timestamps: true, versionKey: false })
 ], AssetDocumentMeta);
 exports.AssetDocumentSchema = mongoose_1.SchemaFactory.createForClass(AssetDocumentMeta);
+exports.AssetDocumentSchema.index({ tenantId: 1, companyId: 1, assetId: 1 });
+exports.AssetDocumentSchema.index({ tenantId: 1, companyId: 1, s3Key: 1 }, { unique: true });
 //# sourceMappingURL=asset-support.schemas.js.map

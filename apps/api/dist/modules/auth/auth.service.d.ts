@@ -15,6 +15,6 @@ export declare class AuthService {
         refreshToken: string;
         sessionId: string;
     }>;
-    logout(sessionId: string): Promise<void>;
+    logout(sessionId: string, userId: string): Promise<void>;
     private recordLoginAttempt;
 }

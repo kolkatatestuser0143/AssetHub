@@ -2,6 +2,7 @@ import { CanActivate, ExecutionContext } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 export interface AuthContext {
     userId: string;
+    sessionId: string;
     tenantId: string;
     companyId: string;
     crossCompany: boolean;

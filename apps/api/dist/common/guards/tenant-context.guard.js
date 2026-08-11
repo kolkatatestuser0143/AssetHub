@@ -24,8 +24,12 @@ let TenantContextGuard = class TenantContextGuard {
         }
         try {
             const payload = this.jwt.verify(authHeader.slice(7));
+            if (!payload.sub || !payload.sessionId || !payload.tenantId || !payload.companyId) {
+                throw new common_1.UnauthorizedException('Invalid access token claims');
+            }
             const authContext = {
                 userId: payload.sub,
+                sessionId: payload.sessionId,
                 tenantId: payload.tenantId,
                 companyId: payload.companyId,
                 crossCompany: !!payload.crossCompany,
@@ -34,7 +38,9 @@ let TenantContextGuard = class TenantContextGuard {
             req.authContext = authContext;
             return true;
         }
-        catch {
+        catch (error) {
+            if (error instanceof common_1.UnauthorizedException)
+                throw error;
             throw new common_1.UnauthorizedException('Invalid or expired access token');
         }
     }

@@ -28,7 +28,7 @@ let AuthController = class AuthController {
         return this.authService.refresh(dto.refreshToken, req.ip, req.headers['user-agent'] ?? '');
     }
     async logout(req) {
-        await this.authService.logout(req.authContext.sessionId);
+        await this.authService.logout(req.authContext.sessionId, req.authContext.userId);
         return { ok: true };
     }
 };
@@ -52,7 +52,6 @@ __decorate([
 ], AuthController.prototype, "refresh", null);
 __decorate([
     (0, common_1.Post)('logout'),
-    (0, common_1.UseGuards)(),
     __param(0, (0, common_1.Req)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),

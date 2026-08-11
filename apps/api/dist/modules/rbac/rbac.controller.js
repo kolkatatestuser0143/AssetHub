@@ -44,8 +44,8 @@ let RbacController = class RbacController {
     createRole(dto, req) {
         return this.rbac.createRole(req.authContext, dto.name, dto.permissionKeys);
     }
-    assignRole(roleId, userId) {
-        return this.rbac.assignRole(userId, roleId);
+    assignRole(roleId, userId, req) {
+        return this.rbac.assignRole(req.authContext, userId, roleId);
     }
 };
 exports.RbacController = RbacController;
@@ -78,8 +78,9 @@ __decorate([
     (0, require_permission_decorator_1.RequirePermission)('role:write'),
     __param(0, (0, common_1.Param)('roleId')),
     __param(1, (0, common_1.Param)('userId')),
+    __param(2, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:paramtypes", [String, String, Object]),
     __metadata("design:returntype", void 0)
 ], RbacController.prototype, "assignRole", null);
 exports.RbacController = RbacController = __decorate([

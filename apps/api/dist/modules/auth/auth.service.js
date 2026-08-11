@@ -77,11 +77,11 @@ let AuthService = class AuthService {
         if (!session || session.revokedAt || session.expiresAt < new Date()) {
             throw new common_1.UnauthorizedException('Invalid refresh token');
         }
-        await this.sessions.revokeSession(session.id, 'rotated');
+        await this.sessions.revokeSession(session.id, session.userId, 'rotated');
         return this.sessions.issueSession(session.userId, ip, userAgent);
     }
-    async logout(sessionId) {
-        await this.sessions.revokeSession(sessionId, 'user_logout');
+    async logout(sessionId, userId) {
+        await this.sessions.revokeSession(sessionId, userId, 'user_logout');
     }
     async recordLoginAttempt(userId, success, ip, userAgent, reason) {
         if (!userId)

@@ -133,6 +133,14 @@ exports.AssetAuditEvent = AssetAuditEvent;
 __decorate([
     (0, mongoose_1.Prop)({ required: true, index: true }),
     __metadata("design:type", String)
+], AssetAuditEvent.prototype, "tenantId", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: true, index: true }),
+    __metadata("design:type", String)
+], AssetAuditEvent.prototype, "companyId", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: true, index: true }),
+    __metadata("design:type", String)
 ], AssetAuditEvent.prototype, "assetId", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ enum: enums_1.AssetLifecycleState }),
@@ -159,6 +167,7 @@ exports.AssetAuditEvent = AssetAuditEvent = __decorate([
 ], AssetAuditEvent);
 exports.AssetAuditEventSchema = mongoose_1.SchemaFactory.createForClass(AssetAuditEvent);
 exports.AssetAuditEventSchema.index({ assetId: 1, occurredAt: -1 });
+exports.AssetAuditEventSchema.index({ tenantId: 1, companyId: 1, occurredAt: -1 });
 exports.AssetAssignmentModelName = 'AssetAssignment';
 let AssetAssignment = class AssetAssignment {
 };
@@ -187,4 +196,6 @@ exports.AssetAssignment = AssetAssignment = __decorate([
     (0, mongoose_1.Schema)({ collection: 'asset_assignments', timestamps: true, versionKey: false })
 ], AssetAssignment);
 exports.AssetAssignmentSchema = mongoose_1.SchemaFactory.createForClass(AssetAssignment);
+exports.AssetAssignmentSchema.index({ assetId: 1 }, { unique: true, partialFilterExpression: { returnedAt: { $exists: false } } });
+exports.AssetAssignmentSchema.index({ assetId: 1, assignedAt: -1 });
 //# sourceMappingURL=asset.schemas.js.map

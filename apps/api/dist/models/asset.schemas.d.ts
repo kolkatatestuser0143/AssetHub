@@ -64,6 +64,8 @@ export declare const AssetSchema: import("mongoose").Schema<Asset, import("mongo
 export declare const AssetAuditEventModelName = "AssetAuditEvent";
 export type AssetAuditEventDocument = HydratedDocument<AssetAuditEvent>;
 export declare class AssetAuditEvent {
+    tenantId: string;
+    companyId: string;
     assetId: string;
     fromState?: string;
     toState: string;

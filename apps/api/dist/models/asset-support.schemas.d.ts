@@ -18,6 +18,8 @@ export declare const VendorSchema: import("mongoose").Schema<Vendor, import("mon
 export declare const WarrantyModelName = "Warranty";
 export type WarrantyDocument = HydratedDocument<Warranty>;
 export declare class Warranty {
+    tenantId: string;
+    companyId: string;
     assetId: string;
     provider?: string;
     expiresAt?: Date;
@@ -34,6 +36,7 @@ export declare const WarrantySchema: import("mongoose").Schema<Warranty, import(
 export declare const CustomFieldDefModelName = "CustomFieldDefinition";
 export type CustomFieldDefDocument = HydratedDocument<CustomFieldDefinition>;
 export declare class CustomFieldDefinition {
+    tenantId: string;
     companyId: string;
     key: string;
     label: string;
@@ -51,6 +54,8 @@ export declare const CustomFieldDefSchema: import("mongoose").Schema<CustomField
 export declare const AssetCustomFieldValueModelName = "AssetCustomFieldValue";
 export type AssetCustomFieldValueDocument = HydratedDocument<AssetCustomFieldValue>;
 export declare class AssetCustomFieldValue {
+    tenantId: string;
+    companyId: string;
     assetId: string;
     values: Record<string, string>;
 }
@@ -66,9 +71,13 @@ export declare const AssetCustomFieldValueSchema: import("mongoose").Schema<Asse
 export declare const AssetDocumentModelName = "AssetDocument";
 export type AssetDocumentDoc = HydratedDocument<AssetDocumentMeta>;
 export declare class AssetDocumentMeta {
+    tenantId: string;
+    companyId: string;
     assetId: string;
     s3Key: string;
     fileName: string;
+    contentType?: string;
+    sizeBytes?: number;
 }
 export declare const AssetDocumentSchema: import("mongoose").Schema<AssetDocumentMeta, import("mongoose").Model<AssetDocumentMeta, any, any, any, import("mongoose").Document<unknown, any, AssetDocumentMeta, any, {}> & AssetDocumentMeta & {
     _id: import("mongoose").Types.ObjectId;
