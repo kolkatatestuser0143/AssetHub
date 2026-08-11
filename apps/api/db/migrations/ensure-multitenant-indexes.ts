@@ -3,11 +3,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import mongoose from 'mongoose';
 
-// The monorepo may keep .env at either apps/api/.env or the workspace root.
-// Load existing files without overriding explicitly supplied process values.
+// Support the repository's normal env locations plus the local workspace
+// layout where the user keeps the env file as Downloads/itam.env.
+// Explicit process environment variables always take precedence.
 const envCandidates = [
   path.resolve(__dirname, '../../.env'),
   path.resolve(__dirname, '../../../.env'),
+  path.resolve(__dirname, '../../../../.env'),
+  path.resolve(__dirname, '../../../../../itam.env'),
   path.resolve(process.cwd(), '.env'),
 ];
 
