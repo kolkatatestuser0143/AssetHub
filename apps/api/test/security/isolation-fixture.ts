@@ -1,7 +1,6 @@
 import * as mongoose from 'mongoose';
 import * as argon2 from 'argon2';
 import { Model } from 'mongoose';
-
 import { TenantModelName, TenantSchema } from '../../src/models/tenancy.schemas';
 import { CompanyModelName, CompanySchema } from '../../src/models/tenancy.schemas';
 import { UserModelName, UserSchema } from '../../src/models/user.schemas';
@@ -20,13 +19,11 @@ export interface TestDb {
 export async function connectTestDb(): Promise<TestDb> {
   const uri = process.env.MONGODB_URI;
   if (!uri) throw new Error('MONGODB_URI must point at a disposable test database');
-  await mongoose.connect(uri);
 
-  // Use Mongoose's connection-level collection API rather than reaching
-  // through connection.db/getClient(), which can vary across runtime/module
-  // interop setups. The connection is fully open here because mongoose.connect
-  // has completed, so collection() is safe and uses the same native client.
-  const collection = (name: string) => mongoose.connection.collection(name);
+  // Use a dedicated connection for the security fixture. This avoids relying
+  // on the global mongoose connection, which can be undefined when Jest and
+  // the application resolve Mongoose through different module instances.
+  const connection = await mongoose.createConnection(uri).asPromise();
 
   const models: Array<[string, mongoose.Schema]> = [
     [TenantModelName, TenantSchema],
@@ -36,7 +33,7 @@ export async function connectTestDb(): Promise<TestDb> {
   ];
   const modelMap = new Map<string, Model<any>>();
   for (const [name, schema] of models) {
-    modelMap.set(name, mongoose.models[name] ?? mongoose.model(name, schema));
+    modelMap.set(name, connection.models[name] ?? connection.model(name, schema));
   }
 
   const db = new MongooseDatabaseService(
@@ -52,10 +49,12 @@ export async function connectTestDb(): Promise<TestDb> {
     null as any, null as any,
   );
 
+  const collection = (name: string) => connection.collection(name);
+
   return {
     mongoose,
     connect: async () => {},
-    disconnect: async () => mongoose.disconnect(),
+    disconnect: async () => connection.close(),
     clearTestCollections: async () => {
       await Promise.all([
         collection('asset_audit_events').deleteMany({}),
