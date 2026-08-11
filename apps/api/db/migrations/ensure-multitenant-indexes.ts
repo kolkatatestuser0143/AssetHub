@@ -1,10 +1,17 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'node:path';
 import mongoose from 'mongoose';
+
+// Load the API's .env explicitly. This makes the migration independent of
+// the directory from which npm/ts-node is invoked.
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 function getMongoUri(): string {
   const uri = process.env.MONGODB_URI ?? process.env.DATABASE_URL;
   if (!uri) {
-    throw new Error('MONGODB_URI or DATABASE_URL must be configured');
+    throw new Error(
+      'MONGODB_URI or DATABASE_URL must be configured in apps/api/.env or the process environment',
+    );
   }
   return uri;
 }
@@ -41,6 +48,8 @@ async function main() {
       { unique: true, name: 'tenantId_1_companyId_1_assetId_1' },
     );
     console.log('Created tenant-scoped unique asset custom field index');
+  } else {
+    console.log('Tenant-scoped unique asset custom field index already exists');
   }
 
   await mongoose.disconnect();
