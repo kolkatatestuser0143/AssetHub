@@ -76,7 +76,7 @@ export type AssetAssignmentDocument = HydratedDocument<AssetAssignment>;
 
 @Schema({ collection: 'asset_assignments', timestamps: true, versionKey: false })
 export class AssetAssignment {
-  @Prop({ required: true, index: true }) assetId!: string;
+  @Prop({ required: true }) assetId!: string;
   @Prop({ index: true }) userId?: string;
   @Prop({ default: Date.now }) assignedAt!: Date;
   @Prop() returnedAt?: Date;
