@@ -13,6 +13,7 @@ export declare class SamlProvider implements IdentityProvider {
     private readonly cache;
     private saml;
     constructor(config: SamlConfig, companyId: string, cache: IdentitySecurityCacheService);
+    private getSaml;
     getAuthorizationUrl(): Promise<string>;
     handleCallback(params: {
         SAMLResponse: string;

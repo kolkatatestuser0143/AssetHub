@@ -41,8 +41,9 @@ let AssetsService = class AssetsService extends tenant_scoped_repository_1.Tenan
     }
     async createAsset(auth, assetTypeId, fields) {
         const assetType = await this.db.assetType.findOne({ _id: assetTypeId, companyId: auth.companyId }).lean();
-        if (!assetType)
-            throw new common_1.NotFoundException('Asset type not found in your company');
+        if (!assetType) {
+            throw new common_1.ForbiddenException('Asset type does not belong to your company');
+        }
         const locationId = this.readOptionalId(fields.locationId);
         const departmentId = this.readOptionalId(fields.departmentId);
         const vendorId = this.readOptionalId(fields.vendorId);

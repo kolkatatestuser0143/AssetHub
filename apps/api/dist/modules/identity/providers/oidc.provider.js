@@ -29,20 +29,17 @@ class OidcProvider {
         const codeChallenge = openid_client_1.generators.codeChallenge(codeVerifier);
         await this.cache.storeValue(`oidc:${this.companyId}:${state}`, JSON.stringify({ nonce, codeVerifier }), 600);
         return client.authorizationUrl({
-            scope: 'openid email profile',
-            state,
-            nonce,
-            code_challenge: codeChallenge,
-            code_challenge_method: 'S256',
+            scope: 'openid email profile', state, nonce,
+            code_challenge: codeChallenge, code_challenge_method: 'S256',
         });
     }
     async handleCallback(params) {
-        const client = await this.getClient();
         const cached = await this.cache.takeValue(`oidc:${this.companyId}:${params.state}`);
         if (!cached) {
             throw new Error('Invalid or expired OIDC state — possible CSRF or replay attempt');
         }
         const { nonce, codeVerifier } = JSON.parse(cached);
+        const client = await this.getClient();
         const tokenSet = await client.callback(this.config.redirectUri, params, {
             state: params.state,
             nonce,

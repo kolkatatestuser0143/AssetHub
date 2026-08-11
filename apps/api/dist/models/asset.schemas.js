@@ -173,7 +173,7 @@ let AssetAssignment = class AssetAssignment {
 };
 exports.AssetAssignment = AssetAssignment;
 __decorate([
-    (0, mongoose_1.Prop)({ required: true, index: true }),
+    (0, mongoose_1.Prop)({ required: true }),
     __metadata("design:type", String)
 ], AssetAssignment.prototype, "assetId", void 0);
 __decorate([

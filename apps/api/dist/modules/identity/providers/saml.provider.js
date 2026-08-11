@@ -7,20 +7,32 @@ class SamlProvider {
         this.config = config;
         this.companyId = companyId;
         this.cache = cache;
+        this.saml = null;
+    }
+    getSaml() {
+        if (this.saml)
+            return this.saml;
+        if (!this.config.cert) {
+            throw new Error('IdP signing certificate is required');
+        }
+        if (!this.config.entryPoint) {
+            throw new Error('entryPoint (IdP SSO URL) is required');
+        }
         this.saml = new node_saml_1.SAML({
-            entryPoint: config.entryPoint,
-            issuer: config.issuer,
-            cert: config.cert,
-            callbackUrl: config.callbackUrl,
+            entryPoint: this.config.entryPoint,
+            issuer: this.config.issuer,
+            cert: this.config.cert,
+            callbackUrl: this.config.callbackUrl,
             wantAssertionsSigned: true,
             wantAuthnResponseSigned: true,
         });
+        return this.saml;
     }
     async getAuthorizationUrl() {
-        return this.saml.getAuthorizeUrlAsync('', '', {});
+        return this.getSaml().getAuthorizeUrlAsync('', '', {});
     }
     async handleCallback(params) {
-        const { profile } = await this.saml.validatePostResponseAsync({ SAMLResponse: params.SAMLResponse });
+        const { profile } = await this.getSaml().validatePostResponseAsync({ SAMLResponse: params.SAMLResponse });
         if (!profile) {
             throw new Error('SAML response produced no profile — rejected');
         }
