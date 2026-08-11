@@ -22,6 +22,11 @@ export async function connectTestDb(): Promise<TestDb> {
   if (!uri) throw new Error('MONGODB_URI must point at a disposable test database');
   await mongoose.connect(uri);
 
+  // Use the client-backed database handle instead of relying on the
+  // connection.db property. This remains stable across the Mongoose 6/7/8
+  // connection implementations used by the workspace.
+  const nativeDb = mongoose.connection.getClient().db(mongoose.connection.name);
+
   const models: Array<[string, mongoose.Schema]> = [
     [TenantModelName, TenantSchema],
     [CompanyModelName, CompanySchema],
@@ -52,12 +57,12 @@ export async function connectTestDb(): Promise<TestDb> {
     disconnect: async () => mongoose.disconnect(),
     clearTestCollections: async () => {
       await Promise.all([
-        mongoose.connection.db!.collection('asset_audit_events').deleteMany({}),
-        mongoose.connection.db!.collection('assets').deleteMany({}),
-        mongoose.connection.db!.collection('asset_types').deleteMany({}),
-        mongoose.connection.db!.collection('users').deleteMany({}),
-        mongoose.connection.db!.collection('companies').deleteMany({}),
-        mongoose.connection.db!.collection('tenants').deleteMany({}),
+        nativeDb.collection('asset_audit_events').deleteMany({}),
+        nativeDb.collection('assets').deleteMany({}),
+        nativeDb.collection('asset_types').deleteMany({}),
+        nativeDb.collection('users').deleteMany({}),
+        nativeDb.collection('companies').deleteMany({}),
+        nativeDb.collection('tenants').deleteMany({}),
       ]);
     },
     db,
