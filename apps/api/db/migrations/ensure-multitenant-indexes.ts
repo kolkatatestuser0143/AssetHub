@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import fs from 'node:fs';
 import path from 'node:path';
+import dns from 'node:dns';
 import mongoose from 'mongoose';
 
 // Support the repository's normal env locations plus the local workspace
@@ -30,8 +31,26 @@ function getMongoUri(): string {
   return uri;
 }
 
+function configureMongoDns(): void {
+  // Node on this Windows installation is resolving DNS through 127.0.0.1,
+  // where no DNS service is listening. Windows itself is correctly configured
+  // with Cloudflare/Google DNS, so use those resolvers for this migration.
+  // MONGODB_DNS_SERVERS can override the defaults when another environment
+  // requires different resolvers.
+  const servers = (process.env.MONGODB_DNS_SERVERS ?? '1.1.1.1,8.8.8.8')
+    .split(',')
+    .map((server) => server.trim())
+    .filter(Boolean);
+
+  if (servers.length > 0) {
+    dns.setServers(servers);
+  }
+}
+
 async function main() {
   const uri = getMongoUri();
+  configureMongoDns();
+
   await mongoose.connect(uri);
 
   const db = mongoose.connection.db;
