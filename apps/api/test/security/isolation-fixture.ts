@@ -4,7 +4,7 @@ import { Model } from 'mongoose';
 import { TenantModelName, TenantSchema } from '../../src/models/tenancy.schemas';
 import { CompanyModelName, CompanySchema } from '../../src/models/tenancy.schemas';
 import { UserModelName, UserSchema } from '../../src/models/user.schemas';
-import { AssetTypeModelName, AssetTypeSchema } from '../../src/models/asset.schemas';
+import { AssetModelName, AssetSchema, AssetTypeModelName, AssetTypeSchema } from '../../src/models/asset.schemas';
 import { MongooseDatabaseService } from '../../src/common/mongoose-database.service';
 import { AuthContext } from '../../src/common/guards/tenant-context.guard';
 
@@ -30,6 +30,7 @@ export async function connectTestDb(): Promise<TestDb> {
     [CompanyModelName, CompanySchema],
     [UserModelName, UserSchema],
     [AssetTypeModelName, AssetTypeSchema],
+    [AssetModelName, AssetSchema],
   ];
   const modelMap = new Map<string, Model<any>>();
   for (const [name, schema] of models) {
@@ -41,7 +42,8 @@ export async function connectTestDb(): Promise<TestDb> {
     null as any, null as any, null as any, null as any,
     modelMap.get(UserModelName)!, null as any, null as any,
     null as any, null as any, modelMap.get(AssetTypeModelName)!,
-    null as any, null as any, null as any,
+    modelMap.get(AssetModelName)!,
+    null as any, null as any,
     null as any, null as any, null as any, null as any, null as any,
     null as any, null as any, null as any,
     null as any,
