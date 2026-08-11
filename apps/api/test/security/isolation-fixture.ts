@@ -20,36 +20,60 @@ export async function connectTestDb(): Promise<TestDb> {
   const uri = process.env.MONGODB_URI;
   if (!uri) throw new Error('MONGODB_URI must point at a disposable test database');
 
-  // Use a dedicated connection for the security fixture. This avoids relying
-  // on the global mongoose connection, which can be undefined when Jest and
-  // the application resolve Mongoose through different module instances.
   const connection = await mongoose.createConnection(uri).asPromise();
 
-  const models: Array<[string, mongoose.Schema]> = [
-    [TenantModelName, TenantSchema],
-    [CompanyModelName, CompanySchema],
-    [UserModelName, UserSchema],
-    [AssetTypeModelName, AssetTypeSchema],
-    [AssetModelName, AssetSchema],
-  ];
-  const modelMap = new Map<string, Model<any>>();
-  for (const [name, schema] of models) {
-    modelMap.set(name, connection.models[name] ?? connection.model(name, schema));
-  }
+  const tenantModel = connection.models[TenantModelName] ?? connection.model(TenantModelName, TenantSchema);
+  const companyModel = connection.models[CompanyModelName] ?? connection.model(CompanyModelName, CompanySchema);
+  const userModel = connection.models[UserModelName] ?? connection.model(UserModelName, UserSchema);
+  const assetTypeModel = connection.models[AssetTypeModelName] ?? connection.model(AssetTypeModelName, AssetTypeSchema);
+  const assetModel = connection.models[AssetModelName] ?? connection.model(AssetModelName, AssetSchema);
 
+  // MongooseDatabaseService is production-shaped and intentionally exposes
+  // every model. The security fixture only needs a small subset, so the
+  // unused constructor slots are null while the models actually exercised by
+  // this suite are bound explicitly.
   const db = new MongooseDatabaseService(
-    modelMap.get(TenantModelName)!, modelMap.get(CompanyModelName)!,
-    null as any, null as any, null as any, null as any,
-    modelMap.get(UserModelName)!, null as any, null as any,
-    null as any, null as any, modelMap.get(AssetTypeModelName)!,
-    modelMap.get(AssetModelName)!,
-    null as any, null as any,
-    null as any, null as any, null as any, null as any, null as any,
-    null as any, null as any, null as any,
+    tenantModel,
+    companyModel,
     null as any,
-    null as any, null as any, null as any,
-    null as any, null as any,
+    null as any,
+    null as any,
+    null as any,
+    userModel,
+    null as any,
+    null as any,
+    null as any,
+    null as any,
+    assetTypeModel,
+    assetModel,
+    null as any,
+    null as any,
+    null as any,
+    null as any,
+    null as any,
+    null as any,
+    null as any,
+    null as any,
+    null as any,
+    null as any,
+    null as any,
+    null as any,
+    null as any,
+    null as any,
+    null as any,
+    null as any,
   );
+
+  // Keep this explicit even though the positional constructor above already
+  // supplies the model. It prevents a future constructor/model-order change
+  // from silently turning a security test into a null-model test.
+  Object.assign(db, {
+    tenant: tenantModel,
+    company: companyModel,
+    user: userModel,
+    assetType: assetTypeModel,
+    asset: assetModel,
+  });
 
   const collection = (name: string) => connection.collection(name);
 
