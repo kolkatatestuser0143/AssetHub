@@ -17,13 +17,6 @@ export interface TestDb {
   db: MongooseDatabaseService;
 }
 
-/**
- * Connects to the same MONGODB_URI the app uses (a dedicated test
- * database, e.g. `itam_test`, should be configured for test runs).
- * Builds the real Mongoose models (from the same schema files the app
- * uses) so the fixtures and assertions exercise the exact production
- * data shapes.
- */
 export async function connectTestDb(): Promise<TestDb> {
   const uri = process.env.MONGODB_URI;
   if (!uri) throw new Error('MONGODB_URI must point at a disposable test database');
@@ -41,20 +34,16 @@ export async function connectTestDb(): Promise<TestDb> {
   }
 
   const db = new MongooseDatabaseService(
-    modelMap.get(TenantModelName)!,
-    modelMap.get(CompanyModelName)!,
-    // businessUnit/plant/location/department
+    modelMap.get(TenantModelName)!, modelMap.get(CompanyModelName)!,
     null as any, null as any, null as any, null as any,
-    modelMap.get(UserModelName)!,
-    null as any, null as any, // session, loginHistory
-    null as any, null as any, // permission, role
-    modelMap.get(AssetTypeModelName)!,
-    null as any, null as any, null as any, // asset, assetAuditEvent, assetAssignment
-    null as any, null as any, null as any, null as any, null as any, // vendor..assetDocument
-    null as any, null as any, null as any, // identityProviderConfig, scimToken, scimSyncLog
-    null as any, // integrationInstance
-    null as any, null as any, null as any, // plan, subscription, entitlement
-    null as any, null as any, // auditEvent, platformAdminNote
+    modelMap.get(UserModelName)!, null as any, null as any,
+    null as any, null as any, modelMap.get(AssetTypeModelName)!,
+    null as any, null as any, null as any,
+    null as any, null as any, null as any, null as any, null as any,
+    null as any, null as any, null as any,
+    null as any,
+    null as any, null as any, null as any,
+    null as any, null as any,
   );
 
   return {
@@ -75,72 +64,33 @@ export async function connectTestDb(): Promise<TestDb> {
   };
 }
 
-/**
- * Creates two fully separate tenants (A and B), each with one company,
- * one user, and one asset type — the minimum needed to attempt a
- * cross-tenant read/write and prove it's blocked.
- */
 export async function seedTwoTenants(db: MongooseDatabaseService) {
   const suffix = Date.now();
-
   const tenantA = await db.tenant.create({ name: 'Tenant A', slug: `tenant-a-${suffix}` });
   const tenantB = await db.tenant.create({ name: 'Tenant B', slug: `tenant-b-${suffix}` });
-
   const companyA = await db.company.create({ tenantId: String(tenantA._id), name: 'Company A', code: 'AAA' });
   const companyB = await db.company.create({ tenantId: String(tenantB._id), name: 'Company B', code: 'BBB' });
-
   const passwordHash = await argon2.hash('TestPassword123!', { type: argon2.argon2id });
-  const userA = await db.user.create({
-    tenantId: String(tenantA._id),
-    companyId: String(companyA._id),
-    email: `user-a-${suffix}@example.com`,
-    passwordHash,
-    firstName: 'A',
-    lastName: 'User',
-  });
-  const userB = await db.user.create({
-    tenantId: String(tenantB._id),
-    companyId: String(companyB._id),
-    email: `user-b-${suffix}@example.com`,
-    passwordHash,
-    firstName: 'B',
-    lastName: 'User',
-  });
-
-  const assetTypeA = await db.assetType.create({
-    companyId: String(companyA._id),
-    name: 'Laptop',
-    numberingRule: { prefix: 'LAP', separator: '-', padding: 6, nextSequence: 1 },
-  });
-  const assetTypeB = await db.assetType.create({
-    companyId: String(companyB._id),
-    name: 'Laptop',
-    numberingRule: { prefix: 'LAP', separator: '-', padding: 6, nextSequence: 1 },
-  });
+  const userA = await db.user.create({ tenantId: String(tenantA._id), companyId: String(companyA._id), email: `user-a-${suffix}@example.com`, passwordHash, firstName: 'A', lastName: 'User' });
+  const userB = await db.user.create({ tenantId: String(tenantB._id), companyId: String(companyB._id), email: `user-b-${suffix}@example.com`, passwordHash, firstName: 'B', lastName: 'User' });
+  const assetTypeA = await db.assetType.create({ companyId: String(companyA._id), name: 'Laptop', numberingRule: { prefix: 'LAP', separator: '-', padding: 6, nextSequence: 1 } });
+  const assetTypeB = await db.assetType.create({ companyId: String(companyB._id), name: 'Laptop', numberingRule: { prefix: 'LAP', separator: '-', padding: 6, nextSequence: 1 } });
 
   const authA: AuthContext = {
-    userId: String(userA._id),
-    tenantId: String(tenantA._id),
-    companyId: String(companyA._id),
-    crossCompany: false,
+    userId: String(userA._id), sessionId: `test-session-a-${suffix}`,
+    tenantId: String(tenantA._id), companyId: String(companyA._id), crossCompany: false,
     permissions: ['asset:read', 'asset:write', 'company:read', 'company:write'],
   };
   const authB: AuthContext = {
-    userId: String(userB._id),
-    tenantId: String(tenantB._id),
-    companyId: String(companyB._id),
-    crossCompany: false,
+    userId: String(userB._id), sessionId: `test-session-b-${suffix}`,
+    tenantId: String(tenantB._id), companyId: String(companyB._id), crossCompany: false,
     permissions: ['asset:read', 'asset:write', 'company:read', 'company:write'],
   };
 
   return {
-    tenantA: { id: String(tenantA._id), _id: tenantA._id },
-    tenantB: { id: String(tenantB._id), _id: tenantB._id },
-    companyA: { id: String(companyA._id), _id: companyA._id },
-    companyB: { id: String(companyB._id), _id: companyB._id },
-    assetTypeA: { id: String(assetTypeA._id), _id: assetTypeA._id },
-    assetTypeB: { id: String(assetTypeB._id), _id: assetTypeB._id },
-    authA,
-    authB,
+    tenantA: { id: String(tenantA._id), _id: tenantA._id }, tenantB: { id: String(tenantB._id), _id: tenantB._id },
+    companyA: { id: String(companyA._id), _id: companyA._id }, companyB: { id: String(companyB._id), _id: companyB._id },
+    assetTypeA: { id: String(assetTypeA._id), _id: assetTypeA._id }, assetTypeB: { id: String(assetTypeB._id), _id: assetTypeB._id },
+    authA, authB,
   };
 }
