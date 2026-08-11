@@ -1,16 +1,27 @@
 import dotenv from 'dotenv';
+import fs from 'node:fs';
 import path from 'node:path';
 import mongoose from 'mongoose';
 
-// Load the API's .env explicitly. This makes the migration independent of
-// the directory from which npm/ts-node is invoked.
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+// The monorepo may keep .env at either apps/api/.env or the workspace root.
+// Load existing files without overriding explicitly supplied process values.
+const envCandidates = [
+  path.resolve(__dirname, '../../.env'),
+  path.resolve(__dirname, '../../../.env'),
+  path.resolve(process.cwd(), '.env'),
+];
+
+for (const envPath of envCandidates) {
+  if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath, override: false });
+  }
+}
 
 function getMongoUri(): string {
   const uri = process.env.MONGODB_URI ?? process.env.DATABASE_URL;
   if (!uri) {
     throw new Error(
-      'MONGODB_URI or DATABASE_URL must be configured in apps/api/.env or the process environment',
+      'MONGODB_URI or DATABASE_URL must be configured in the API/workspace .env or the process environment',
     );
   }
   return uri;
