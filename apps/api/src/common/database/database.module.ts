@@ -85,8 +85,10 @@ const MODEL_PROVIDERS = [
   imports: [
     MongooseModule.forRootAsync({
       useFactory: () => ({
+        // The MongoDB URI is the single source of truth for the cluster
+        // and database name. Do not override it with MONGODB_DB here;
+        // seed/migration/test utilities intentionally use the same URI.
         uri: process.env.MONGODB_URI,
-        dbName: process.env.MONGODB_DB ?? 'itam',
       }),
     }),
     MongooseModule.forFeature(MODEL_PROVIDERS),
