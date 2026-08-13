@@ -33,6 +33,18 @@ export class UsersController {
     return this.users.get(req.authContext, userId);
   }
 
+  @Get(':userId/sessions')
+  @RequirePermission('user:read')
+  sessions(@Param('userId') userId: string, @Req() req: any) {
+    return this.users.sessions(req.authContext, userId);
+  }
+
+  @Get(':userId/login-history')
+  @RequirePermission('audit:read')
+  loginHistory(@Param('userId') userId: string, @Req() req: any) {
+    return this.users.loginHistory(req.authContext, userId);
+  }
+
   @Post()
   @RequirePermission('user:write')
   create(@Body() dto: CreateUserDto, @Req() req: any) {
@@ -49,5 +61,20 @@ export class UsersController {
   @RequirePermission('user:write')
   deactivate(@Param('userId') userId: string, @Req() req: any) {
     return this.users.setActive(req.authContext, userId, false);
+  }
+
+  @Patch(':userId/sessions/:sessionId/revoke')
+  @RequirePermission('user:write')
+  revokeSession(
+    @Param('userId') userId: string,
+    @Param('sessionId') sessionId: string,
+    @Req() req: any,
+  ) {
+    return this.users.revokeSession(
+      req.authContext,
+      userId,
+      sessionId,
+      req.authContext.userId,
+    );
   }
 }
