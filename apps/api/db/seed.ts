@@ -21,38 +21,118 @@ const SYSTEM_ROLES: Record<string, string[]> = {
   'Platform Admin': ['platform:manage_tenants'],
 };
 
+const DEFAULT_TENANT_EMAIL = 'admin@demo.local';
+const DEFAULT_TENANT_PASSWORD = 'ChangeMe123!';
+const DEFAULT_SYSTEM_EMAIL = 'admin@assethub.local';
+const DEFAULT_SYSTEM_PASSWORD = 'ChangeMe123!';
+
+async function upsertSeedUser(args: {
+  users: any;
+  email: string;
+  password: string;
+  accountType: UserAccountType;
+  tenantId: string;
+  companyId: string;
+  roleId: string;
+  firstName: string;
+  lastName: string;
+}) {
+  const now = new Date();
+  const passwordHash = await argon2.hash(args.password, { type: argon2.argon2id });
+  await args.users.updateOne(
+    { email: args.email },
+    {
+      $set: {
+        accountType: args.accountType,
+        tenantId: args.tenantId,
+        companyId: args.companyId,
+        passwordHash,
+        firstName: args.firstName,
+        lastName: args.lastName,
+        forcePasswordReset: true,
+        isActive: true,
+        roleIds: [args.roleId],
+        backupCodesHash: [],
+        updatedAt: now,
+      },
+      $setOnInsert: { _id: new mongoose.Types.ObjectId(), createdAt: now },
+    },
+    { upsert: true },
+  );
+}
+
 async function main() {
   const connection = await mongoose.createConnection(getMongodbUri()).asPromise();
   try {
     const db = connection.db;
     if (!db) throw new Error('Mongo connection failed: native db handle is undefined');
-    const tenants = db.collection('tenants'); const companies = db.collection('companies'); const permissions = db.collection('permissions'); const roles = db.collection('roles'); const users = db.collection('users'); const now = new Date();
+    const tenants = db.collection('tenants');
+    const companies = db.collection('companies');
+    const permissions = db.collection('permissions');
+    const roles = db.collection('roles');
+    const users = db.collection('users');
+    const now = new Date();
+
     await users.updateMany({ accountType: { $exists: false } }, { $set: { accountType: UserAccountType.TENANT } });
-    for (const key of PERMISSIONS) await permissions.updateOne({ key }, { $setOnInsert: { key, _id: new mongoose.Types.ObjectId(), createdAt: now, updatedAt: now } }, { upsert: true });
-    const permDocs = await permissions.find({}).toArray(); const permByKey = new Map(permDocs.map((p) => [p.key as string, String(p._id)]));
-    let tenantDoc = await tenants.findOne({ slug: 'demo' }); const tenantId = tenantDoc ? tenantDoc._id as mongoose.Types.ObjectId : new mongoose.Types.ObjectId();
+
+    for (const key of PERMISSIONS) {
+      await permissions.updateOne(
+        { key },
+        { $setOnInsert: { key, _id: new mongoose.Types.ObjectId(), createdAt: now, updatedAt: now } },
+        { upsert: true },
+      );
+    }
+    const permDocs = await permissions.find({}).toArray();
+    const permByKey = new Map(permDocs.map((p) => [p.key as string, String(p._id)]));
+
+    const tenantDoc = await tenants.findOne({ slug: 'demo' });
+    const tenantId = tenantDoc ? tenantDoc._id as mongoose.Types.ObjectId : new mongoose.Types.ObjectId();
     if (!tenantDoc) await tenants.insertOne({ _id: tenantId, name: 'Demo Tenant', slug: 'demo', createdAt: now, updatedAt: now });
-    let companyDoc = await companies.findOne({ tenantId, code: 'DEMO' }); const companyId = companyDoc ? companyDoc._id as mongoose.Types.ObjectId : new mongoose.Types.ObjectId();
+
+    const companyDoc = await companies.findOne({ tenantId, code: 'DEMO' });
+    const companyId = companyDoc ? companyDoc._id as mongoose.Types.ObjectId : new mongoose.Types.ObjectId();
     if (!companyDoc) await companies.insertOne({ _id: companyId, tenantId, name: 'Demo Company', code: 'DEMO', createdAt: now, updatedAt: now });
+
     const roleRefs: Record<string, string> = {};
     for (const [roleName, perms] of Object.entries(SYSTEM_ROLES)) {
-      const permRefs = perms.map((key) => ({ permissionId: permByKey.get(key)!, permissionKey: key }));
-      const existing = await roles.findOne({ tenantId, name: roleName });
-      if (existing) roleRefs[roleName] = String(existing._id);
-      else { const roleId = new mongoose.Types.ObjectId(); await roles.insertOne({ _id: roleId, tenantId, companyId: roleName === 'Platform Admin' ? null : companyId, name: roleName, isSystem: true, permissions: permRefs, createdAt: now, updatedAt: now }); roleRefs[roleName] = String(roleId); }
+      const permRefs = perms.map((key) => {
+        const permissionId = permByKey.get(key);
+        if (!permissionId) throw new Error(`Missing permission key: ${key}`);
+        return { permissionId, permissionKey: key };
+      });
+      const roleId = new mongoose.Types.ObjectId();
+      const result = await roles.findOneAndUpdate(
+        { tenantId, name: roleName },
+        {
+          $set: {
+            companyId: roleName === 'Platform Admin' ? null : String(companyId),
+            isSystem: true,
+            permissions: permRefs,
+            updatedAt: now,
+          },
+          $setOnInsert: { _id: roleId, createdAt: now },
+        },
+        { upsert: true, returnDocument: 'after' },
+      );
+      roleRefs[roleName] = String(result?._id ?? roleId);
     }
-    const adminEmail = 'admin@demo.local';
-    if (!(await users.findOne({ email: adminEmail }))) {
-      const passwordHash = await argon2.hash('ChangeMe123!', { type: argon2.argon2id });
-      await users.insertOne({ _id: new mongoose.Types.ObjectId(), accountType: UserAccountType.TENANT, tenantId: String(tenantId), companyId: String(companyId), email: adminEmail, passwordHash, firstName: 'Demo', lastName: 'Admin', forcePasswordReset: true, isActive: true, roleIds: [roleRefs['Tenant Admin']], backupCodesHash: [], createdAt: now, updatedAt: now });
-    }
-    const systemEmail = process.env.SYSTEM_ADMIN_EMAIL ?? 'admin@assethub.local';
-    if (!(await users.findOne({ email: systemEmail }))) {
-      const passwordHash = await argon2.hash(process.env.SYSTEM_ADMIN_PASSWORD ?? 'ChangeMe123!', { type: argon2.argon2id });
-      await users.insertOne({ _id: new mongoose.Types.ObjectId(), accountType: UserAccountType.SYSTEM, tenantId: '', companyId: '', email: systemEmail, passwordHash, firstName: 'System', lastName: 'Administrator', forcePasswordReset: true, isActive: true, roleIds: [roleRefs['Platform Admin']], backupCodesHash: [], createdAt: now, updatedAt: now });
-    }
-    console.log(`Seed complete. Tenant: ${adminEmail} / ChangeMe123!`);
-    console.log(`System: ${systemEmail} / ${process.env.SYSTEM_ADMIN_PASSWORD ? '<SYSTEM_ADMIN_PASSWORD>' : 'ChangeMe123!'}`);
-  } finally { await connection.close(); }
+
+    const tenantEmail = process.env.TENANT_ADMIN_EMAIL ?? DEFAULT_TENANT_EMAIL;
+    const tenantPassword = process.env.TENANT_ADMIN_PASSWORD ?? DEFAULT_TENANT_PASSWORD;
+    await upsertSeedUser({ users, email: tenantEmail, password: tenantPassword, accountType: UserAccountType.TENANT, tenantId: String(tenantId), companyId: String(companyId), roleId: roleRefs['Tenant Admin'], firstName: 'Demo', lastName: 'Admin' });
+
+    const systemEmail = process.env.SYSTEM_ADMIN_EMAIL ?? DEFAULT_SYSTEM_EMAIL;
+    const systemPassword = process.env.SYSTEM_ADMIN_PASSWORD ?? DEFAULT_SYSTEM_PASSWORD;
+    await upsertSeedUser({ users, email: systemEmail, password: systemPassword, accountType: UserAccountType.SYSTEM, tenantId: '', companyId: '', roleId: roleRefs['Platform Admin'], firstName: 'System', lastName: 'Administrator' });
+
+    console.log(`Seed complete. Tenant: ${tenantEmail} / ${process.env.TENANT_ADMIN_PASSWORD ? '<TENANT_ADMIN_PASSWORD>' : DEFAULT_TENANT_PASSWORD}`);
+    console.log(`System: ${systemEmail} / ${process.env.SYSTEM_ADMIN_PASSWORD ? '<SYSTEM_ADMIN_PASSWORD>' : DEFAULT_SYSTEM_PASSWORD}`);
+  } finally {
+    await connection.close();
+  }
 }
-main().catch((e) => { console.error(e); process.exit(1); });
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
