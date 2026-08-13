@@ -14,8 +14,14 @@ export class SessionService {
 
   async issueSession(userId: string, ip: string, userAgent: string, system = false) {
     const rawUser = await this.db.findByIdOrThrow<any>(this.db.user, userId, 'User');
-    if (system && rawUser.accountType !== UserAccountType.SYSTEM) throw new UnauthorizedException('System session requires a system account');
-    if (!system && rawUser.accountType !== UserAccountType.TENANT) throw new UnauthorizedException('Tenant session requires a tenant account');
+    const normalizedUserId = String(rawUser._id ?? rawUser.id);
+
+    if (system && rawUser.accountType !== UserAccountType.SYSTEM) {
+      throw new UnauthorizedException('System session requires a system account');
+    }
+    if (!system && rawUser.accountType !== UserAccountType.TENANT) {
+      throw new UnauthorizedException('Tenant session requires a tenant account');
+    }
 
     const permissions = system
       ? await this.resolveSystemPermissions(rawUser.roleIds ?? [])
@@ -23,7 +29,7 @@ export class SessionService {
 
     const rawRefreshToken = crypto.randomBytes(48).toString('hex');
     const session = await this.db.session.create({
-      userId: rawUser.id,
+      userId: normalizedUserId,
       refreshTokenHash: this.hashToken(rawRefreshToken),
       ipAddress: ip,
       userAgent,
@@ -33,7 +39,7 @@ export class SessionService {
 
     const sessionId = String(session._id);
     const claims: Record<string, any> = {
-      sub: rawUser.id,
+      sub: normalizedUserId,
       sessionId,
       permissions,
       accountType: rawUser.accountType,
