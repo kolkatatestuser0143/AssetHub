@@ -1,3 +1,4 @@
+﻿import '../src/bootstrap-dns';
 import 'dotenv/config';
 import { config as loadEnv } from 'dotenv';
 loadEnv({ path: require('path').resolve(__dirname, '../../../.env') });
@@ -160,3 +161,4 @@ main()
     process.exit(1);
   })
   .finally(() => mongoose.disconnect());
+
