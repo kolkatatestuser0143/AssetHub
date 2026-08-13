@@ -1,8 +1,1 @@
-{
-  "/_not-found/page": "app/_not-found/page.js",
-  "/login/page": "app/login/page.js",
-  "/(protected)/assets/page": "app/(protected)/assets/page.js",
-  "/(protected)/dashboard/page": "app/(protected)/dashboard/page.js",
-  "/(protected)/companies/page": "app/(protected)/companies/page.js",
-  "/(protected)/roles/page": "app/(protected)/roles/page.js"
-}
+{}
