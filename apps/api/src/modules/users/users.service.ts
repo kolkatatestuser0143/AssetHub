@@ -70,4 +70,51 @@ export class UsersService extends TenantScopedRepository {
     }
     return this.safe(doc);
   }
+
+  async sessions(auth: AuthContext, userId: string) {
+    const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
+    if (!user) throw new NotFoundException('User not found');
+
+    const docs = await this.db.session
+      .find({ userId: String(user._id) })
+      .sort({ lastSeenAt: -1, createdAt: -1 })
+      .lean();
+
+    return toDtoArray(docs).map((session: any) => {
+      delete session.refreshTokenHash;
+      return session;
+    });
+  }
+
+  async loginHistory(auth: AuthContext, userId: string) {
+    const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
+    if (!user) throw new NotFoundException('User not found');
+
+    const docs = await this.db.loginHistory
+      .find({ userId: String(user._id) })
+      .sort({ occurredAt: -1 })
+      .limit(100)
+      .lean();
+
+    return toDtoArray(docs);
+  }
+
+  async revokeSession(auth: AuthContext, userId: string, sessionId: string, actorUserId: string) {
+    const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
+    if (!user) throw new NotFoundException('User not found');
+
+    if (String(user._id) === actorUserId && String((await this.db.session.findById(sessionId).lean())?._id) === sessionId) {
+      throw new ConflictException('Your current session cannot be revoked from this screen');
+    }
+
+    const session = await this.db.session.findOneAndUpdate(
+      { _id: sessionId, userId: String(user._id), revokedAt: { $exists: false } },
+      { $set: { revokedAt: new Date(), revokedReason: 'admin_revoked' } },
+      { new: true },
+    ).lean();
+
+    if (!session) throw new NotFoundException('Active session not found');
+
+    return { ok: true, sessionId: String(session._id) };
+  }
 }
