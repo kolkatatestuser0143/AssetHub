@@ -1,7 +1,12 @@
 import { HydratedDocument } from 'mongoose';
 export declare const UserModelName = "User";
 export type UserDocument = HydratedDocument<User>;
+export declare enum UserAccountType {
+    TENANT = "TENANT",
+    SYSTEM = "SYSTEM"
+}
 export declare class User {
+    accountType: UserAccountType;
     tenantId: string;
     companyId: string;
     email: string;

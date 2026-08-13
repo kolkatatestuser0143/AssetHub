@@ -30,6 +30,7 @@ export declare class IdentityController {
         accessToken: string;
         refreshToken: string;
         sessionId: string;
+        accountType: any;
     }>;
     oidcCallback(companyId: string, idpConfigId: string, query: {
         code: string;
@@ -38,6 +39,7 @@ export declare class IdentityController {
         accessToken: string;
         refreshToken: string;
         sessionId: string;
+        accountType: any;
     }>;
 }
 export {};

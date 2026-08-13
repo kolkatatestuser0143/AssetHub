@@ -14,21 +14,23 @@ const database_module_1 = require("./common/database/database.module");
 const mongoose_database_service_1 = require("./common/mongoose-database.service");
 const auth_controller_1 = require("./modules/auth/auth.controller");
 const auth_service_1 = require("./modules/auth/auth.service");
+const provisioning_service_1 = require("./modules/auth/provisioning.service");
+const session_service_1 = require("./modules/auth/session.service");
 const assets_controller_1 = require("./modules/assets/assets.controller");
 const assets_service_1 = require("./modules/assets/assets.service");
-const warranty_controller_1 = require("./modules/assets/warranty.controller");
-const warranty_service_1 = require("./modules/assets/warranty.service");
 const custom_fields_controller_1 = require("./modules/assets/custom-fields.controller");
 const custom_fields_service_1 = require("./modules/assets/custom-fields.service");
+const warranty_controller_1 = require("./modules/assets/warranty.controller");
+const warranty_service_1 = require("./modules/assets/warranty.service");
 const tenancy_controller_1 = require("./modules/tenancy/tenancy.controller");
 const tenancy_service_1 = require("./modules/tenancy/tenancy.service");
 const rbac_controller_1 = require("./modules/rbac/rbac.controller");
 const rbac_service_1 = require("./modules/rbac/rbac.service");
+const identity_security_cache_service_1 = require("./modules/identity/identity-security-cache.service");
 const identity_controller_1 = require("./modules/identity/identity.controller");
 const identity_service_1 = require("./modules/identity/identity.service");
-const identity_security_cache_service_1 = require("./modules/identity/identity-security-cache.service");
-const provisioning_service_1 = require("./modules/auth/provisioning.service");
-const session_service_1 = require("./modules/auth/session.service");
+const users_controller_1 = require("./modules/users/users.controller");
+const users_service_1 = require("./modules/users/users.service");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -38,9 +40,16 @@ exports.AppModule = AppModule = __decorate([
             database_module_1.DatabaseModule,
             jwt_1.JwtModule.register({
                 secret: process.env.JWT_ACCESS_SECRET,
-                signOptions: { algorithm: 'HS256' },
+                signOptions: {
+                    algorithm: 'HS256',
+                },
             }),
-            throttler_1.ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+            throttler_1.ThrottlerModule.forRoot([
+                {
+                    ttl: 60_000,
+                    limit: 100,
+                },
+            ]),
         ],
         controllers: [
             auth_controller_1.AuthController,
@@ -50,10 +59,13 @@ exports.AppModule = AppModule = __decorate([
             tenancy_controller_1.TenancyController,
             rbac_controller_1.RbacController,
             identity_controller_1.IdentityController,
+            users_controller_1.UsersController,
         ],
         providers: [
             mongoose_database_service_1.MongooseDatabaseService,
             auth_service_1.AuthService,
+            provisioning_service_1.ProvisioningService,
+            session_service_1.SessionService,
             assets_service_1.AssetsService,
             warranty_service_1.WarrantyService,
             custom_fields_service_1.CustomFieldsService,
@@ -61,8 +73,7 @@ exports.AppModule = AppModule = __decorate([
             rbac_service_1.RbacService,
             identity_service_1.IdentityService,
             identity_security_cache_service_1.IdentitySecurityCacheService,
-            provisioning_service_1.ProvisioningService,
-            session_service_1.SessionService,
+            users_service_1.UsersService,
         ],
     })
 ], AppModule);

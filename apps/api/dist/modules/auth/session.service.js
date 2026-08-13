@@ -47,6 +47,7 @@ const common_1 = require("@nestjs/common");
 const jwt_1 = require("@nestjs/jwt");
 const crypto = __importStar(require("crypto"));
 const mongoose_database_service_1 = require("../../common/mongoose-database.service");
+const user_schemas_1 = require("../../models/user.schemas");
 const mongoose_utils_1 = require("../../common/mongoose.utils");
 const ACCESS_TOKEN_TTL = '10m';
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -55,12 +56,21 @@ let SessionService = class SessionService {
         this.db = db;
         this.jwt = jwt;
     }
-    async issueSession(userId, ip, userAgent) {
+    async issueSession(userId, ip, userAgent, system = false) {
         const rawUser = await this.db.findByIdOrThrow(this.db.user, userId, 'User');
-        const permissions = await this.resolvePermissions(rawUser.tenantId, rawUser.companyId, rawUser.roleIds ?? []);
+        const normalizedUserId = String(rawUser._id ?? rawUser.id);
+        if (system && rawUser.accountType !== user_schemas_1.UserAccountType.SYSTEM) {
+            throw new common_1.UnauthorizedException('System session requires a system account');
+        }
+        if (!system && rawUser.accountType !== user_schemas_1.UserAccountType.TENANT) {
+            throw new common_1.UnauthorizedException('Tenant session requires a tenant account');
+        }
+        const permissions = system
+            ? await this.resolveSystemPermissions(rawUser.roleIds ?? [])
+            : await this.resolvePermissions(rawUser.tenantId, rawUser.companyId, rawUser.roleIds ?? []);
         const rawRefreshToken = crypto.randomBytes(48).toString('hex');
         const session = await this.db.session.create({
-            userId: rawUser.id,
+            userId: normalizedUserId,
             refreshTokenHash: this.hashToken(rawRefreshToken),
             ipAddress: ip,
             userAgent,
@@ -68,22 +78,30 @@ let SessionService = class SessionService {
             expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
         });
         const sessionId = String(session._id);
-        const accessToken = this.jwt.sign({
-            sub: rawUser.id,
+        const claims = {
+            sub: normalizedUserId,
             sessionId,
-            tenantId: rawUser.tenantId,
-            companyId: rawUser.companyId,
             permissions,
-        }, { expiresIn: ACCESS_TOKEN_TTL });
-        return { accessToken, refreshToken: rawRefreshToken, sessionId };
+            accountType: rawUser.accountType,
+        };
+        if (system)
+            claims.systemAdmin = true;
+        else {
+            claims.tenantId = rawUser.tenantId;
+            claims.companyId = rawUser.companyId;
+        }
+        const accessToken = this.jwt.sign(claims, { expiresIn: ACCESS_TOKEN_TTL });
+        return { accessToken, refreshToken: rawRefreshToken, sessionId, accountType: rawUser.accountType };
+    }
+    async isSystemUser(userId) {
+        const user = await this.db.user.findOne({ _id: userId }).select({ accountType: 1 }).lean();
+        return user?.accountType === user_schemas_1.UserAccountType.SYSTEM;
     }
     async revokeSession(sessionId, userId, reason) {
         await this.db.session.updateOne({ _id: sessionId, userId, revokedAt: { $exists: false } }, { $set: { revokedAt: new Date(), revokedReason: reason } });
     }
     async findByRefreshToken(rawRefreshToken) {
-        const doc = await this.db.session
-            .findOne({ refreshTokenHash: this.hashToken(rawRefreshToken) })
-            .lean();
+        const doc = await this.db.session.findOne({ refreshTokenHash: this.hashToken(rawRefreshToken) }).lean();
         return doc ? (0, mongoose_utils_1.toDto)(doc) : null;
     }
     hashToken(raw) {
@@ -92,25 +110,27 @@ let SessionService = class SessionService {
     async resolvePermissions(tenantId, companyId, roleIds) {
         if (roleIds.length === 0)
             return [];
-        const roles = await this.db.role
-            .find({
-            _id: { $in: roleIds },
-            tenantId,
-            $or: [{ companyId }, { companyId: null }],
-        })
-            .lean();
+        const roles = await this.db.role.find({ _id: { $in: roleIds }, tenantId, $or: [{ companyId }, { companyId: null }] }).lean();
         const perms = new Set();
-        for (const role of roles) {
+        for (const role of roles)
             for (const rp of role.permissions ?? [])
                 perms.add(rp.permissionKey);
-        }
+        return [...perms];
+    }
+    async resolveSystemPermissions(roleIds) {
+        if (!roleIds.length)
+            return [];
+        const roles = await this.db.role.find({ _id: { $in: roleIds } }).lean();
+        const perms = new Set();
+        for (const role of roles)
+            for (const rp of role.permissions ?? [])
+                perms.add(rp.permissionKey);
         return [...perms];
     }
 };
 exports.SessionService = SessionService;
 exports.SessionService = SessionService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [mongoose_database_service_1.MongooseDatabaseService,
-        jwt_1.JwtService])
+    __metadata("design:paramtypes", [mongoose_database_service_1.MongooseDatabaseService, jwt_1.JwtService])
 ], SessionService);
 //# sourceMappingURL=session.service.js.map

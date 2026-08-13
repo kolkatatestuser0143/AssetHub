@@ -45,9 +45,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthService = void 0;
 const common_1 = require("@nestjs/common");
 const argon2 = __importStar(require("argon2"));
+const mongoose_1 = require("mongoose");
 const mongoose_database_service_1 = require("../../common/mongoose-database.service");
 const session_service_1 = require("./session.service");
 const mongoose_utils_1 = require("../../common/mongoose.utils");
+const user_schemas_1 = require("../../models/user.schemas");
 let AuthService = class AuthService {
     constructor(db, sessions) {
         this.db = db;
@@ -57,9 +59,7 @@ let AuthService = class AuthService {
         return argon2.hash(plain, { type: argon2.argon2id });
     }
     async login(email, password, ip, userAgent) {
-        const userDoc = await this.db.user
-            .findOne({ email })
-            .lean();
+        const userDoc = await this.db.user.findOne({ email: email.trim().toLowerCase(), accountType: user_schemas_1.UserAccountType.TENANT }).lean();
         const user = userDoc ? (0, mongoose_utils_1.toDto)(userDoc) : null;
         if (!user || !user.passwordHash || !(await argon2.verify(user.passwordHash, password))) {
             await this.recordLoginAttempt(user?.id ?? null, false, ip, userAgent, 'invalid_credentials');
@@ -70,36 +70,67 @@ let AuthService = class AuthService {
             throw new common_1.UnauthorizedException('Account is inactive');
         }
         await this.recordLoginAttempt(user.id, true, ip, userAgent, null);
-        return this.sessions.issueSession(user.id, ip, userAgent);
+        return this.sessions.issueSession(user.id, ip, userAgent, false);
+    }
+    async systemLogin(email, password, ip, userAgent) {
+        const normalizedEmail = email.trim().toLowerCase();
+        const userDoc = await this.db.user.findOne({ email: normalizedEmail, accountType: user_schemas_1.UserAccountType.SYSTEM }).lean();
+        const user = userDoc ? (0, mongoose_utils_1.toDto)(userDoc) : null;
+        if (!user || !user.passwordHash || !(await argon2.verify(user.passwordHash, password))) {
+            await this.recordLoginAttempt(user?.id ?? null, false, ip, userAgent, 'invalid_system_credentials');
+            throw new common_1.UnauthorizedException('Invalid system administrator credentials');
+        }
+        if (!user.isActive) {
+            await this.recordLoginAttempt(user.id, false, ip, userAgent, 'account_inactive');
+            throw new common_1.UnauthorizedException('System administrator account is inactive');
+        }
+        const permissions = await this.resolveSystemPermissions(user.roleIds ?? []);
+        if (!permissions.includes('platform:manage_tenants')) {
+            await this.recordLoginAttempt(user.id, false, ip, userAgent, 'missing_platform_permission');
+            throw new common_1.UnauthorizedException('Account is not a system administrator');
+        }
+        await this.recordLoginAttempt(user.id, true, ip, userAgent, null);
+        return this.sessions.issueSession(user.id, ip, userAgent, true);
     }
     async refresh(rawRefreshToken, ip, userAgent) {
         const session = await this.sessions.findByRefreshToken(rawRefreshToken);
-        if (!session || session.revokedAt || session.expiresAt < new Date()) {
+        if (!session || session.revokedAt || session.expiresAt < new Date())
             throw new common_1.UnauthorizedException('Invalid refresh token');
-        }
         await this.sessions.revokeSession(session.id, session.userId, 'rotated');
-        return this.sessions.issueSession(session.userId, ip, userAgent);
+        return this.sessions.issueSession(session.userId, ip, userAgent, await this.sessions.isSystemUser(session.userId));
     }
     async logout(sessionId, userId) {
         await this.sessions.revokeSession(sessionId, userId, 'user_logout');
     }
+    async resolveSystemPermissions(roleIds) {
+        if (!roleIds.length)
+            return [];
+        const normalizedIds = roleIds.map((id) => String(id));
+        const objectIds = normalizedIds
+            .filter((id) => mongoose_1.Types.ObjectId.isValid(id))
+            .map((id) => new mongoose_1.Types.ObjectId(id));
+        const filters = [{ _id: { $in: normalizedIds } }];
+        if (objectIds.length)
+            filters.push({ _id: { $in: objectIds } });
+        const roles = await this.db.role.find({ $or: filters }).lean();
+        const perms = new Set();
+        for (const role of roles) {
+            for (const permission of role.permissions ?? []) {
+                if (permission.permissionKey)
+                    perms.add(permission.permissionKey);
+            }
+        }
+        return [...perms];
+    }
     async recordLoginAttempt(userId, success, ip, userAgent, reason) {
         if (!userId)
             return;
-        await this.db.loginHistory.create({
-            userId,
-            success,
-            ipAddress: ip,
-            userAgent,
-            reason: reason ?? undefined,
-            occurredAt: new Date(),
-        });
+        await this.db.loginHistory.create({ userId, success, ipAddress: ip, userAgent, reason: reason ?? undefined, occurredAt: new Date() });
     }
 };
 exports.AuthService = AuthService;
 exports.AuthService = AuthService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [mongoose_database_service_1.MongooseDatabaseService,
-        session_service_1.SessionService])
+    __metadata("design:paramtypes", [mongoose_database_service_1.MongooseDatabaseService, session_service_1.SessionService])
 ], AuthService);
 //# sourceMappingURL=auth.service.js.map

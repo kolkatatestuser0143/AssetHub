@@ -24,6 +24,9 @@ let AuthController = class AuthController {
     async login(dto, req) {
         return this.authService.login(dto.email, dto.password, req.ip, req.headers['user-agent'] ?? '');
     }
+    async systemLogin(dto, req) {
+        return this.authService.systemLogin(dto.email, dto.password, req.ip, req.headers['user-agent'] ?? '');
+    }
     async refresh(dto, req) {
         return this.authService.refresh(dto.refreshToken, req.ip, req.headers['user-agent'] ?? '');
     }
@@ -42,6 +45,15 @@ __decorate([
     __metadata("design:paramtypes", [auth_dto_1.LoginDto, Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "login", null);
+__decorate([
+    (0, common_1.Post)('system/login'),
+    (0, throttler_1.Throttle)({ default: { limit: 5, ttl: 60_000 } }),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [auth_dto_1.LoginDto, Object]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "systemLogin", null);
 __decorate([
     (0, common_1.Post)('refresh'),
     __param(0, (0, common_1.Body)()),

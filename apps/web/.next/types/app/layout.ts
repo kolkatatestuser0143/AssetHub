@@ -1,4 +1,4 @@
-// File: C:\Users\NageswarMahata\Downloads\itam\apps\web\src\app\layout.tsx
+// File: D:\Project\AssetHub-mango\apps\web\src\app\layout.tsx
 import * as entry from '../../../src/app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

@@ -4,6 +4,7 @@ export declare class ProvisioningService {
     private readonly db;
     constructor(db: MongooseDatabaseService);
     upsertFromIdentity(companyId: string, tenantId: string, identity: NormalizedIdentity): Promise<(import("mongoose").FlattenMaps<{
+        accountType: import("../../models/user.schemas").UserAccountType;
         tenantId: string;
         companyId: string;
         email: string;

@@ -9,13 +9,22 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.LoginHistorySchema = exports.LoginHistory = exports.LoginHistoryModelName = exports.SessionSchema = exports.Session = exports.SessionModelName = exports.UserSchema = exports.User = exports.UserModelName = void 0;
+exports.LoginHistorySchema = exports.LoginHistory = exports.LoginHistoryModelName = exports.SessionSchema = exports.Session = exports.SessionModelName = exports.UserSchema = exports.User = exports.UserAccountType = exports.UserModelName = void 0;
 const mongoose_1 = require("@nestjs/mongoose");
 const enums_1 = require("../common/enums");
 exports.UserModelName = 'User';
+var UserAccountType;
+(function (UserAccountType) {
+    UserAccountType["TENANT"] = "TENANT";
+    UserAccountType["SYSTEM"] = "SYSTEM";
+})(UserAccountType || (exports.UserAccountType = UserAccountType = {}));
 let User = class User {
 };
 exports.User = User;
+__decorate([
+    (0, mongoose_1.Prop)({ required: true, enum: UserAccountType, default: UserAccountType.TENANT, index: true }),
+    __metadata("design:type", String)
+], User.prototype, "accountType", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ required: true, index: true }),
     __metadata("design:type", String)

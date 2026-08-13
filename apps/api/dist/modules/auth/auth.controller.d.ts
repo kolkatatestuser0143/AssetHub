@@ -7,11 +7,19 @@ export declare class AuthController {
         accessToken: string;
         refreshToken: string;
         sessionId: string;
+        accountType: any;
+    }>;
+    systemLogin(dto: LoginDto, req: any): Promise<{
+        accessToken: string;
+        refreshToken: string;
+        sessionId: string;
+        accountType: any;
     }>;
     refresh(dto: RefreshDto, req: any): Promise<{
         accessToken: string;
         refreshToken: string;
         sessionId: string;
+        accountType: any;
     }>;
     logout(req: any): Promise<{
         ok: boolean;

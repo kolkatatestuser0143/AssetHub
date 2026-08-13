@@ -1,4 +1,11 @@
 {
-  "/_not-found/page": "app/_not-found/page.js",
-  "/login/page": "app/login/page.js"
+  "/system/page": "app/system/page.js",
+  "/system/users/page": "app/system/users/page.js",
+  "/system/roles/page": "app/system/roles/page.js",
+  "/system/subscriptions/page": "app/system/subscriptions/page.js",
+  "/system/tenants/page": "app/system/tenants/page.js",
+  "/system/audit/page": "app/system/audit/page.js",
+  "/system/settings/page": "app/system/settings/page.js",
+  "/system/analytics/page": "app/system/analytics/page.js",
+  "/system/health/page": "app/system/health/page.js"
 }

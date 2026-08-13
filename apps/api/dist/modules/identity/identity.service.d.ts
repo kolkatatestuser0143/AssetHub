@@ -13,6 +13,7 @@ export declare class IdentityService {
         accessToken: string;
         refreshToken: string;
         sessionId: string;
+        accountType: any;
     }>;
     private buildProvider;
 }

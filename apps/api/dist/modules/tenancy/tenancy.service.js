@@ -31,10 +31,23 @@ let TenancyService = class TenancyService extends tenant_scoped_repository_1.Ten
         });
         return (0, mongoose_utils_1.toDto)(doc.toObject());
     }
+    async listBusinessUnits(auth, companyId) {
+        await this.assertCompanyInScope(auth, companyId);
+        const docs = await this.db.businessUnit.find({ companyId }).lean();
+        return (0, mongoose_utils_1.toDtoArray)(docs);
+    }
     async createBusinessUnit(auth, companyId, name) {
         await this.assertCompanyInScope(auth, companyId);
         const doc = await this.db.businessUnit.create({ companyId, name });
         return (0, mongoose_utils_1.toDto)(doc.toObject());
+    }
+    async listPlants(auth, businessUnitId) {
+        const bu = await this.db.businessUnit.findById(businessUnitId).lean();
+        if (!bu)
+            throw new common_1.NotFoundException('BusinessUnit not found');
+        await this.assertCompanyInScope(auth, bu.companyId);
+        const docs = await this.db.plant.find({ businessUnitId }).lean();
+        return (0, mongoose_utils_1.toDtoArray)(docs);
     }
     async createPlant(auth, businessUnitId, name) {
         const bu = await this.db.businessUnit.findById(businessUnitId).lean();
@@ -43,6 +56,17 @@ let TenancyService = class TenancyService extends tenant_scoped_repository_1.Ten
         await this.assertCompanyInScope(auth, bu.companyId);
         const doc = await this.db.plant.create({ businessUnitId, name });
         return (0, mongoose_utils_1.toDto)(doc.toObject());
+    }
+    async listLocations(auth, plantId) {
+        const plant = await this.db.plant.findById(plantId).lean();
+        if (!plant)
+            throw new common_1.NotFoundException('Plant not found');
+        const bu = await this.db.businessUnit.findById(plant.businessUnitId).lean();
+        if (!bu)
+            throw new common_1.NotFoundException('BusinessUnit not found');
+        await this.assertCompanyInScope(auth, bu.companyId);
+        const docs = await this.db.location.find({ plantId }).lean();
+        return (0, mongoose_utils_1.toDtoArray)(docs);
     }
     async createLocation(auth, plantId, name) {
         const plant = await this.db.plant.findById(plantId).lean();
@@ -54,6 +78,20 @@ let TenancyService = class TenancyService extends tenant_scoped_repository_1.Ten
         await this.assertCompanyInScope(auth, bu.companyId);
         const doc = await this.db.location.create({ plantId, name });
         return (0, mongoose_utils_1.toDto)(doc.toObject());
+    }
+    async listDepartments(auth, locationId) {
+        const location = await this.db.location.findById(locationId).lean();
+        if (!location)
+            throw new common_1.NotFoundException('Location not found');
+        const plant = await this.db.plant.findById(location.plantId).lean();
+        if (!plant)
+            throw new common_1.NotFoundException('Plant not found');
+        const bu = await this.db.businessUnit.findById(plant.businessUnitId).lean();
+        if (!bu)
+            throw new common_1.NotFoundException('BusinessUnit not found');
+        await this.assertCompanyInScope(auth, bu.companyId);
+        const docs = await this.db.department.find({ locationId }).lean();
+        return (0, mongoose_utils_1.toDtoArray)(docs);
     }
     async createDepartment(auth, locationId, name) {
         const location = await this.db.location.findById(locationId).lean();

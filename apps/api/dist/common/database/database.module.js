@@ -79,7 +79,6 @@ exports.DatabaseModule = DatabaseModule = __decorate([
             mongoose_1.MongooseModule.forRootAsync({
                 useFactory: () => ({
                     uri: process.env.MONGODB_URI,
-                    dbName: process.env.MONGODB_DB ?? 'itam',
                 }),
             }),
             mongoose_1.MongooseModule.forFeature(MODEL_PROVIDERS),
