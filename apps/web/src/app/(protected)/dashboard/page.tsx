@@ -1,14 +1,7 @@
-import Link from 'next/link';
+import { Laptop, Building2, Users, ShieldCheck, Activity } from 'lucide-react';
+
+const stats = [['Total assets','1,284','12% from last month',Laptop],['Companies','8','2 active this month',Building2],['Users','146','6 pending invitations',Users],['Compliance','94.8%','2.1% improvement',ShieldCheck]] as const;
 
 export default function DashboardPage() {
-  return (
-    <main style={{ maxWidth: 720, margin: '40px auto', fontFamily: 'sans-serif' }}>
-      <h1>Dashboard</h1>
-      <nav style={{ display: 'flex', gap: 16, marginTop: 16 }}>
-        <Link href="/companies">Companies</Link>
-        <Link href="/roles">Roles</Link>
-        <Link href="/assets">Assets</Link>
-      </nav>
-    </main>
-  );
+  return <div><div className="mb-7"><h1 className="text-3xl font-bold tracking-tight text-slate-950">Good afternoon, Demo Admin</h1><p className="mt-1 text-sm text-slate-500">Here is the current state of your IT environment.</p></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{stats.map(([label,value,hint,Icon])=><div key={label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex justify-between"><div><p className="text-sm text-slate-500">{label}</p><p className="mt-2 text-3xl font-bold text-slate-950">{value}</p><p className="mt-2 text-xs text-slate-500">{hint}</p></div><div className="grid h-10 w-10 place-items-center rounded-xl bg-blue-50 text-blue-600"><Icon size={20}/></div></div></div>)}</div><div className="mt-6 grid gap-6 lg:grid-cols-3"><section className="rounded-2xl border border-slate-200 bg-white p-6 lg:col-span-2"><div className="flex items-center justify-between"><div><h2 className="font-semibold text-slate-900">Asset activity</h2><p className="text-sm text-slate-500">Recent changes across your inventory</p></div><Activity size={20} className="text-slate-400"/></div><div className="mt-8 grid h-48 place-items-center rounded-xl bg-slate-50 text-sm text-slate-400">Activity analytics will appear here</div></section><section className="rounded-2xl border border-slate-200 bg-white p-6"><h2 className="font-semibold text-slate-900">Quick actions</h2><div className="mt-4 space-y-2"><a className="block rounded-xl bg-slate-50 p-3 text-sm font-medium hover:bg-blue-50 hover:text-blue-700" href="/assets">Manage assets</a><a className="block rounded-xl bg-slate-50 p-3 text-sm font-medium hover:bg-blue-50 hover:text-blue-700" href="/companies">Manage companies</a><a className="block rounded-xl bg-slate-50 p-3 text-sm font-medium hover:bg-blue-50 hover:text-blue-700" href="/roles">Review permissions</a></div></section></div></div>;
 }
