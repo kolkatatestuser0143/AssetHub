@@ -1,4 +1,4 @@
-﻿import '../src/bootstrap-dns';
+import '../src/bootstrap-dns';
 import 'dotenv/config';
 import { config as loadEnv } from 'dotenv';
 loadEnv({ path: require('path').resolve(__dirname, '../../../.env') });
@@ -40,8 +40,12 @@ const SYSTEM_ROLES: Record<string, string[]> = {
 
 async function main() {
   await mongoose.connect(getMongodbUri());
-  const db = mongoose.connection.db;
-  if (!db) throw new Error('Mongo connection failed: db is undefined');
+
+  // Do not rely on mongoose.connection.db here. In this runtime it can be
+  // undefined even though mongoose.connect() has completed successfully.
+  // The underlying MongoDB client is the authoritative native DB handle.
+  const db = mongoose.connection.getClient().db(mongoose.connection.name);
+  if (!db) throw new Error('Mongo connection failed: native db handle is undefined');
 
   const tenants = db.collection('tenants');
   const companies = db.collection('companies');
@@ -49,7 +53,6 @@ async function main() {
   const roles = db.collection('roles');
   const users = db.collection('users');
 
-  // --- Permissions: idempotent upsert by key ---
   const now = new Date();
   for (const key of PERMISSIONS) {
     await permissions.updateOne(
@@ -65,10 +68,10 @@ async function main() {
       { upsert: true },
     );
   }
+
   const permDocs = await permissions.find({}).toArray();
   const permByKey = new Map(permDocs.map((p) => [p.key as string, String(p._id)]));
 
-  // --- Demo tenant: reuse existing _id if present (re-runnable) ---
   let tenantDoc = await tenants.findOne({ slug: 'demo' });
   let tenantId: mongoose.Types.ObjectId;
   if (tenantDoc) {
@@ -84,7 +87,6 @@ async function main() {
     });
   }
 
-  // --- Demo company: scoped by the EXISTING tenant id ---
   let companyDoc = await companies.findOne({ tenantId, code: 'DEMO' });
   let companyId: mongoose.Types.ObjectId;
   if (companyDoc) {
@@ -101,7 +103,6 @@ async function main() {
     });
   }
 
-  // --- System roles: upsert per (tenantId, name), reuse existing ids ---
   const roleRefs: Record<string, string> = {};
   for (const [roleName, perms] of Object.entries(SYSTEM_ROLES)) {
     const permRefs = perms.map((key) => {
@@ -130,7 +131,6 @@ async function main() {
     roleRefs[roleName] = String(roleId);
   }
 
-  // --- Demo admin: upsert by email; on first insert, attach Tenant Admin role ---
   const adminEmail = 'admin@demo.local';
   const existingAdmin = await users.findOne({ email: adminEmail });
   if (!existingAdmin) {
@@ -161,4 +161,3 @@ main()
     process.exit(1);
   })
   .finally(() => mongoose.disconnect());
-
