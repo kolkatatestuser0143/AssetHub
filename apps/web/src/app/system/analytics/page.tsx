@@ -1,0 +1,5 @@
+const areas = ['Tenant growth', 'Active users', 'Asset volume', 'Subscription mix', 'API usage', 'Security trends'];
+
+export default function SystemAnalyticsPage() {
+  return <div className="space-y-6"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-600">Insights</p><h2 className="mt-1 text-2xl font-bold text-slate-950">Platform analytics</h2><p className="mt-2 text-sm text-slate-500">A platform-wide analytics workspace, ready for aggregated reporting APIs.</p></div><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{areas.map((area) => <div key={area} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="font-semibold text-slate-950">{area}</h3><div className="mt-5 grid h-28 place-items-center rounded-xl border border-dashed border-slate-300 bg-slate-50"><div className="text-center"><p className="text-sm font-semibold text-slate-700">Waiting for data</p><p className="mt-1 text-xs text-slate-500">No synthetic charts are rendered.</p></div></div></div>)}</div></div>;
+}
