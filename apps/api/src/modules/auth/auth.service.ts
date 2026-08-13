@@ -1,5 +1,6 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import * as argon2 from 'argon2';
+import { Types } from 'mongoose';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 import { SessionService } from './session.service';
 import { toDto } from '../../common/mongoose.utils';
@@ -31,7 +32,8 @@ export class AuthService {
   }
 
   async systemLogin(email: string, password: string, ip: string, userAgent: string) {
-    const userDoc = await this.db.user.findOne({ email: email.trim().toLowerCase(), accountType: UserAccountType.SYSTEM }).lean();
+    const normalizedEmail = email.trim().toLowerCase();
+    const userDoc = await this.db.user.findOne({ email: normalizedEmail, accountType: UserAccountType.SYSTEM }).lean();
     const user = userDoc ? toDto(userDoc) : null;
 
     if (!user || !user.passwordHash || !(await argon2.verify(user.passwordHash, password))) {
@@ -45,6 +47,7 @@ export class AuthService {
 
     const permissions = await this.resolveSystemPermissions(user.roleIds ?? []);
     if (!permissions.includes('platform:manage_tenants')) {
+      await this.recordLoginAttempt(user.id, false, ip, userAgent, 'missing_platform_permission');
       throw new UnauthorizedException('Account is not a system administrator');
     }
 
@@ -65,9 +68,25 @@ export class AuthService {
 
   private async resolveSystemPermissions(roleIds: string[]): Promise<string[]> {
     if (!roleIds.length) return [];
-    const roles = await this.db.role.find({ _id: { $in: roleIds } }).lean();
+
+    // roleIds are stored as strings on users while Mongo role _id values are
+    // normally ObjectIds. Query both representations so seeded and migrated
+    // system accounts resolve permissions reliably.
+    const normalizedIds = roleIds.map((id) => String(id));
+    const objectIds = normalizedIds
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
+    const filters: Record<string, unknown>[] = [{ _id: { $in: normalizedIds } }];
+    if (objectIds.length) filters.push({ _id: { $in: objectIds } });
+
+    const roles = await this.db.role.find({ $or: filters }).lean();
     const perms = new Set<string>();
-    for (const role of roles) for (const permission of role.permissions ?? []) perms.add(permission.permissionKey);
+    for (const role of roles) {
+      for (const permission of role.permissions ?? []) {
+        if (permission.permissionKey) perms.add(permission.permissionKey);
+      }
+    }
     return [...perms];
   }
 
