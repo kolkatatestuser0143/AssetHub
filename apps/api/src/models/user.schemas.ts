@@ -5,13 +5,21 @@ import { MfaMethod } from '../common/enums';
 export const UserModelName = 'User';
 export type UserDocument = HydratedDocument<User>;
 
+export enum UserAccountType {
+  TENANT = 'TENANT',
+  SYSTEM = 'SYSTEM',
+}
+
 @Schema({ collection: 'users', timestamps: true, versionKey: false })
 export class User {
+  @Prop({ required: true, enum: UserAccountType, default: UserAccountType.TENANT, index: true })
+  accountType!: UserAccountType;
+
   @Prop({ required: true, index: true }) tenantId!: string;
   @Prop({ required: true, index: true }) companyId!: string;
 
   @Prop({ required: true, unique: true }) email!: string;
-  @Prop() passwordHash?: string; // null/undefined => SSO-only user
+  @Prop() passwordHash?: string;
   @Prop({ required: true }) firstName!: string;
   @Prop({ required: true }) lastName!: string;
   @Prop() jobTitle?: string;
@@ -23,15 +31,8 @@ export class User {
 
   @Prop({ default: true }) isActive!: boolean;
   @Prop({ default: false }) forcePasswordReset!: boolean;
-
-  // SCIM externalId, unique per company (compound index below)
   @Prop() externalScimId?: string;
-
-  // Denormalized role refs — MongoDB has no join tables. Assigning a
-  // role pushes its id here; permission resolution reads Role docs.
   @Prop({ type: [String], default: [] }) roleIds!: string[];
-
-  // Optional hierarchy scoping (master prompt §4)
   @Prop() departmentId?: string;
   @Prop() locationId?: string;
 }
@@ -67,7 +68,7 @@ export class LoginHistory {
   @Prop({ required: true }) success!: boolean;
   @Prop() ipAddress?: string;
   @Prop() userAgent?: string;
-  @Prop() reason?: string; // failure reason if applicable
+  @Prop() reason?: string;
   @Prop({ default: Date.now }) occurredAt!: Date;
 }
 
