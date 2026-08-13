@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '../../../lib/api-client';
+import { Boxes, ChevronRight, Plus, RefreshCw, Search, SlidersHorizontal } from 'lucide-react';
 
-type AssetType = { id: string; name: string };
+type AssetType = { id: string; name: string; prefix?: string };
 type Asset = { id: string; assetNumber: string; status: string; assetType: { name: string } };
 
 const STATES = ['REQUESTED', 'IN_STOCK', 'ASSIGNED', 'IN_REPAIR', 'LOST_STOLEN', 'RETIRED', 'DISPOSED'];
@@ -14,145 +16,109 @@ export default function AssetsPage() {
   const [selectedTypeId, setSelectedTypeId] = useState('');
   const [newTypeName, setNewTypeName] = useState('');
   const [newTypePrefix, setNewTypePrefix] = useState('');
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
 
   async function load() {
-    setLoading(true);
+    setBusy(true);
+    setError(null);
     try {
       const [assetData, typeData] = await Promise.all([apiFetch('/assets'), apiFetch('/assets/types')]);
-      setAssets(assetData);
-      setAssetTypes(typeData);
-      if (typeData.length > 0 && !selectedTypeId) setSelectedTypeId(typeData[0].id);
+      setAssets(Array.isArray(assetData) ? assetData : []);
+      setAssetTypes(Array.isArray(typeData) ? typeData : []);
+      if (Array.isArray(typeData) && typeData.length > 0 && !selectedTypeId) setSelectedTypeId(typeData[0].id);
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message ?? 'Unable to load inventory.');
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
   }
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
-  async function handleCreateType(e: React.FormEvent) {
-    e.preventDefault();
+  async function createType(event: React.FormEvent) {
+    event.preventDefault();
     setError(null);
     try {
       await apiFetch('/assets/types', {
         method: 'POST',
-        body: JSON.stringify({ name: newTypeName, prefix: newTypePrefix.toUpperCase() }),
+        body: JSON.stringify({ name: newTypeName.trim(), prefix: newTypePrefix.trim().toUpperCase() }),
       });
       setNewTypeName('');
       setNewTypePrefix('');
       await load();
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message ?? 'Unable to create asset type.');
     }
   }
 
-  async function handleCreateAsset() {
+  async function createAsset() {
+    if (!selectedTypeId) return;
     setError(null);
     try {
       await apiFetch('/assets', { method: 'POST', body: JSON.stringify({ assetTypeId: selectedTypeId }) });
       await load();
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message ?? 'Unable to create asset.');
     }
   }
 
-  async function handleTransition(assetId: string, toState: string) {
+  async function transition(assetId: string, toState: string) {
     setError(null);
     try {
       await apiFetch(`/assets/${assetId}/transition`, { method: 'POST', body: JSON.stringify({ toState }) });
       await load();
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message ?? 'Unable to update asset.');
     }
   }
 
-  return (
-    <main style={{ maxWidth: 800, margin: '40px auto', fontFamily: 'sans-serif' }}>
-      <h1>Assets</h1>
+  const filtered = useMemo(() => assets.filter((asset) => {
+    const matchesQuery = `${asset.assetNumber} ${asset.assetType?.name ?? ''} ${asset.status}`.toLowerCase().includes(query.toLowerCase());
+    const matchesStatus = statusFilter === 'ALL' || asset.status === statusFilter;
+    return matchesQuery && matchesStatus;
+  }), [assets, query, statusFilter]);
 
-      <section style={{ marginBottom: 24, padding: 12, background: '#f7f7f7', borderRadius: 6 }}>
-        <h3 style={{ marginTop: 0 }}>Asset Types</h3>
-        <form onSubmit={handleCreateType} style={{ display: 'flex', gap: 8 }}>
-          <input
-            placeholder="Type name (e.g. Laptop)"
-            value={newTypeName}
-            onChange={(e) => setNewTypeName(e.target.value)}
-            style={{ flex: 2, padding: 8 }}
-          />
-          <input
-            placeholder="Prefix (e.g. LAP)"
-            value={newTypePrefix}
-            onChange={(e) => setNewTypePrefix(e.target.value)}
-            style={{ flex: 1, padding: 8 }}
-          />
-          <button type="submit" style={{ padding: '8px 16px' }}>
-            Add Type
-          </button>
+  return (
+    <div className="mx-auto max-w-[1400px] space-y-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Inventory</p>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">Assets</h1>
+          <p className="mt-2 max-w-2xl text-sm text-slate-500">Manage the tenant inventory lifecycle, identifiers, and operational state from one workspace.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={load} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60"><RefreshCw size={16} className={busy ? 'animate-spin' : ''}/>Refresh</button>
+          {assetTypes.length > 0 && <button onClick={createAsset} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"><Plus size={16}/>New asset</button>}
+        </div>
+      </div>
+
+      {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-slate-900"><Boxes size={17} className="text-blue-600"/>Asset type setup</div>
+        <form onSubmit={createType} className="grid gap-3 md:grid-cols-[1fr_180px_auto]">
+          <input required value={newTypeName} onChange={(e) => setNewTypeName(e.target.value)} placeholder="Type name, e.g. Laptop" className="h-11 rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+          <input required value={newTypePrefix} onChange={(e) => setNewTypePrefix(e.target.value)} placeholder="Prefix, e.g. LAP" className="h-11 rounded-xl border border-slate-200 px-3 text-sm uppercase outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+          <button className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-semibold text-white hover:bg-slate-800"><Plus size={16}/>Create type</button>
         </form>
+        {assetTypes.length > 0 && <div className="mt-4 flex items-center gap-3"><label className="text-sm font-medium text-slate-700">Create using type</label><select value={selectedTypeId} onChange={(e) => setSelectedTypeId(e.target.value)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500">{assetTypes.map((type) => <option key={type.id} value={type.id}>{type.name}{type.prefix ? ` · ${type.prefix}` : ''}</option>)}</select></div>}
       </section>
 
-      {assetTypes.length > 0 && (
-        <div style={{ marginBottom: 24, display: 'flex', gap: 8, alignItems: 'center' }}>
-          <select value={selectedTypeId} onChange={(e) => setSelectedTypeId(e.target.value)} style={{ padding: 8 }}>
-            {assetTypes.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-          <button onClick={handleCreateAsset} style={{ padding: '8px 16px' }}>
-            Create Asset
-          </button>
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-slate-100 p-4 md:flex-row md:items-center md:justify-between">
+          <div className="relative w-full max-w-md"><Search size={16} className="absolute left-3 top-2.5 text-slate-400"/><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search asset number, type, status" className="h-10 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-sm outline-none focus:border-blue-500"/></div>
+          <div className="flex items-center gap-2"><SlidersHorizontal size={16} className="text-slate-400"/><select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm"><option value="ALL">All statuses</option>{STATES.map((state) => <option key={state} value={state}>{state}</option>)}</select><span className="text-xs text-slate-500">{filtered.length} of {assets.length}</span></div>
         </div>
-      )}
 
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {loading ? (
-        <p>Loading…</p>
-      ) : assets.length === 0 ? (
-        <p>No assets yet. Create an asset type above, then create an asset.</p>
-      ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ textAlign: 'left', borderBottom: '1px solid #ccc' }}>
-              <th style={{ padding: 8 }}>Asset #</th>
-              <th style={{ padding: 8 }}>Type</th>
-              <th style={{ padding: 8 }}>Status</th>
-              <th style={{ padding: 8 }}>Transition</th>
-            </tr>
-          </thead>
-          <tbody>
-            {assets.map((a) => (
-              <tr key={a.id} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: 8 }}>{a.assetNumber}</td>
-                <td style={{ padding: 8 }}>{a.assetType.name}</td>
-                <td style={{ padding: 8 }}>{a.status}</td>
-                <td style={{ padding: 8 }}>
-                  <select
-                    defaultValue=""
-                    onChange={(e) => e.target.value && handleTransition(a.id, e.target.value)}
-                    style={{ padding: 4 }}
-                  >
-                    <option value="" disabled>
-                      Move to…
-                    </option>
-                    {STATES.filter((s) => s !== a.status).map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </main>
+        {busy ? <div className="space-y-3 p-5">{[1,2,3,4,5].map((n) => <div key={n} className="h-12 animate-pulse rounded-xl bg-slate-100" />)}</div> : filtered.length === 0 ? (
+          <div className="p-14 text-center"><Boxes className="mx-auto text-slate-300" size={38}/><p className="mt-4 font-semibold text-slate-800">No assets found</p><p className="mt-1 text-sm text-slate-500">Create an asset type and then create the first asset.</p></div>
+        ) : (
+          <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3">Asset</th><th className="px-5 py-3">Type</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Lifecycle</th><th className="px-5 py-3" /></tr></thead><tbody className="divide-y divide-slate-100">{filtered.map((asset) => <tr key={asset.id} className="hover:bg-slate-50"><td className="px-5 py-4"><Link href={`/assets/${asset.id}`} className="font-semibold text-slate-900 hover:text-blue-600">{asset.assetNumber}</Link><div className="font-mono text-[11px] text-slate-400">{asset.id}</div></td><td className="px-5 py-4 text-slate-700">{asset.assetType?.name ?? '—'}</td><td className="px-5 py-4"><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{asset.status}</span></td><td className="px-5 py-4"><select defaultValue="" onChange={(e) => e.target.value && transition(asset.id, e.target.value)} className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-xs"><option value="">Change state…</option>{STATES.filter((state) => state !== asset.status).map((state) => <option key={state} value={state}>{state}</option>)}</select></td><td className="px-5 py-4 text-right"><Link href={`/assets/${asset.id}`} className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700">Details<ChevronRight size={14}/></Link></td></tr>)}</tbody></table></div>
+        )}
+      </section>
+    </div>
   );
 }
