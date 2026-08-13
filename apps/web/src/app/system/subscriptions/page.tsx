@@ -1,0 +1,5 @@
+const items = ['Plans', 'Active subscriptions', 'Trials', 'Entitlements', 'Usage & limits'];
+
+export default function SystemSubscriptionsPage() {
+  return <div className="space-y-6"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-600">Platform</p><h2 className="mt-1 text-2xl font-bold text-slate-950">Subscriptions & billing</h2><p className="mt-2 text-sm text-slate-500">Central subscription management for all AssetHub tenants.</p></div><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{items.map((item) => <div key={item} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h3 className="font-semibold text-slate-950">{item}</h3><p className="mt-2 text-sm leading-6 text-slate-500">The platform billing API is not exposed by the current backend, so this area is ready for live data without fabricated values.</p><span className="mt-4 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">API pending</span></div>)}</div></div>;
+}
