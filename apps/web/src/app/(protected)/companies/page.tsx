@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { apiFetch } from '../../lib/api-client';
+import { apiFetch } from '../../../lib/api-client';
 
 type Company = { id: string; name: string; code: string };
 

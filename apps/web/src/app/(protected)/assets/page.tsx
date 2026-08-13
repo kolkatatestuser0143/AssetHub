@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { apiFetch } from '../../lib/api-client';
+import { apiFetch } from '../../../lib/api-client';
 
 type AssetType = { id: string; name: string };
 type Asset = { id: string; assetNumber: string; status: string; assetType: { name: string } };

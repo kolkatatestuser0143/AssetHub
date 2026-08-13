@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { apiFetch } from '../../lib/api-client';
+import { apiFetch } from '../../../lib/api-client';
 
 type Permission = { id: string; key: string };
 type Role = { id: string; name: string; isSystem: boolean; permissions: { permission: Permission }[] };
