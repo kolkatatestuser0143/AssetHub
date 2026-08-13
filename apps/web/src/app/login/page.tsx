@@ -1,36 +1,5 @@
 'use client';
-
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../lib/auth-context';
-
-export default function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const { login } = useAuth();
-  const router = useRouter();
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    try {
-      await login(email, password);
-      router.push('/dashboard');
-    } catch (err: any) {
-      setError(err.message ?? 'Login failed');
-    }
-  }
-
-  return (
-    <main style={{ maxWidth: 360, margin: '80px auto', fontFamily: 'sans-serif' }}>
-      <h1>ITAM Sign In</h1>
-      <form onSubmit={handleSubmit}>
-        <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ display: 'block', width: '100%', marginBottom: 8, padding: 8 }} />
-        <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} style={{ display: 'block', width: '100%', marginBottom: 8, padding: 8 }} />
-        {error && <p style={{ color: 'crimson' }}>{error}</p>}
-        <button type="submit" style={{ width: '100%', padding: 10 }}>Sign In</button>
-      </form>
-    </main>
-  );
-}
+export default function LoginPage(){const [email,setEmail]=useState('');const [password,setPassword]=useState('');const [error,setError]=useState('');const [busy,setBusy]=useState(false);const {login}=useAuth();const router=useRouter();async function submit(e:React.FormEvent){e.preventDefault();setError('');setBusy(true);try{await login(email,password);router.push('/dashboard')}catch(x:any){setError(x.message||'Unable to sign in')}finally{setBusy(false)}}return <main className="min-h-screen bg-slate-950"><div className="grid min-h-screen lg:grid-cols-2"><section className="hidden bg-blue-700 p-12 text-white lg:flex lg:flex-col lg:justify-between"><div><div className="text-xl font-bold">AssetHub</div><div className="mt-28 max-w-lg"><p className="text-sm uppercase tracking-widest text-blue-200">Enterprise ITAM</p><h1 className="mt-4 text-5xl font-bold leading-tight">One workspace for your entire asset lifecycle.</h1><p className="mt-5 text-lg text-blue-100">Inventory, ownership, compliance and administration in one secure platform.</p></div></div><p className="text-sm text-blue-200">© 2026 AssetHub</p></section><section className="grid place-items-center bg-slate-50 p-6"><div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-xl"><div className="mb-8"><div className="mb-5 text-xl font-bold text-blue-600">AssetHub</div><h2 className="text-2xl font-bold text-slate-950">Welcome back</h2><p className="mt-1 text-sm text-slate-500">Sign in to your tenant workspace.</p></div><form onSubmit={submit} className="space-y-5"><label className="block text-sm font-semibold text-slate-700">Email<input required type="email" value={email} onChange={e=>setEmail(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-blue-500" placeholder="you@company.com"/></label><label className="block text-sm font-semibold text-slate-700">Password<input required type="password" value={password} onChange={e=>setPassword(e.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 outline-none focus:border-blue-500" placeholder="••••••••"/></label>{error&&<div className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</div>}<button disabled={busy} className="w-full rounded-xl bg-blue-600 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-60">{busy?'Signing in…':'Sign in'}</button></form><a href="/system/login" className="mt-7 block text-center text-sm font-semibold text-blue-600">System administrator login →</a></div></section></div></main>}
