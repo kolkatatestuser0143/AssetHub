@@ -1,0 +1,53 @@
+import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import { UsersService } from './users.service';
+import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
+import { RbacGuard } from '../../common/guards/rbac.guard';
+import { RequirePermission } from '../../common/decorators/require-permission.decorator';
+
+class CreateUserDto {
+  @IsEmail() email!: string;
+  @IsString() @MinLength(1) firstName!: string;
+  @IsString() @MinLength(1) lastName!: string;
+  @IsOptional() @IsString() companyId?: string;
+  @IsOptional() @IsString() jobTitle?: string;
+  @IsOptional() @IsString() phone?: string;
+  @IsOptional() @IsString() departmentId?: string;
+  @IsOptional() @IsString() locationId?: string;
+}
+
+@Controller('users')
+@UseGuards(TenantContextGuard, RbacGuard)
+export class UsersController {
+  constructor(private readonly users: UsersService) {}
+
+  @Get()
+  @RequirePermission('user:read')
+  list(@Req() req: any) {
+    return this.users.list(req.authContext);
+  }
+
+  @Get(':userId')
+  @RequirePermission('user:read')
+  get(@Param('userId') userId: string, @Req() req: any) {
+    return this.users.get(req.authContext, userId);
+  }
+
+  @Post()
+  @RequirePermission('user:write')
+  create(@Body() dto: CreateUserDto, @Req() req: any) {
+    return this.users.create(req.authContext, dto);
+  }
+
+  @Patch(':userId/activate')
+  @RequirePermission('user:write')
+  activate(@Param('userId') userId: string, @Req() req: any) {
+    return this.users.setActive(req.authContext, userId, true);
+  }
+
+  @Patch(':userId/deactivate')
+  @RequirePermission('user:write')
+  deactivate(@Param('userId') userId: string, @Req() req: any) {
+    return this.users.setActive(req.authContext, userId, false);
+  }
+}
