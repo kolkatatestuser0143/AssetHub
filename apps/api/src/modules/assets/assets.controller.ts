@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
-import { IsIn, IsInt, IsObject, IsOptional, IsString, Min } from 'class-validator';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { IsDateString, IsIn, IsInt, IsObject, IsOptional, IsString, Min } from 'class-validator';
 import { AssetLifecycleState } from '../../common/enums';
 import { AssetsService } from './assets.service';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
@@ -27,6 +27,15 @@ class CreateAssetTypeDto {
   @IsString() @IsOptional() separator?: string;
   @IsInt() @Min(1) @IsOptional() padding?: number;
 }
+class VendorDto {
+  @IsString() name: string;
+  @IsOptional() @IsString() contact?: string;
+}
+class WarrantyDto {
+  @IsString() assetId: string;
+  @IsOptional() @IsString() provider?: string;
+  @IsOptional() @IsDateString() expiresAt?: string;
+}
 
 @Controller('assets')
 @UseGuards(TenantContextGuard, RbacGuard)
@@ -41,53 +50,65 @@ export class AssetsController {
   @RequirePermission('asset:read')
   listAssignments(@Req() req: any) { return this.assets.listAssignments(req.authContext); }
 
-  @Get('types')
+  @Get('vendors')
   @RequirePermission('asset:read')
-  listTypes(@Req() req: any) { return this.assets.listAssetTypes(req.authContext); }
+  listVendors(@Req() req: any) { return this.assets.listVendors(req.authContext); }
+
+  @Post('vendors')
+  @RequirePermission('asset:write')
+  createVendor(@Body() dto: VendorDto, @Req() req: any) { return this.assets.createVendor(req.authContext, dto.name, dto.contact); }
+
+  @Patch('vendors/:vendorId')
+  @RequirePermission('asset:write')
+  updateVendor(@Param('vendorId') vendorId: string, @Body() dto: VendorDto, @Req() req: any) { return this.assets.updateVendor(req.authContext, vendorId, dto.name, dto.contact); }
+
+  @Delete('vendors/:vendorId')
+  @RequirePermission('asset:write')
+  deleteVendor(@Param('vendorId') vendorId: string, @Req() req: any) { return this.assets.deleteVendor(req.authContext, vendorId); }
+
+  @Get('warranties')
+  @RequirePermission('asset:read')
+  listWarranties(@Req() req: any) { return this.assets.listWarranties(req.authContext); }
 
   @Post('types')
   @RequirePermission('asset:write')
   createType(@Body() dto: CreateAssetTypeDto, @Req() req: any) {
-    return this.assets.createAssetType(req.authContext, dto.name, {
-      prefix: dto.prefix, separator: dto.separator, padding: dto.padding,
-    });
+    return this.assets.createAssetType(req.authContext, dto.name, { prefix: dto.prefix, separator: dto.separator, padding: dto.padding });
   }
+
+  @Get('types')
+  @RequirePermission('asset:read')
+  listTypes(@Req() req: any) { return this.assets.listAssetTypes(req.authContext); }
 
   @Post()
   @RequirePermission('asset:write')
   create(@Body() dto: CreateAssetDto, @Req() req: any) {
-    return this.assets.createAsset(req.authContext, dto.assetTypeId, {
-      ...(dto.fields ?? {}), locationId: dto.locationId, departmentId: dto.departmentId, vendorId: dto.vendorId,
-    });
+    return this.assets.createAsset(req.authContext, dto.assetTypeId, { ...(dto.fields ?? {}), locationId: dto.locationId, departmentId: dto.departmentId, vendorId: dto.vendorId });
   }
 
   @Post(':assetId/assign')
   @RequirePermission('asset:write')
-  assign(@Param('assetId') assetId: string, @Body() dto: AssignAssetDto, @Req() req: any) {
-    return this.assets.assignAsset(req.authContext, assetId, dto.userId, dto.notes);
-  }
+  assign(@Param('assetId') assetId: string, @Body() dto: AssignAssetDto, @Req() req: any) { return this.assets.assignAsset(req.authContext, assetId, dto.userId, dto.notes); }
 
   @Get(':assetId/assignment')
   @RequirePermission('asset:read')
-  currentAssignment(@Param('assetId') assetId: string, @Req() req: any) {
-    return this.assets.getCurrentAssignment(req.authContext, assetId);
-  }
+  currentAssignment(@Param('assetId') assetId: string, @Req() req: any) { return this.assets.getCurrentAssignment(req.authContext, assetId); }
 
   @Post(':assetId/unassign')
   @RequirePermission('asset:write')
-  unassign(@Param('assetId') assetId: string, @Body() dto: AssignAssetDto, @Req() req: any) {
-    return this.assets.unassignAsset(req.authContext, assetId, dto.notes);
-  }
+  unassign(@Param('assetId') assetId: string, @Body() dto: AssignAssetDto, @Req() req: any) { return this.assets.unassignAsset(req.authContext, assetId, dto.notes); }
 
   @Get(':assetId/assignment/history')
   @RequirePermission('asset:read')
-  history(@Param('assetId') assetId: string, @Req() req: any) {
-    return this.assets.listAssignmentHistory(req.authContext, assetId);
-  }
+  history(@Param('assetId') assetId: string, @Req() req: any) { return this.assets.listAssignmentHistory(req.authContext, assetId); }
 
   @Post(':assetId/transition')
   @RequirePermission('asset:write')
-  transition(@Param('assetId') assetId: string, @Body() dto: TransitionDto, @Req() req: any) {
-    return this.assets.transitionState(req.authContext, assetId, dto.toState, req.authContext.userId, dto.reason);
+  transition(@Param('assetId') assetId: string, @Body() dto: TransitionDto, @Req() req: any) { return this.assets.transitionState(req.authContext, assetId, dto.toState, req.authContext.userId, dto.reason); }
+
+  @Post(':assetId/warranty')
+  @RequirePermission('asset:write')
+  upsertWarranty(@Param('assetId') assetId: string, @Body() dto: Omit<WarrantyDto, 'assetId'>, @Req() req: any) {
+    return this.assets.upsertWarranty(req.authContext, assetId, dto.provider, dto.expiresAt ? new Date(dto.expiresAt) : undefined);
   }
 }
