@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { ThrottlerModule } from '@nestjs/throttler';
 
 import { DatabaseModule } from './common/database/database.module';
 import { MongooseDatabaseService } from './common/mongoose-database.service';
+import { AuditInterceptor } from './common/audit/audit.interceptor';
 
 // Auth
 import { AuthController } from './modules/auth/auth.controller';
@@ -112,6 +114,12 @@ import { UsersService } from './modules/users/users.service';
 
     // Audit
     AuditService,
+
+    // Global mutation audit
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: AuditInterceptor,
+    },
 
     // Users
     UsersService,
