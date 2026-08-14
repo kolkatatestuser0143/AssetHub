@@ -5,25 +5,13 @@ import { apiFetch } from '../../../lib/api-client';
 import { Check, Plus, RefreshCw, Search, ShieldCheck } from 'lucide-react';
 
 type Permission = { id: string; key: string };
-type RolePermission = {
-  permissionId?: string;
-  permissionKey?: string;
-  permission?: Permission | null;
-};
+type RolePermission = { permissionId: string; permissionKey: string };
 type Role = {
   id: string;
   name: string;
   isSystem: boolean;
-  permissions?: RolePermission[];
+  permissions: RolePermission[];
 };
-
-function permissionKey(item: RolePermission): string {
-  return item.permissionKey ?? item.permission?.key ?? '';
-}
-
-function permissionId(item: RolePermission, index: number): string {
-  return item.permissionId ?? item.permission?.id ?? `${permissionKey(item)}-${index}`;
-}
 
 export default function RolesPage() {
   const [roles, setRoles] = useState<Role[]>([]);
@@ -87,9 +75,8 @@ export default function RolesPage() {
     const normalizedQuery = query.trim().toLowerCase();
 
     return roles.filter((role) => {
-      const permissionText = (role.permissions ?? [])
-        .map(permissionKey)
-        .filter(Boolean)
+      const permissionText = role.permissions
+        .map((permission) => permission.permissionKey)
         .join(' ');
 
       return `${role.name} ${permissionText}`
@@ -233,21 +220,16 @@ export default function RolesPage() {
                   </div>
 
                   <div className="mt-4 flex flex-wrap gap-2">
-                    {(role.permissions ?? []).length ? (
-                      role.permissions?.map((item, index) => {
-                        const key = permissionKey(item);
-                        if (!key) return null;
-
-                        return (
-                          <span
-                            key={permissionId(item, index)}
-                            className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700"
-                          >
-                            <Check size={12} />
-                            {key}
-                          </span>
-                        );
-                      })
+                    {role.permissions.length ? (
+                      role.permissions.map((permission) => (
+                        <span
+                          key={permission.permissionId}
+                          className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700"
+                        >
+                          <Check size={12} />
+                          {permission.permissionKey}
+                        </span>
+                      ))
                     ) : (
                       <span className="text-sm text-slate-400">
                         No permissions
