@@ -66,27 +66,20 @@ export class AuthService {
     await this.sessions.revokeSession(sessionId, userId, 'user_logout');
   }
 
+  async logoutByRefreshToken(rawRefreshToken: string) {
+    const session = await this.sessions.findByRefreshToken(rawRefreshToken);
+    if (session && !session.revokedAt) await this.sessions.revokeSession(session.id, session.userId, 'user_logout');
+  }
+
   private async resolveSystemPermissions(roleIds: string[]): Promise<string[]> {
     if (!roleIds.length) return [];
-
-    // roleIds are stored as strings on users while Mongo role _id values are
-    // normally ObjectIds. Query both representations so seeded and migrated
-    // system accounts resolve permissions reliably.
     const normalizedIds = roleIds.map((id) => String(id));
-    const objectIds = normalizedIds
-      .filter((id) => Types.ObjectId.isValid(id))
-      .map((id) => new Types.ObjectId(id));
-
+    const objectIds = normalizedIds.filter((id) => Types.ObjectId.isValid(id)).map((id) => new Types.ObjectId(id));
     const filters: Record<string, unknown>[] = [{ _id: { $in: normalizedIds } }];
     if (objectIds.length) filters.push({ _id: { $in: objectIds } });
-
     const roles = await this.db.role.find({ $or: filters }).lean();
     const perms = new Set<string>();
-    for (const role of roles) {
-      for (const permission of role.permissions ?? []) {
-        if (permission.permissionKey) perms.add(permission.permissionKey);
-      }
-    }
+    for (const role of roles) for (const permission of role.permissions ?? []) if (permission.permissionKey) perms.add(permission.permissionKey);
     return [...perms];
   }
 
