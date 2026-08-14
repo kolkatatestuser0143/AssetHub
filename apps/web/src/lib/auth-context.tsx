@@ -11,21 +11,20 @@ interface AuthState {
 }
 
 const AuthContext = createContext<AuthState | null>(null);
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001/api/v1';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthState['status']>('loading');
   const router = useRouter();
 
   useEffect(() => {
-    void fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001/api/v1'}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Auth-Scope': 'tenant' },
+    void fetch(`${API_BASE}/auth/session`, {
+      method: 'GET',
+      headers: { 'X-Auth-Scope': 'tenant' },
       credentials: 'include',
     })
-      .then((res) => {
-        if (!res.ok) throw new Error('Session expired');
-        setStatus('authenticated');
-      })
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data) => setStatus(data.authenticated ? 'authenticated' : 'unauthenticated'))
       .catch(() => setStatus('unauthenticated'));
   }, []);
 
