@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 
@@ -6,13 +6,61 @@ import { MongooseDatabaseService } from '../../common/mongoose-database.service'
 export class SystemSubscriptionService {
   constructor(private readonly db: MongooseDatabaseService) {}
 
+  async listPlans(includeArchived = true) {
+    const filter = includeArchived ? {} : { $or: [{ isActive: true }, { isActive: { $exists: false } }] };
+    const plans = await this.db.plan.find(filter).sort({ name: 1 }).lean();
+    return plans.map((plan: any) => ({
+      id: String(plan._id),
+      name: plan.name,
+      features: plan.features ?? {},
+      isActive: plan.isActive !== false,
+      createdAt: plan.createdAt,
+      updatedAt: plan.updatedAt,
+    }));
+  }
+
+  async createPlan(name: string, features: Record<string, unknown> = {}) {
+    const normalizedName = name?.trim();
+    if (!normalizedName) throw new BadRequestException('Plan name is required');
+    if (!features || typeof features !== 'object' || Array.isArray(features)) throw new BadRequestException('Plan features must be an object');
+    const existing = await this.db.plan.findOne({ name: normalizedName }).lean();
+    if (existing) throw new ConflictException('A plan with this name already exists');
+    const plan = await this.db.plan.create({ name: normalizedName, features, isActive: true });
+    return { id: String(plan._id), name: plan.name, features: plan.features ?? {}, isActive: true, createdAt: plan.createdAt, updatedAt: plan.updatedAt };
+  }
+
+  async updatePlan(planId: string, name: string, features: Record<string, unknown>) {
+    if (!Types.ObjectId.isValid(planId)) throw new BadRequestException('Invalid plan id');
+    const normalizedName = name?.trim();
+    if (!normalizedName) throw new BadRequestException('Plan name is required');
+    if (!features || typeof features !== 'object' || Array.isArray(features)) throw new BadRequestException('Plan features must be an object');
+    const duplicate = await this.db.plan.findOne({ name: normalizedName, _id: { $ne: planId } }).lean();
+    if (duplicate) throw new ConflictException('A plan with this name already exists');
+    const plan = await this.db.plan.findByIdAndUpdate(planId, { $set: { name: normalizedName, features } }, { new: true }).lean();
+    if (!plan) throw new NotFoundException('Plan not found');
+    return { id: String(plan._id), name: plan.name, features: plan.features ?? {}, isActive: plan.isActive !== false, createdAt: plan.createdAt, updatedAt: plan.updatedAt };
+  }
+
+  async setPlanActive(planId: string, isActive: boolean) {
+    if (!Types.ObjectId.isValid(planId)) throw new BadRequestException('Invalid plan id');
+    const plan = await this.db.plan.findById(planId).lean();
+    if (!plan) throw new NotFoundException('Plan not found');
+    if (!isActive) {
+      const inUse = await this.db.subscription.exists({ planId: String(plan._id), status: { $in: ['active', 'trialing', 'past_due'] } });
+      if (inUse) throw new ConflictException('Cannot archive a plan that is assigned to an active subscription');
+    }
+    const updated = await this.db.plan.findByIdAndUpdate(planId, { $set: { isActive } }, { new: true }).lean();
+    if (!updated) throw new NotFoundException('Plan not found');
+    return { id: String(updated._id), name: updated.name, features: updated.features ?? {}, isActive: updated.isActive !== false };
+  }
+
   async overview() {
     const [plans, subscriptions] = await Promise.all([
-      this.db.plan.find({}).sort({ name: 1 }).lean(),
+      this.db.plan.find({ $or: [{ isActive: true }, { isActive: { $exists: false } }] }).sort({ name: 1 }).lean(),
       this.db.subscription.find({ status: { $ne: 'revoked' } }).sort({ createdAt: -1 }).lean(),
     ]);
     return {
-      plans: plans.map((plan: any) => ({ id: String(plan._id), name: plan.name, features: plan.features ?? {} })),
+      plans: plans.map((plan: any) => ({ id: String(plan._id), name: plan.name, features: plan.features ?? {}, isActive: plan.isActive !== false })),
       subscriptions: subscriptions.map((sub: any) => this.dto(sub)),
     };
   }
@@ -43,6 +91,7 @@ export class SystemSubscriptionService {
     if (!Types.ObjectId.isValid(planId)) throw new BadRequestException('Invalid plan id');
     const plan = await this.db.plan.findById(planId).lean();
     if (!plan) throw new NotFoundException('Plan not found');
+    if (plan.isActive === false) throw new ConflictException('Plan is archived and cannot be assigned');
     return plan;
   }
 
