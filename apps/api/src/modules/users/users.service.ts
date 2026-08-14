@@ -6,6 +6,7 @@ import { TenantScopedRepository } from '../../common/tenant-scoped.repository';
 import { toDto, toDtoArray } from '../../common/mongoose.utils';
 import { InviteService } from '../auth/invite.service';
 import { MailService } from '../../common/mail/mail.service';
+import { EntitlementService } from '../billing/entitlement.service';
 
 @Injectable()
 export class UsersService extends TenantScopedRepository {
@@ -13,6 +14,7 @@ export class UsersService extends TenantScopedRepository {
     private readonly db: MongooseDatabaseService,
     private readonly invites: InviteService,
     private readonly mail: MailService,
+    private readonly entitlements: EntitlementService,
   ) { super(); }
 
   private safe(user: any) {
@@ -46,6 +48,8 @@ export class UsersService extends TenantScopedRepository {
     if (!auth.crossCompany && companyId !== auth.companyId) throw new NotFoundException('Company not in scope');
     const exists = await this.db.user.findOne({ email: input.email.trim().toLowerCase(), tenantId: auth.tenantId }).lean();
     if (exists) throw new ConflictException('A user with this email already exists');
+    const currentUserCount = await this.db.user.countDocuments({ tenantId: auth.tenantId, accountType: 'TENANT' });
+    await this.entitlements.requireWithinLimit(auth.tenantId, 'max_users', currentUserCount, 1);
     const doc = await this.db.user.create({
       tenantId: auth.tenantId,
       companyId,
