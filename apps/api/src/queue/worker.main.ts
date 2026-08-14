@@ -27,13 +27,18 @@ async function sendLicenseNotifications(
   if (!subscription?.endsAt) return { recipients: 0, sent: 0 };
 
   const endsAt = new Date(subscription.endsAt);
-  const now = Date.now();
-  const diffMs = endsAt.getTime() - now;
+  const diffMs = endsAt.getTime() - Date.now();
   const daysRemaining = Math.ceil(diffMs / (24 * 60 * 60 * 1000));
   const expired = diffMs <= 0;
-  const warningDay = expired ? null : WARNING_DAYS.find((days) => daysRemaining <= days && daysRemaining > (days === 7 ? 0 : days - 30));
 
-  // Only notify at the configured warning bands, or once after expiry.
+  let warningDay: number | undefined;
+  if (!expired) {
+    warningDay = WARNING_DAYS.find((days, index) => {
+      const lowerExclusive = WARNING_DAYS[index + 1] ?? 0;
+      return daysRemaining <= days && daysRemaining > lowerExclusive;
+    });
+  }
+
   if (!expired && warningDay === undefined) return { recipients: 0, sent: 0 };
 
   const notificationKey = expired ? 'expired' : `expires-${warningDay}`;
