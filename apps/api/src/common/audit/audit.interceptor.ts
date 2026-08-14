@@ -35,6 +35,10 @@ export class AuditInterceptor implements NestInterceptor {
       actorUserId: auth.userId,
       targetType,
       targetId: targetId ? String(targetId) : undefined,
+      route,
+      method,
+      ipAddress: req.ip,
+      userAgent: String(req.headers?.['user-agent'] ?? '').slice(0, 500),
     };
 
     return next.handle().pipe(
@@ -42,25 +46,18 @@ export class AuditInterceptor implements NestInterceptor {
         void this.audit.record({
           ...base,
           action: `${method.toLowerCase()}.${this.normalizeRoute(route)}`,
-          metadata: {
-            statusCode: res.statusCode,
-            route,
-            method,
-            ipAddress: req.ip,
-            userAgent: String(req.headers?.['user-agent'] ?? '').slice(0, 500),
-          },
+          result: 'success',
+          statusCode: res.statusCode,
+          metadata: {},
         }).catch(() => undefined);
       }),
       catchError((error) => {
         void this.audit.record({
           ...base,
           action: `${method.toLowerCase()}.${this.normalizeRoute(route)}.failed`,
-          metadata: {
-            statusCode: error?.status ?? 500,
-            route,
-            method,
-            error: String(error?.message ?? 'Request failed').slice(0, 1000),
-          },
+          result: 'failure',
+          statusCode: error?.status ?? 500,
+          metadata: { error: String(error?.message ?? 'Request failed').slice(0, 1000) },
         }).catch(() => undefined);
         throw error;
       }),
