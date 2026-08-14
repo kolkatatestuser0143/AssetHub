@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Patch, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Req, UseGuards } from '@nestjs/common';
 import { SystemAdminGuard } from '../../common/guards/system-admin.guard';
 import { SystemAdminService } from './system-admin.service';
 import { SystemPermission } from '../../common/guards/system-permission.decorator';
@@ -18,11 +18,15 @@ export class SystemAdminController {
 
   @Patch('tenants/:tenantId/suspend')
   @SystemPermission('platform:tenants:manage')
-  suspend(@Param('tenantId') tenantId: string, @Req() req: any) { return this.service.setTenantStatus(tenantId, false, req.systemAuth?.sub); }
+  suspend(@Param('tenantId') tenantId: string, @Body() body: { reason?: string }, @Req() req: any) {
+    return this.service.setTenantStatus(tenantId, false, req.systemAuth?.sub, body?.reason);
+  }
 
   @Patch('tenants/:tenantId/activate')
   @SystemPermission('platform:tenants:manage')
-  activate(@Param('tenantId') tenantId: string, @Req() req: any) { return this.service.setTenantStatus(tenantId, true, req.systemAuth?.sub); }
+  activate(@Param('tenantId') tenantId: string, @Req() req: any) {
+    return this.service.setTenantStatus(tenantId, true, req.systemAuth?.sub);
+  }
 
   @Get('users')
   @SystemPermission('platform:users:read')
