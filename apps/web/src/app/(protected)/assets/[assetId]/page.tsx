@@ -2,8 +2,9 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, CheckCircle2, History, Package, ShieldCheck, UserRound } from 'lucide-react';
+import { ArrowLeft, History, Package, ShieldCheck, UserRound } from 'lucide-react';
 import { apiFetch } from '../../../../lib/api-client';
+import AssetDocumentsPanel from '../../../../components/assets/AssetDocumentsPanel';
 
 const STATES = ['REQUESTED', 'IN_STOCK', 'ASSIGNED', 'IN_REPAIR', 'LOST_STOLEN', 'RETIRED', 'DISPOSED'];
 
@@ -23,14 +24,12 @@ export default function AssetDetailPage({ params }: { params: { assetId: string 
   const [busy, setBusy] = useState(true);
 
   async function load() {
-    setBusy(true);
-    setMessage(null);
+    setBusy(true); setMessage(null);
     try {
       const all = await apiFetch('/assets');
       const found = (Array.isArray(all) ? all : []).find((item: Asset) => item.id === params.assetId);
       if (!found) throw new Error('Asset not found.');
-      setAsset(found);
-      setState(found.status);
+      setAsset(found); setState(found.status);
       const [warrantyData, assignmentData, fieldsData] = await Promise.allSettled([
         apiFetch(`/assets/${params.assetId}/warranty`),
         apiFetch(`/assets/${params.assetId}/assignment`),
@@ -45,21 +44,17 @@ export default function AssetDetailPage({ params }: { params: { assetId: string 
       if (fieldsData.status === 'fulfilled') setCustomFields(fieldsData.value?.values ?? fieldsData.value ?? {});
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to load asset.');
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   }
 
-  useEffect(() => { load(); }, [params.assetId]);
+  useEffect(() => { void load(); }, [params.assetId]);
 
   async function transition(nextState: string) {
     if (!asset || nextState === asset.status) return;
     try {
       await apiFetch(`/assets/${asset.id}/transition`, { method: 'POST', body: JSON.stringify({ toState: nextState }) });
       await load();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to change lifecycle state.');
-    }
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Unable to change lifecycle state.'); }
   }
 
   async function saveWarranty(event: React.FormEvent) {
@@ -69,11 +64,8 @@ export default function AssetDetailPage({ params }: { params: { assetId: string 
         method: 'PUT',
         body: JSON.stringify({ provider: provider || undefined, expiresAt: expiresAt ? new Date(`${expiresAt}T00:00:00.000Z`).toISOString() : undefined }),
       });
-      setMessage('Warranty saved.');
-      await load();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to save warranty.');
-    }
+      setMessage('Warranty saved.'); await load();
+    } catch (error) { setMessage(error instanceof Error ? error.message : 'Unable to save warranty.'); }
   }
 
   const warrantyLabel = useMemo(() => warranty?.expiresAt ? new Date(warranty.expiresAt).toLocaleDateString() : 'Not configured', [warranty]);
@@ -95,6 +87,7 @@ export default function AssetDetailPage({ params }: { params: { assetId: string 
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"><div className="flex items-center gap-2 font-semibold text-slate-900"><History size={18} className="text-blue-600"/>Custom fields</div>{Object.keys(customFields).length === 0 ? <p className="mt-5 text-sm text-slate-500">No custom-field values.</p> : <dl className="mt-5 space-y-3 text-sm">{Object.entries(customFields).map(([key, value]) => <div key={key} className="flex justify-between gap-4"><dt className="font-mono text-xs text-slate-500">{key}</dt><dd className="text-right font-medium text-slate-900">{String(value)}</dd></div>)}</dl>}</section>
       </div>
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"><div className="flex items-center gap-2 font-semibold text-slate-900"><ShieldCheck size={18} className="text-blue-600"/>Warranty</div><form onSubmit={saveWarranty} className="mt-5 grid gap-4 md:grid-cols-[1fr_220px_auto]"><input value={provider} onChange={(e) => setProvider(e.target.value)} placeholder="Warranty provider" className="h-10 rounded-xl border border-slate-200 px-3 text-sm"/><input type="date" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} className="h-10 rounded-xl border border-slate-200 px-3 text-sm"/><button className="h-10 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700">Save warranty</button></form></section>
+      <AssetDocumentsPanel assetId={params.assetId} />
     </div>
   );
 }
