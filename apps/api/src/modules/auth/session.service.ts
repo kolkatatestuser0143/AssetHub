@@ -1,17 +1,22 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 import { UserAccountType } from '../../models/user.schemas';
 import { TenantStatus } from '../../models/tenancy.schemas';
 import { toDto } from '../../common/mongoose.utils';
+import { EntitlementService } from '../billing/entitlement.service';
 
 const ACCESS_TOKEN_TTL = '10m';
-const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const DEFAULT_REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class SessionService {
-  constructor(private readonly db: MongooseDatabaseService, private readonly jwt: JwtService) {}
+  constructor(
+    private readonly db: MongooseDatabaseService,
+    private readonly jwt: JwtService,
+    private readonly entitlements: EntitlementService,
+  ) {}
 
   async issueSession(userId: string, ip: string, userAgent: string, system = false) {
     const rawUser = await this.db.findByIdOrThrow<any>(this.db.user, userId, 'User');
@@ -24,11 +29,33 @@ export class SessionService {
       throw new UnauthorizedException('Tenant session requires a tenant account');
     }
 
+    let refreshTokenTtlMs = DEFAULT_REFRESH_TOKEN_TTL_MS;
     if (!system) {
       const tenant = await this.db.tenant.findById(rawUser.tenantId).select({ status: 1 }).lean();
       if (!tenant) throw new UnauthorizedException('Tenant account is unavailable');
       if (tenant.status === TenantStatus.SUSPENDED) throw new UnauthorizedException('Tenant account is suspended');
       if (tenant.status === TenantStatus.ARCHIVED) throw new UnauthorizedException('Tenant account is archived');
+
+      const maxSessionDays = await this.entitlements.getNumber(rawUser.tenantId, 'session_max_days');
+      if (maxSessionDays !== null) refreshTokenTtlMs = maxSessionDays * 24 * 60 * 60 * 1000;
+      if (refreshTokenTtlMs <= 0) throw new ForbiddenException('Tenant session policy is invalid');
+
+      const maxConcurrent = await this.entitlements.getNumber(rawUser.tenantId, 'max_concurrent_sessions');
+      if (maxConcurrent !== null) {
+        const activeSessions = await this.db.session.find({
+          userId: normalizedUserId,
+          revokedAt: { $exists: false },
+          expiresAt: { $gt: new Date() },
+        }).sort({ lastSeenAt: 1, createdAt: 1 }).lean();
+        const overflow = activeSessions.length - maxConcurrent + 1;
+        if (overflow > 0) {
+          const idsToRevoke = activeSessions.slice(0, overflow).map((session: any) => session._id);
+          await this.db.session.updateMany(
+            { _id: { $in: idsToRevoke }, userId: normalizedUserId, revokedAt: { $exists: false } },
+            { $set: { revokedAt: new Date(), revokedReason: 'concurrent_session_limit' } },
+          );
+        }
+      }
     }
 
     const permissions = system
@@ -42,7 +69,7 @@ export class SessionService {
       ipAddress: ip,
       userAgent,
       lastSeenAt: new Date(),
-      expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
+      expiresAt: new Date(Date.now() + refreshTokenTtlMs),
     });
 
     const sessionId = String(session._id);
