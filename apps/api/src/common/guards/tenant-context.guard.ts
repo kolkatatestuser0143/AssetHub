@@ -1,6 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { ACCESS_COOKIE, readCookie } from '../auth/auth-cookies';
+import { TENANT_ACCESS_COOKIE, readCookie } from '../auth/auth-cookies';
 
 export interface AuthContext {
   userId: string;
@@ -20,16 +20,12 @@ export class TenantContextGuard implements CanActivate {
     const authHeader = req.headers['authorization'];
     const token = authHeader?.startsWith('Bearer ')
       ? authHeader.slice(7)
-      : readCookie(req, ACCESS_COOKIE);
-
+      : readCookie(req, TENANT_ACCESS_COOKIE);
     if (!token) throw new UnauthorizedException('Missing access token');
 
     try {
       const payload = this.jwt.verify(token);
-      if (!payload.sub || !payload.sessionId || !payload.tenantId || !payload.companyId) {
-        throw new UnauthorizedException('Invalid access token claims');
-      }
-
+      if (!payload.sub || !payload.sessionId || !payload.tenantId || !payload.companyId) throw new UnauthorizedException('Invalid access token claims');
       req.authContext = {
         userId: payload.sub,
         sessionId: payload.sessionId,
