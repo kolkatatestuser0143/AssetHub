@@ -2,190 +2,39 @@
 
 import Link from 'next/link';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { Plus, RefreshCw, Search, ShieldCheck, UserCheck, UserX, Users } from 'lucide-react';
+import { Copy, KeyRound, Pencil, Plus, RefreshCw, Search, ShieldCheck, UserCheck, UserX, Users, X } from 'lucide-react';
 import { apiFetch } from '../../../lib/api-client';
 
-type User = {
-  id: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  jobTitle?: string;
-  phone?: string;
-  isActive: boolean;
-  forcePasswordReset?: boolean;
-  roleIds?: string[];
-};
+type User = { id:string; email:string; firstName:string; lastName:string; jobTitle?:string; phone?:string; departmentId?:string; locationId?:string; isActive:boolean; forcePasswordReset?:boolean; roleIds?:string[] };
+type Role = { id:string; name:string; isSystem:boolean; permissions?:{permissionKey?:string}[] };
+const emptyForm={email:'',firstName:'',lastName:'',jobTitle:'',phone:'',departmentId:'',locationId:''};
 
-export default function UsersPage() {
-  const [users, setUsers] = useState<User[]>([]);
-  const [query, setQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ email: '', firstName: '', lastName: '', jobTitle: '', phone: '' });
-
-  async function load() {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await apiFetch('/users');
-      setUsers(Array.isArray(data) ? data : []);
-    } catch (err: any) {
-      setError(err?.message ?? 'Unable to load tenant users.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    void load();
-  }, []);
-
-  async function createUser(event: FormEvent) {
-    event.preventDefault();
-    setSaving(true);
-    setError(null);
-    setMessage(null);
-    try {
-      await apiFetch('/users', {
-        method: 'POST',
-        body: JSON.stringify({
-          email: form.email,
-          firstName: form.firstName,
-          lastName: form.lastName,
-          jobTitle: form.jobTitle || undefined,
-          phone: form.phone || undefined,
-        }),
-      });
-      setForm({ email: '', firstName: '', lastName: '', jobTitle: '', phone: '' });
-      setShowCreate(false);
-      setMessage('User created. The account is marked for password setup on first access.');
-      await load();
-    } catch (err: any) {
-      setError(err?.message ?? 'Unable to create user.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function toggleActive(user: User) {
-    setError(null);
-    setMessage(null);
-    try {
-      await apiFetch(`/users/${user.id}/${user.isActive ? 'deactivate' : 'activate'}`, {
-        method: 'PATCH',
-      });
-      setMessage(user.isActive ? 'User deactivated.' : 'User activated.');
-      await load();
-    } catch (err: any) {
-      setError(err?.message ?? 'Unable to update user status.');
-    }
-  }
-
-  const filtered = useMemo(() => {
-    const text = query.trim().toLowerCase();
-    return users.filter((user) => {
-      const matchesQuery = !text || `${user.firstName} ${user.lastName} ${user.email} ${user.jobTitle ?? ''}`.toLowerCase().includes(text);
-      const matchesStatus = statusFilter === 'ALL' || (statusFilter === 'ACTIVE' ? user.isActive : !user.isActive);
-      return matchesQuery && matchesStatus;
-    });
-  }, [users, query, statusFilter]);
-
-  const activeCount = users.filter((user) => user.isActive).length;
-  const resetCount = users.filter((user) => user.forcePasswordReset).length;
-
-  return (
-    <div className="mx-auto max-w-[1400px] space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Access</p>
-          <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">Users</h1>
-          <p className="mt-2 text-sm text-slate-500">Manage tenant identities, roles, sessions, and access lifecycle.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => void load()} disabled={loading} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60">
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Refresh
-          </button>
-          <button type="button" onClick={() => setShowCreate(true)} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700">
-            <Plus size={16} /> Add user
-          </button>
-        </div>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><p className="text-xs uppercase tracking-wide text-slate-500">Total users</p><p className="mt-2 text-2xl font-bold text-slate-950">{users.length}</p></div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><p className="text-xs uppercase tracking-wide text-slate-500">Active</p><p className="mt-2 text-2xl font-bold text-emerald-700">{activeCount}</p></div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><p className="text-xs uppercase tracking-wide text-slate-500">Password setup required</p><p className="mt-2 text-2xl font-bold text-amber-700">{resetCount}</p></div>
-      </div>
-
-      {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
-      {message && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div>}
-
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-slate-100 p-4 md:flex-row md:items-center md:justify-between">
-          <div className="relative w-full max-w-md">
-            <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, email, job title" className="h-10 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-sm outline-none focus:border-blue-500" />
-          </div>
-          <div className="flex items-center gap-2">
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm">
-              <option value="ALL">All users</option>
-              <option value="ACTIVE">Active</option>
-              <option value="INACTIVE">Inactive</option>
-            </select>
-            <span className="text-xs text-slate-500">{filtered.length} of {users.length}</span>
-          </div>
-        </div>
-
-        {loading ? (
-          <div className="space-y-3 p-5">{[1, 2, 3, 4, 5].map((n) => <div key={n} className="h-14 animate-pulse rounded-xl bg-slate-100" />)}</div>
-        ) : filtered.length === 0 ? (
-          <div className="p-14 text-center">
-            <Users size={38} className="mx-auto text-slate-300" />
-            <p className="mt-4 font-semibold text-slate-800">No tenant users found</p>
-            <p className="mt-1 text-sm text-slate-500">Create a user to begin managing tenant access.</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                <tr><th className="px-5 py-3">User</th><th className="px-5 py-3">Role assignments</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Access setup</th><th className="px-5 py-3" /></tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filtered.map((user) => (
-                  <tr key={user.id} className="hover:bg-slate-50">
-                    <td className="px-5 py-4"><Link href={`/users/${user.id}`} className="font-semibold text-slate-900 hover:text-blue-600">{user.firstName} {user.lastName}</Link><div className="mt-1 text-xs text-slate-500">{user.email}</div>{user.jobTitle && <div className="mt-1 text-xs text-slate-400">{user.jobTitle}</div>}</td>
-                    <td className="px-5 py-4"><span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700"><ShieldCheck size={13} />{user.roleIds?.length ?? 0} role{(user.roleIds?.length ?? 0) === 1 ? '' : 's'}</span></td>
-                    <td className="px-5 py-4"><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${user.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{user.isActive ? <UserCheck size={13} /> : <UserX size={13} />}{user.isActive ? 'Active' : 'Inactive'}</span></td>
-                    <td className="px-5 py-4">{user.forcePasswordReset ? <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">Password setup required</span> : <span className="text-xs text-slate-500">Configured</span>}</td>
-                    <td className="px-5 py-4 text-right"><div className="inline-flex items-center gap-2"><button type="button" onClick={() => void toggleActive(user)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">{user.isActive ? 'Deactivate' : 'Activate'}</button><Link href={`/users/${user.id}`} className="rounded-lg bg-slate-950 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800">Open</Link></div></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      {showCreate && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-4" role="dialog" aria-modal="true">
-          <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
-            <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Tenant access</p><h2 className="mt-1 text-xl font-bold text-slate-950">Add user</h2><p className="mt-1 text-sm text-slate-500">Create a tenant identity. Roles can be assigned from the user detail workspace.</p></div><button type="button" onClick={() => setShowCreate(false)} className="text-sm font-semibold text-slate-500 hover:text-slate-900">Close</button></div>
-            <form onSubmit={createUser} className="mt-6 grid gap-4 md:grid-cols-2">
-              <input required type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="Email address" className="h-11 rounded-xl border border-slate-200 px-3 text-sm" />
-              <input required value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} placeholder="First name" className="h-11 rounded-xl border border-slate-200 px-3 text-sm" />
-              <input required value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} placeholder="Last name" className="h-11 rounded-xl border border-slate-200 px-3 text-sm" />
-              <input value={form.jobTitle} onChange={(e) => setForm({ ...form, jobTitle: e.target.value })} placeholder="Job title" className="h-11 rounded-xl border border-slate-200 px-3 text-sm" />
-              <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="Phone (optional)" className="h-11 rounded-xl border border-slate-200 px-3 text-sm md:col-span-2" />
-              <div className="flex justify-end gap-2 md:col-span-2"><button type="button" onClick={() => setShowCreate(false)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700">Cancel</button><button disabled={saving} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60">{saving ? 'Creating…' : 'Create user'}</button></div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+export default function UsersPage(){
+ const [users,setUsers]=useState<User[]>([]),[roles,setRoles]=useState<Role[]>([]),[query,setQuery]=useState(''),[status,setStatus]=useState<'ALL'|'ACTIVE'|'INACTIVE'>('ALL');
+ const [loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState<string|null>(null),[message,setMessage]=useState<string|null>(null);
+ const [modal,setModal]=useState<'create'|'edit'|'roles'|'invite'|null>(null),[selected,setSelected]=useState<User|null>(null),[form,setForm]=useState(emptyForm),[roleIds,setRoleIds]=useState<string[]>([]),[inviteUrl,setInviteUrl]=useState('');
+ async function load(){setLoading(true);setError(null);try{const [u,r]=await Promise.all([apiFetch('/users'),apiFetch('/roles')]);setUsers(Array.isArray(u)?u:[]);setRoles(Array.isArray(r)?r:[]);}catch(e:any){setError(e?.message??'Unable to load users.')}finally{setLoading(false)}}
+ useEffect(()=>{void load()},[]);
+ function openEdit(u:User){setSelected(u);setForm({email:u.email,firstName:u.firstName,lastName:u.lastName,jobTitle:u.jobTitle??'',phone:u.phone??'',departmentId:u.departmentId??'',locationId:u.locationId??''});setModal('edit');setError(null);}
+ function openRoles(u:User){setSelected(u);setRoleIds(u.roleIds??[]);setModal('roles');setError(null);}
+ async function create(e:FormEvent){e.preventDefault();setSaving(true);setError(null);try{await apiFetch('/users',{method:'POST',body:JSON.stringify(form)});setModal(null);setForm(emptyForm);setMessage('User created. Generate an invite to let the user set a password.');await load()}catch(err:any){setError(err?.message??'Unable to create user.')}finally{setSaving(false)}}
+ async function edit(e:FormEvent){e.preventDefault();if(!selected)return;setSaving(true);setError(null);try{await apiFetch(`/users/${selected.id}`,{method:'PATCH',body:JSON.stringify(form)});setModal(null);setMessage('User profile updated.');await load()}catch(err:any){setError(err?.message??'Unable to update user.')}finally{setSaving(false)}}
+ async function saveRoles(){if(!selected)return;setSaving(true);setError(null);try{await apiFetch(`/users/${selected.id}/roles`,{method:'PUT',body:JSON.stringify({roleIds})});setModal(null);setMessage('Roles updated.');await load()}catch(err:any){setError(err?.message??'Unable to update roles.')}finally{setSaving(false)}}
+ async function invite(u:User){setSaving(true);setError(null);try{const r=await apiFetch(`/users/${u.id}/access-link`,{method:'POST'});setSelected(u);setInviteUrl(r.accessUrl??'');setModal('invite');setMessage('Secure one-time access link generated.')}catch(err:any){setError(err?.message??'Unable to generate access link.')}finally{setSaving(false)}}
+ async function toggle(u:User){try{await apiFetch(`/users/${u.id}/${u.isActive?'deactivate':'activate'}`,{method:'PATCH'});setMessage(u.isActive?'User deactivated.':'User activated.');await load()}catch(err:any){setError(err?.message??'Unable to update status.')}}
+ const filtered=useMemo(()=>users.filter(u=>{const q=query.trim().toLowerCase();const mq=!q||`${u.firstName} ${u.lastName} ${u.email} ${u.jobTitle??''}`.toLowerCase().includes(q);const ms=status==='ALL'||(status==='ACTIVE'?u.isActive:!u.isActive);return mq&&ms}),[users,query,status]);
+ return <div className="mx-auto max-w-[1500px] space-y-6">
+  <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Access</p><h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">Users</h1><p className="mt-2 text-sm text-slate-500">Edit identities, change roles, activate access, and issue secure password setup links.</p></div><div className="flex gap-2"><button onClick={()=>void load()} disabled={loading} className="inline-flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold"><RefreshCw size={16} className={loading?'animate-spin':''}/>Refresh</button><button onClick={()=>{setForm(emptyForm);setModal('create')}} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white"><Plus size={16}/>Add user</button></div></div>
+  <div className="grid gap-4 md:grid-cols-3"><Stat label="Total users" value={users.length}/><Stat label="Active" value={users.filter(u=>u.isActive).length} cls="text-emerald-700"/><Stat label="Setup required" value={users.filter(u=>u.forcePasswordReset).length} cls="text-amber-700"/></div>
+  {error&&<div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}{message&&<div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div>}
+  <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="flex flex-col gap-3 border-b p-4 md:flex-row md:justify-between"><div className="relative max-w-md flex-1"><Search size={16} className="absolute left-3 top-2.5 text-slate-400"/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search name, email, job title" className="h-10 w-full rounded-xl border pl-9 pr-3 text-sm"/></div><select value={status} onChange={e=>setStatus(e.target.value as any)} className="h-10 rounded-xl border px-3 text-sm"><option value="ALL">All users</option><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select></div>
+  {loading?<div className="space-y-3 p-5">{[1,2,3,4].map(n=><div key={n} className="h-14 animate-pulse rounded-xl bg-slate-100"/>)}</div>:<div className="overflow-x-auto"><table className="w-full min-w-[1100px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase text-slate-500"><tr><th className="px-5 py-3">User</th><th className="px-5 py-3">Roles</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Setup</th><th className="px-5 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y">{filtered.map(u=><tr key={u.id} className="hover:bg-slate-50"><td className="px-5 py-4"><Link href={`/users/${u.id}`} className="font-semibold hover:text-blue-600">{u.firstName} {u.lastName}</Link><div className="text-xs text-slate-500">{u.email}</div></td><td className="px-5 py-4"><button onClick={()=>openRoles(u)} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold"><ShieldCheck size={13}/>{u.roleIds?.length??0} roles</button></td><td className="px-5 py-4"><span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${u.isActive?'bg-emerald-50 text-emerald-700':'bg-slate-100 text-slate-600'}`}>{u.isActive?<UserCheck size={13}/>:<UserX size={13}/>} {u.isActive?'Active':'Inactive'}</span></td><td className="px-5 py-4">{u.forcePasswordReset?<span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">Required</span>:<span className="text-xs text-slate-500">Configured</span>}</td><td className="px-5 py-4"><div className="flex justify-end gap-2"><button onClick={()=>openEdit(u)} className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-semibold"><Pencil size={13}/>Edit</button><button onClick={()=>openRoles(u)} className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-semibold"><ShieldCheck size={13}/>Roles</button><button disabled={saving} onClick={()=>void invite(u)} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700"><KeyRound size={13}/>{u.forcePasswordReset?'Invite':'Reset access'}</button><button onClick={()=>void toggle(u)} className="rounded-lg border px-3 py-2 text-xs font-semibold">{u.isActive?'Deactivate':'Activate'}</button><Link href={`/users/${u.id}`} className="rounded-lg bg-slate-950 px-3 py-2 text-xs font-semibold text-white">Open</Link></div></td></tr>)}</tbody></table></div>}</section>
+  {modal==='create'||modal==='edit'?<FormModal title={modal==='create'?'Add user':'Edit user'} form={form} saving={saving} setForm={setForm} onClose={()=>setModal(null)} onSubmit={modal==='create'?create:edit}/>:null}
+  {modal==='roles'&&selected?<RoleModal user={selected} roles={roles} selected={roleIds} setSelected={setRoleIds} saving={saving} onClose={()=>setModal(null)} onSave={saveRoles}/>:null}
+  {modal==='invite'&&selected?<InviteModal user={selected} url={inviteUrl} onClose={()=>setModal(null)}/>:null}
+ </div>
 }
+function Stat({label,value,cls='text-slate-950'}:{label:string;value:number;cls?:string}){return <div className="rounded-2xl border bg-white p-5 shadow-sm"><p className="text-xs uppercase tracking-wide text-slate-500">{label}</p><p className={`mt-2 text-2xl font-bold ${cls}`}>{value}</p></div>}
+function FormModal({title,form,setForm,saving,onClose,onSubmit}:{title:string;form:typeof emptyForm;setForm:(v:typeof emptyForm)=>void;saving:boolean;onClose:()=>void;onSubmit:(e:FormEvent)=>void}){const f=(k:keyof typeof emptyForm)=><input value={form[k]} required={k==='email'||k==='firstName'||k==='lastName'} type={k==='email'?'email':'text'} onChange={e=>setForm({...form,[k]:e.target.value})} className="h-11 w-full rounded-xl border px-3 text-sm" placeholder={k.replace(/([A-Z])/g,' $1')}/>;return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-4"><div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl"><div className="flex justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Tenant access</p><h2 className="mt-1 text-xl font-bold">{title}</h2></div><button onClick={onClose}><X size={18}/></button></div><form onSubmit={onSubmit} className="mt-6 grid gap-4 md:grid-cols-2">{f('email')}{f('firstName')}{f('lastName')}{f('jobTitle')}{f('phone')}{f('departmentId')}{f('locationId')}<div className="md:col-span-2 flex justify-end gap-2"><button type="button" onClick={onClose} className="rounded-xl border px-4 py-2.5 text-sm font-semibold">Cancel</button><button disabled={saving} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white">{saving?'Saving…':title}</button></div></form></div></div>}
+function RoleModal({user,roles,selected,setSelected,saving,onClose,onSave}:{user:User;roles:Role[];selected:string[];setSelected:(v:string[])=>void;saving:boolean;onClose:()=>void;onSave:()=>void}){return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-4"><div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"><div className="flex justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">RBAC</p><h2 className="mt-1 text-xl font-bold">Change roles</h2><p className="text-sm text-slate-500">{user.firstName} {user.lastName}</p></div><button onClick={onClose}><X size={18}/></button></div><div className="mt-5 max-h-80 space-y-2 overflow-y-auto">{roles.map(r=>{const checked=selected.includes(r.id);return <label key={r.id} className="flex items-center justify-between rounded-xl border p-3"><span><span className="block font-semibold text-sm">{r.name}</span><span className="text-xs text-slate-500">{r.permissions?.length??0} permissions{r.isSystem?' · system':''}</span></span><input type="checkbox" checked={checked} onChange={()=>setSelected(checked?selected.filter(id=>id!==r.id):[...selected,r.id])}/></label>})}</div><div className="mt-6 flex justify-end gap-2"><button onClick={onClose} className="rounded-xl border px-4 py-2.5 text-sm font-semibold">Cancel</button><button disabled={saving} onClick={onSave} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white">{saving?'Saving…':'Save roles'}</button></div></div></div>}
+function InviteModal({user,url,onClose}:{user:User;url:string;onClose:()=>void}){return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/40 p-4"><div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl"><div className="flex justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Secure access</p><h2 className="mt-1 text-xl font-bold">Invite / reset access</h2><p className="text-sm text-slate-500">{user.email}</p></div><button onClick={onClose}><X size={18}/></button></div><div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">One-time link, expires in 24 hours. The raw token is never stored.</div><div className="mt-4 flex gap-2"><input readOnly value={url} className="min-w-0 flex-1 rounded-xl border bg-slate-50 px-3 py-3 text-xs"/><button onClick={()=>navigator.clipboard.writeText(url)} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-3 text-xs font-semibold text-white"><Copy size={14}/>Copy</button></div><p className="mt-3 text-xs text-slate-500">No SMTP mail transport is configured in this repository, so the secure URL is generated for delivery through your approved email channel.</p><div className="mt-6 flex justify-end"><button onClick={onClose} className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white">Done</button></div></div></div>}

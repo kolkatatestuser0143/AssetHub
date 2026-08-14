@@ -2,23 +2,15 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { setAccessToken, login as apiLogin } from './api-client';
+import { setAccessToken, login as apiLogin, logout as apiLogout } from './api-client';
 
 interface AuthState {
   status: 'loading' | 'authenticated' | 'unauthenticated';
   login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
-
-// NOTE: the backend currently returns accessToken/refreshToken in the
-// response body instead of setting httpOnly cookies (see auth.controller.ts).
-// Until that's fixed, we hold the refresh token in sessionStorage so a page
-// reload doesn't force a full re-login. This is an interim measure, not the
-// target architecture — sessionStorage is XSS-readable. Replace with a
-// server-set httpOnly cookie + CSRF token flow, then this file simplifies
-// (no sessionStorage, and middleware.ts can take over route protection).
 const REFRESH_KEY = 'itam_refresh_token';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -31,6 +23,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setStatus('unauthenticated');
       return;
     }
+
     fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001/api/v1'}/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -43,6 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setStatus('authenticated');
       })
       .catch(() => {
+        setAccessToken(null);
         sessionStorage.removeItem(REFRESH_KEY);
         setStatus('unauthenticated');
       });
@@ -54,11 +48,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus('authenticated');
   }
 
-  function logout() {
-    setAccessToken(null);
-    sessionStorage.removeItem(REFRESH_KEY);
+  async function logout() {
+    await apiLogout();
     setStatus('unauthenticated');
-    router.push('/login');
+    router.replace('/login');
   }
 
   return (

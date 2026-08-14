@@ -7,6 +7,7 @@ import {
   LogOut, Menu, Settings, ShieldCheck, Users, X, type LucideIcon,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { systemBootstrap, systemLogout } from '../../lib/system-api';
 
 const navigation: Array<{ label: string; href: string; icon: LucideIcon; exact?: boolean }> = [
   { label: 'Overview', href: '/system', icon: LayoutDashboard, exact: true },
@@ -21,48 +22,50 @@ const navigation: Array<{ label: string; href: string; icon: LucideIcon; exact?:
 ];
 
 const LOGIN_PATH = '/system/login';
-const ACCESS_TOKEN_KEY = 'itam_system_access_token';
-const REFRESH_TOKEN_KEY = 'itam_system_refresh_token';
 
 export default function SystemLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [checkingAuth, setCheckingAuth] = useState(pathname !== LOGIN_PATH);
-  const [authenticated, setAuthenticated] = useState(pathname === LOGIN_PATH);
-
   const isLoginPage = pathname === LOGIN_PATH;
+  const [checkingAuth, setCheckingAuth] = useState(!isLoginPage);
+  const [authenticated, setAuthenticated] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+
     if (isLoginPage) {
       setAuthenticated(false);
       setCheckingAuth(false);
-      return;
+      setMobileOpen(false);
+      return () => { cancelled = true; };
     }
 
-    const accessToken = sessionStorage.getItem(ACCESS_TOKEN_KEY);
-    const refreshToken = sessionStorage.getItem(REFRESH_TOKEN_KEY);
-
-    if (!accessToken && !refreshToken) {
-      setAuthenticated(false);
+    setCheckingAuth(true);
+    void systemBootstrap().then((ok) => {
+      if (cancelled) return;
+      if (!ok) {
+        setAuthenticated(false);
+        setCheckingAuth(false);
+        router.replace(LOGIN_PATH);
+        return;
+      }
+      setAuthenticated(true);
       setCheckingAuth(false);
-      router.replace(LOGIN_PATH);
-      return;
-    }
+    });
 
-    setAuthenticated(true);
-    setCheckingAuth(false);
-  }, [isLoginPage, router]);
+    return () => { cancelled = true; };
+  }, [isLoginPage, router, pathname]);
 
   const title = useMemo(
     () => navigation.find((item) => item.exact ? pathname === item.href : pathname.startsWith(item.href))?.label ?? 'System Console',
     [pathname],
   );
 
-  function logout() {
-    sessionStorage.removeItem(ACCESS_TOKEN_KEY);
-    sessionStorage.removeItem(REFRESH_TOKEN_KEY);
+  async function logout() {
+    await systemLogout();
     setAuthenticated(false);
+    setMobileOpen(false);
     router.replace(LOGIN_PATH);
   }
 
@@ -79,7 +82,7 @@ export default function SystemLayout({ children }: { children: React.ReactNode }
           <span className="grid h-9 w-9 place-items-center rounded-xl bg-blue-600 shadow-lg shadow-blue-600/20"><ShieldCheck className="h-5 w-5" /></span>
           <div><p className="font-semibold tracking-tight">AssetHub</p><p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Platform</p></div>
         </Link>
-        <button className="rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-white lg:hidden" onClick={() => setMobileOpen(false)}><X className="h-5 w-5" /></button>
+        <button className="rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-white lg:hidden" onClick={() => setMobileOpen(false)} aria-label="Close navigation"><X className="h-5 w-5" /></button>
       </div>
       <div className="border-b border-white/10 px-5 py-4"><div className="rounded-xl border border-blue-400/20 bg-blue-500/10 p-3"><p className="text-xs font-semibold uppercase tracking-wider text-blue-300">System Administrator</p><p className="mt-1 text-sm font-medium text-white">Platform Control Center</p></div></div>
       <nav className="flex-1 overflow-y-auto px-3 py-4">
@@ -100,7 +103,6 @@ export default function SystemLayout({ children }: { children: React.ReactNode }
     <div className="min-h-screen bg-slate-950 text-slate-950">
       {mobileOpen && <button aria-label="Close navigation" className="fixed inset-0 z-30 bg-slate-950/60 lg:hidden" onClick={() => setMobileOpen(false)} />}
       {sidebar}
-
       <div className="min-h-screen lg:pl-72">
         <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
           <div className="flex h-16 items-center gap-4 px-4 sm:px-6">
