@@ -37,6 +37,7 @@
     "@nestjs/testing": "^10.4.0",
     "@types/jest": "^29.5.12",
     "@types/node": "^22.5.0",
+    "@types/nodemailer": "^7.0.5",
     "ts-jest": "^29.2.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.4"
