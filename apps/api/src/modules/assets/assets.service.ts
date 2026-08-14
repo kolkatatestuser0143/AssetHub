@@ -31,50 +31,6 @@ export class AssetsService extends TenantScopedRepository {
     return toDto(doc.toObject());
   }
 
-  async listVendors(auth: AuthContext) {
-    return toDtoArray(await this.db.vendor.find({ companyId: auth.companyId }).sort({ name: 1 }).lean());
-  }
-
-  async createVendor(auth: AuthContext, name: string, contact?: string) {
-    const normalized = name.trim();
-    if (!normalized) throw new ConflictException('Vendor name is required');
-    const existing = await this.db.vendor.findOne({ companyId: auth.companyId, name: normalized }).lean();
-    if (existing) throw new ConflictException('A vendor with this name already exists');
-    const doc = await this.db.vendor.create({ companyId: auth.companyId, name: normalized, contact: contact?.trim() || undefined });
-    return toDto(doc.toObject());
-  }
-
-  async updateVendor(auth: AuthContext, vendorId: string, name: string, contact?: string) {
-    const normalized = name.trim();
-    if (!normalized) throw new ConflictException('Vendor name is required');
-    const duplicate = await this.db.vendor.findOne({ companyId: auth.companyId, name: normalized, _id: { $ne: vendorId } }).lean();
-    if (duplicate) throw new ConflictException('A vendor with this name already exists');
-    const doc = await this.db.vendor.findOneAndUpdate(
-      { _id: vendorId, companyId: auth.companyId },
-      { $set: { name: normalized, contact: contact?.trim() || undefined } },
-      { new: true },
-    ).lean();
-    if (!doc) throw new NotFoundException('Vendor not found');
-    return toDto(doc);
-  }
-
-  async deleteVendor(auth: AuthContext, vendorId: string) {
-    const inUse = await this.db.asset.exists({ companyId: auth.companyId, vendorId });
-    if (inUse) throw new ConflictException('Vendor is referenced by assets and cannot be deleted');
-    const result = await this.db.vendor.deleteOne({ _id: vendorId, companyId: auth.companyId });
-    if (result.deletedCount === 0) throw new NotFoundException('Vendor not found');
-    return { ok: true };
-  }
-
-  async listWarranties(auth: AuthContext) {
-    const warranties = await this.db.warranty.find({ companyId: auth.companyId }).sort({ expiresAt: 1, createdAt: -1 }).lean();
-    if (!warranties.length) return [];
-    const assetIds = [...new Set(warranties.map((w: any) => String(w.assetId)))];
-    const assets = await this.db.asset.find({ _id: { $in: assetIds }, ...this.scope(auth) }).select({ _id: 1, assetNumber: 1, assetTypeId: 1, status: 1 }).lean();
-    const assetById = new Map(assets.map((asset: any) => [String(asset._id), asset]));
-    return warranties.map((warranty: any) => ({ ...toDto(warranty), asset: assetById.get(String(warranty.assetId)) ? toDto(assetById.get(String(warranty.assetId))) : null }));
-  }
-
   async createAsset(auth: AuthContext, assetTypeId: string, fields: Record<string, unknown>) {
     const assetType = await this.db.assetType.findOne({ _id: assetTypeId, companyId: auth.companyId }).lean();
     if (!assetType) throw new ForbiddenException('Asset type does not belong to your company');
@@ -137,7 +93,84 @@ export class AssetsService extends TenantScopedRepository {
     const users = userIds.length ? await this.db.user.find({ _id: { $in: userIds }, tenantId: auth.tenantId, companyId: auth.companyId }).select({ _id: 1, email: 1, firstName: 1, lastName: 1, isActive: 1 }).lean() : [];
     const assetById = new Map(assets.map((asset: any) => [String(asset._id), asset]));
     const userById = new Map(users.map((user: any) => [String(user._id), user]));
-    return assignments.map((assignment: any) => ({ ...toDto(assignment), asset: assetById.get(String(assignment.assetId)) ? toDto(assetById.get(String(assignment.assetId))) : null, user: assignment.userId ? (userById.get(String(assignment.userId)) ? toDto(userById.get(String(assignment.userId))) : null) : null, active: !assignment.returnedAt }));
+    return assignments.map((assignment: any) => {
+      const asset = assetById.get(String(assignment.assetId));
+      const user = assignment.userId ? userById.get(String(assignment.userId)) : null;
+      return { ...toDto(assignment), asset: asset ? toDto(asset) : null, user: user ? toDto(user) : null, active: !assignment.returnedAt };
+    });
+  }
+
+  async getReportSummary(auth: AuthContext) {
+    const scope = this.scope(auth);
+    const [assets, assignments, warranties, vendors] = await Promise.all([
+      this.db.asset.find(scope).select({ _id: 1, status: 1, assetTypeId: 1, vendorId: 1 }).lean(),
+      this.db.assetAssignment.find({ assetId: { $in: await this.db.asset.find(scope).distinct('_id') } }).select({ assetId: 1, userId: 1, assignedAt: 1, returnedAt: 1 }).lean(),
+      this.db.warranty.find({ companyId: auth.companyId }).select({ assetId: 1, provider: 1, expiresAt: 1 }).lean(),
+      this.db.vendor.find({ companyId: auth.companyId }).select({ _id: 1 }).lean(),
+    ]);
+
+    const now = Date.now();
+    const in30 = now + 30 * 24 * 60 * 60 * 1000;
+    const statusCounts: Record<string, number> = {};
+    for (const asset of assets) statusCounts[asset.status] = (statusCounts[asset.status] ?? 0) + 1;
+
+    const warrantyByAsset = new Map(warranties.map((w: any) => [String(w.assetId), w]));
+    const expiredWarrantyCount = warranties.filter((w: any) => w.expiresAt && new Date(w.expiresAt).getTime() < now).length;
+    const expiringWarrantyCount = warranties.filter((w: any) => w.expiresAt && new Date(w.expiresAt).getTime() >= now && new Date(w.expiresAt).getTime() <= in30).length;
+    const currentlyAssigned = assignments.filter((a: any) => !a.returnedAt).length;
+    const historicalAssignments = assignments.length;
+    const assetRows = assets.map((asset: any) => ({
+      id: String(asset._id),
+      assetNumber: asset.assetNumber,
+      status: asset.status,
+      assetTypeId: String(asset.assetTypeId),
+      vendorId: asset.vendorId ? String(asset.vendorId) : null,
+      warranty: warrantyByAsset.get(String(asset._id)) ?? null,
+    }));
+
+    return {
+      generatedAt: new Date().toISOString(),
+      totals: { assets: assets.length, assignedAssets: currentlyAssigned, assignmentRecords: historicalAssignments, vendors: vendors.length, warranties: warranties.length, expiredWarranties: expiredWarrantyCount, expiringWarranties: expiringWarrantyCount },
+      statusCounts,
+      assets: assetRows,
+    };
+  }
+
+  async getAssetReportCsv(auth: AuthContext): Promise<string> {
+    const report = await this.getReportSummary(auth);
+    const escape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const rows = [
+      ['assetId', 'assetNumber', 'status', 'assetTypeId', 'vendorId', 'warrantyProvider', 'warrantyExpiresAt'],
+      ...report.assets.map((asset: any) => [asset.id, asset.assetNumber, asset.status, asset.assetTypeId, asset.vendorId, asset.warranty?.provider ?? '', asset.warranty?.expiresAt ?? '']),
+    ];
+    return rows.map((row) => row.map(escape).join(',')).join('\n');
+  }
+
+  async listVendors(auth: AuthContext) {
+    return toDtoArray(await this.db.vendor.find({ companyId: auth.companyId }).sort({ name: 1 }).lean());
+  }
+
+  async createVendor(auth: AuthContext, name: string, contact?: string) {
+    const doc = await this.db.vendor.create({ companyId: auth.companyId, name: name.trim(), contact: contact?.trim() || undefined });
+    return toDto(doc.toObject());
+  }
+
+  async updateVendor(auth: AuthContext, vendorId: string, name: string, contact?: string) {
+    const doc = await this.db.vendor.findOneAndUpdate({ _id: vendorId, companyId: auth.companyId }, { $set: { name: name.trim(), contact: contact?.trim() || undefined } }, { new: true }).lean();
+    if (!doc) throw new NotFoundException('Vendor not found');
+    return toDto(doc);
+  }
+
+  async deleteVendor(auth: AuthContext, vendorId: string) {
+    const referenced = await this.db.asset.exists({ vendorId, companyId: auth.companyId });
+    if (referenced) throw new ConflictException('Vendor is referenced by an asset');
+    const result = await this.db.vendor.deleteOne({ _id: vendorId, companyId: auth.companyId });
+    if (result.deletedCount === 0) throw new NotFoundException('Vendor not found');
+    return { ok: true };
+  }
+
+  async listWarranties(auth: AuthContext) {
+    return toDtoArray(await this.db.warranty.find({ companyId: auth.companyId }).sort({ expiresAt: 1 }).lean());
   }
 
   async assignAsset(auth: AuthContext, assetId: string, userId: string, notes?: string) {
