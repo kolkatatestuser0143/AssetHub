@@ -40,6 +40,8 @@ import { IdentityAdminController } from './modules/identity/identity-admin.contr
 // Billing
 import { TenantLicenseController } from './modules/billing/tenant-license.controller';
 import { TenantLicenseService } from './modules/billing/tenant-license.service';
+import { SystemSubscriptionController } from './modules/billing/system-subscription.controller';
+import { SystemSubscriptionService } from './modules/billing/system-subscription.service';
 
 // Audit
 import { AuditController } from './modules/audit/audit.controller';
@@ -79,6 +81,7 @@ import { UsersService } from './modules/users/users.service';
     IdentityController,
     IdentityAdminController,
     TenantLicenseController,
+    SystemSubscriptionController,
     AuditController,
     UsersController,
   ],
@@ -97,6 +100,7 @@ import { UsersService } from './modules/users/users.service';
     IdentityService,
     IdentitySecurityCacheService,
     TenantLicenseService,
+    SystemSubscriptionService,
     AuditService,
     {
       provide: APP_INTERCEPTOR,
