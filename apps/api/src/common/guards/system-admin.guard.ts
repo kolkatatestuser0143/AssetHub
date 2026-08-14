@@ -1,10 +1,12 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { SYSTEM_ACCESS_COOKIE, readCookie } from '../auth/auth-cookies';
+import { SYSTEM_PERMISSION_KEY } from './system-permission.decorator';
 
 @Injectable()
 export class SystemAdminGuard implements CanActivate {
-  constructor(private readonly jwt: JwtService) {}
+  constructor(private readonly jwt: JwtService, private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest();
@@ -14,8 +16,16 @@ export class SystemAdminGuard implements CanActivate {
 
     try {
       const payload = this.jwt.verify(token);
-      if (!payload.systemAdmin) throw new ForbiddenException('System administrator access required');
-      if (!Array.isArray(payload.permissions) || !payload.permissions.includes('platform:manage_tenants')) throw new ForbiddenException('Missing platform administrator permission');
+      if (payload?.accountType !== 'SYSTEM' || payload?.systemAdmin !== true) {
+        throw new ForbiddenException('System console access required');
+      }
+
+      const permissions = Array.isArray(payload.permissions) ? payload.permissions : [];
+      const required = this.reflector.getAllAndOverride<string>(SYSTEM_PERMISSION_KEY, [context.getHandler(), context.getClass()]) ?? 'platform:console:access';
+      if (!permissions.includes(required)) {
+        throw new ForbiddenException(`Missing platform permission: ${required}`);
+      }
+
       req.systemAuth = payload;
       return true;
     } catch (error) {
