@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'fs';
 import { basename, join } from 'path';
@@ -9,17 +9,11 @@ import { toDto, toDtoArray } from '../../common/mongoose.utils';
 import { EntitlementService } from '../billing/entitlement.service';
 
 const ALLOWED_TYPES = new Set([
-  'application/pdf',
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'text/plain',
+  'application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'text/plain',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-excel',
+  'application/msword', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel',
 ]);
-const MAX_FILE_BYTES = 25 * 1024 * 1024;
+const PLATFORM_MAX_FILE_BYTES = 25 * 1024 * 1024;
 
 @Injectable()
 export class AssetDocumentsService extends TenantScopedRepository {
@@ -32,27 +26,29 @@ export class AssetDocumentsService extends TenantScopedRepository {
 
   async list(auth: AuthContext, assetId: string) {
     await this.requireAsset(auth, assetId);
-    return toDtoArray(
-      await this.db.assetDocument
-        .find({ tenantId: auth.tenantId, companyId: auth.companyId, assetId })
-        .select({ s3Key: 0 })
-        .sort({ createdAt: -1 })
-        .lean(),
-    );
+    return toDtoArray(await this.db.assetDocument.find({ tenantId: auth.tenantId, companyId: auth.companyId, assetId }).select({ s3Key: 0 }).sort({ createdAt: -1 }).lean());
   }
 
   async upload(auth: AuthContext, assetId: string, file: any, documentType?: string) {
     await this.requireAsset(auth, assetId);
     if (!file?.buffer?.length) throw new BadRequestException('Document file is required');
-    if (file.size > MAX_FILE_BYTES) throw new BadRequestException('Document exceeds the 25 MB limit');
     if (!ALLOWED_TYPES.has(file.mimetype)) throw new BadRequestException('Unsupported document type');
+
+    const maxFileMb = await this.entitlements.getNumber(auth.tenantId, 'max_asset_document_size_mb');
+    const maxFileBytes = Math.min(PLATFORM_MAX_FILE_BYTES, maxFileMb === null ? PLATFORM_MAX_FILE_BYTES : maxFileMb * 1024 * 1024);
+    if (Number(file.size) > maxFileBytes) throw new BadRequestException(`Document exceeds the ${Math.floor(maxFileBytes / (1024 * 1024))} MB size limit`);
 
     const currentDocumentCount = await this.db.assetDocument.countDocuments({ tenantId: auth.tenantId });
     await this.entitlements.requireWithinLimit(auth.tenantId, 'max_asset_documents', currentDocumentCount, 1);
 
-    const configuredMaxSize = await this.entitlements.get(auth.tenantId, 'max_asset_document_size_mb');
-    if (typeof configuredMaxSize === 'number' && Number.isFinite(configuredMaxSize) && file.size > configuredMaxSize * 1024 * 1024) {
-      throw new BadRequestException(`Document exceeds the licensed ${configuredMaxSize} MB size limit`);
+    const storageRows = await this.db.assetDocument.aggregate([
+      { $match: { tenantId: auth.tenantId } },
+      { $group: { _id: null, bytes: { $sum: '$sizeBytes' } } },
+    ]);
+    const currentBytes = Number(storageRows[0]?.bytes ?? 0);
+    const maxStorageGb = await this.entitlements.getNumber(auth.tenantId, 'max_storage_gb');
+    if (maxStorageGb !== null && currentBytes + Number(file.size) > maxStorageGb * 1024 * 1024 * 1024) {
+      throw new ConflictException(`Tenant storage limit reached: max_storage_gb (${maxStorageGb})`);
     }
 
     const safeName = basename(String(file.originalname ?? 'document')).replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -63,14 +59,9 @@ export class AssetDocumentsService extends TenantScopedRepository {
 
     try {
       const doc = await this.db.assetDocument.create({
-        tenantId: auth.tenantId,
-        companyId: auth.companyId,
-        assetId,
-        s3Key: key,
-        fileName: String(file.originalname ?? safeName),
-        contentType: String(file.mimetype ?? 'application/octet-stream'),
-        sizeBytes: Number(file.size ?? file.buffer.length),
-        ...(documentType ? { documentType: documentType.trim() } : {}),
+        tenantId: auth.tenantId, companyId: auth.companyId, assetId, s3Key: key,
+        fileName: String(file.originalname ?? safeName), contentType: String(file.mimetype ?? 'application/octet-stream'),
+        sizeBytes: Number(file.size ?? file.buffer.length), ...(documentType ? { documentType: documentType.trim() } : {}),
       });
       return toDto(doc.toObject());
     } catch (error) {
