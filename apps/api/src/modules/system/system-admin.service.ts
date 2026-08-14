@@ -49,6 +49,14 @@ export class SystemAdminService {
         { _id: tenantId },
         { $set: { status: TenantStatus.SUSPENDED, suspendedAt: new Date(), suspendedBy: actorUserId, suspensionReason: reason?.trim() || 'Suspended by platform administrator' } },
       );
+      const tenantUsers = await this.db.user.find({ tenantId, accountType: 'TENANT' }).select({ _id: 1 }).lean();
+      const userIds = tenantUsers.map((user: any) => String(user._id));
+      if (userIds.length) {
+        await this.db.session.updateMany(
+          { userId: { $in: userIds }, revokedAt: { $exists: false } },
+          { $set: { revokedAt: new Date(), revokedReason: 'tenant_suspended' } },
+        );
+      }
     }
 
     return {
