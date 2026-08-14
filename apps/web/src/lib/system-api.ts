@@ -6,7 +6,7 @@ async function refreshSystemSession() {
   if (refreshing) return refreshing;
   refreshing = fetch(`${API_BASE}/auth/refresh`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Auth-Scope': 'system' },
     credentials: 'include',
   }).then((res) => {
     if (!res.ok) throw new Error('System administrator session expired');
@@ -31,12 +31,14 @@ export async function systemLogout(): Promise<void> {
   try {
     await fetch(`${API_BASE}/auth/logout`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Auth-Scope': 'system' },
       credentials: 'include',
     });
   } catch {
-    // Cookie state is server-managed; navigation still proceeds on network failure.
+    // Navigation still proceeds when the API is unavailable.
   }
+  sessionStorage.removeItem('itam_system_access_token');
+  sessionStorage.removeItem('itam_system_refresh_token');
 }
 
 export async function systemFetch(path: string, options: RequestInit = {}, retry = true) {
