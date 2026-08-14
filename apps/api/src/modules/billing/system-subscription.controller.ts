@@ -12,6 +12,11 @@ export class SystemSubscriptionController {
     return this.subscriptions.overview();
   }
 
+  @Get('revoked')
+  revoked() {
+    return this.subscriptions.revokedTenants();
+  }
+
   @Patch(':tenantId')
   assign(
     @Param('tenantId') tenantId: string,
