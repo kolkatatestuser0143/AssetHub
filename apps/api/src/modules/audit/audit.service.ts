@@ -3,6 +3,16 @@ import { MongooseDatabaseService } from '../../common/mongoose-database.service'
 import { AuthContext } from '../../common/guards/tenant-context.guard';
 import { toDtoArray } from '../../common/mongoose.utils';
 
+export type AuditWriteInput = {
+  tenantId: string;
+  companyId?: string;
+  actorUserId?: string;
+  action: string;
+  targetType?: string;
+  targetId?: string;
+  metadata?: Record<string, unknown>;
+};
+
 export type AuditQuery = {
   action?: string;
   targetType?: string;
@@ -15,6 +25,29 @@ export type AuditQuery = {
 @Injectable()
 export class AuditService {
   constructor(private readonly db: MongooseDatabaseService) {}
+
+  async record(input: AuditWriteInput): Promise<void> {
+    if (!input.tenantId) return;
+
+    const sensitive = /password|token|secret|authorization|cookie|refresh|access[_-]?token|private[_-]?key/i;
+    const metadata: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(input.metadata ?? {})) {
+      if (sensitive.test(key)) continue;
+      metadata[key] = typeof value === 'string' && value.length > 2000 ? value.slice(0, 2000) : value;
+    }
+
+    await this.db.auditEvent.create({
+      tenantId: input.tenantId,
+      companyId: input.companyId,
+      actorUserId: input.actorUserId,
+      action: input.action,
+      targetType: input.targetType,
+      targetId: input.targetId,
+      metadata,
+      occurredAt: new Date(),
+    });
+  }
 
   async list(auth: AuthContext, query: AuditQuery = {}) {
     const filter: Record<string, any> = { tenantId: auth.tenantId };
