@@ -21,6 +21,12 @@ class CreateUserDto {
 export class UsersController {
   constructor(private readonly users: UsersService) {}
 
+  @Get('me')
+  @RequirePermission('user:read')
+  me(@Req() req: any) {
+    return this.users.get(req.authContext, req.authContext.userId);
+  }
+
   @Get()
   @RequirePermission('user:read')
   list(@Req() req: any) {

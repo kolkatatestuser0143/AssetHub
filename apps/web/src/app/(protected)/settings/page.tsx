@@ -1,0 +1,32 @@
+'use client';
+
+import { useState } from 'react';
+import { Bell, Lock, ShieldCheck, Settings2 } from 'lucide-react';
+
+export default function SettingsPage() {
+  const [notifications, setNotifications] = useState(true);
+  const [sessionAlerts, setSessionAlerts] = useState(true);
+
+  return (
+    <div className="mx-auto max-w-4xl space-y-6">
+      <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Account</p><h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">Settings</h1><p className="mt-2 text-sm text-slate-500">Manage tenant account preferences and security controls.</p></div>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center gap-3"><Settings2 size={19} className="text-blue-600"/><div><h2 className="font-semibold text-slate-950">Preferences</h2><p className="mt-1 text-sm text-slate-500">Control how AssetHub communicates with you.</p></div></div>
+        <div className="mt-6 divide-y divide-slate-100">
+          <Toggle icon={<Bell size={18}/>} title="Notifications" description="Receive important tenant and asset notifications." enabled={notifications} onChange={setNotifications}/>
+          <Toggle icon={<ShieldCheck size={18}/>} title="Security alerts" description="Notify me when account sessions or security settings change." enabled={sessionAlerts} onChange={setSessionAlerts}/>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center gap-3"><Lock size={19} className="text-blue-600"/><div><h2 className="font-semibold text-slate-950">Security</h2><p className="mt-1 text-sm text-slate-500">Your password, MFA, and active sessions are managed through the account security workflow.</p></div></div>
+        <div className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">Use your profile and user security controls for account access changes. Organization-wide SSO and SCIM settings remain under Identity & SSO.</div>
+      </section>
+    </div>
+  );
+}
+
+function Toggle({ icon, title, description, enabled, onChange }: { icon: React.ReactNode; title: string; description: string; enabled: boolean; onChange: (value: boolean) => void }) {
+  return <div className="flex items-center justify-between gap-4 py-5"><div className="flex gap-3"><div className="mt-0.5 text-slate-500">{icon}</div><div><p className="text-sm font-semibold text-slate-900">{title}</p><p className="mt-1 text-xs text-slate-500">{description}</p></div></div><button type="button" aria-pressed={enabled} onClick={() => onChange(!enabled)} className={`relative h-6 w-11 rounded-full transition ${enabled ? 'bg-blue-600' : 'bg-slate-300'}`}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition ${enabled ? 'left-6' : 'left-1'}`}/></button></div>;
+}
