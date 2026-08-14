@@ -102,10 +102,11 @@ export class AssetsService extends TenantScopedRepository {
 
   async getReportSummary(auth: AuthContext) {
     const scope = this.scope(auth);
-    const [assets, assignments, warranties, vendors] = await Promise.all([
-      this.db.asset.find(scope).select({ _id: 1, status: 1, assetTypeId: 1, vendorId: 1 }).lean(),
-      this.db.assetAssignment.find({ assetId: { $in: await this.db.asset.find(scope).distinct('_id') } }).select({ assetId: 1, userId: 1, assignedAt: 1, returnedAt: 1 }).lean(),
-      this.db.warranty.find({ companyId: auth.companyId }).select({ assetId: 1, provider: 1, expiresAt: 1 }).lean(),
+    const assets = await this.db.asset.find(scope).select({ _id: 1, assetNumber: 1, status: 1, assetTypeId: 1, vendorId: 1 }).lean();
+    const assetIds = assets.map((asset: any) => String(asset._id));
+    const [assignments, warranties, vendors] = await Promise.all([
+      assetIds.length ? this.db.assetAssignment.find({ assetId: { $in: assetIds } }).select({ assetId: 1, userId: 1, assignedAt: 1, returnedAt: 1 }).lean() : [],
+      this.db.warranty.find({ companyId: auth.companyId, ...(assetIds.length ? { assetId: { $in: assetIds } } : { assetId: '__none__' }) }).select({ assetId: 1, provider: 1, expiresAt: 1 }).lean(),
       this.db.vendor.find({ companyId: auth.companyId }).select({ _id: 1 }).lean(),
     ]);
 
