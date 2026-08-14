@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { ThrottlerModule } from '@nestjs/throttler';
 
 import { DatabaseModule } from './common/database/database.module';
 import { MongooseDatabaseService } from './common/mongoose-database.service';
+import { AuditInterceptor } from './common/audit/audit.interceptor';
 
 // Auth
 import { AuthController } from './modules/auth/auth.controller';
@@ -14,6 +16,8 @@ import { SessionService } from './modules/auth/session.service';
 // Assets
 import { AssetsController } from './modules/assets/assets.controller';
 import { AssetsService } from './modules/assets/assets.service';
+import { AssetDocumentsController } from './modules/assets/asset-documents.controller';
+import { AssetDocumentsService } from './modules/assets/asset-documents.service';
 import { CustomFieldsController } from './modules/assets/custom-fields.controller';
 import { CustomFieldsService } from './modules/assets/custom-fields.service';
 import { WarrantyController } from './modules/assets/warranty.controller';
@@ -32,6 +36,10 @@ import { IdentitySecurityCacheService } from './modules/identity/identity-securi
 import { IdentityController } from './modules/identity/identity.controller';
 import { IdentityService } from './modules/identity/identity.service';
 import { IdentityAdminController } from './modules/identity/identity-admin.controller';
+
+// Audit
+import { AuditController } from './modules/audit/audit.controller';
+import { AuditService } from './modules/audit/audit.service';
 
 // Users
 import { UsersController } from './modules/users/users.controller';
@@ -62,6 +70,7 @@ import { UsersService } from './modules/users/users.service';
 
     // Assets
     AssetsController,
+    AssetDocumentsController,
     WarrantyController,
     CustomFieldsController,
 
@@ -73,7 +82,6 @@ import { UsersService } from './modules/users/users.service';
 
     // Identity
     IdentityController,
-    IdentityAdminController,
 
     // Users
     UsersController,
@@ -90,6 +98,7 @@ import { UsersService } from './modules/users/users.service';
 
     // Assets
     AssetsService,
+    AssetDocumentsService,
     WarrantyService,
     CustomFieldsService,
 
@@ -102,6 +111,7 @@ import { UsersService } from './modules/users/users.service';
     // Identity
     IdentityService,
     IdentitySecurityCacheService,
+    IdentityAdminController,
 
     // Users
     UsersService,
