@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, Check, ChevronDown, RefreshCw, ShieldCheck, UserCheck, UserX, Users, X } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, Mail, RefreshCw, ShieldCheck, UserCheck, UserX, Users, X } from 'lucide-react';
 import { apiFetch } from '../../../../lib/api-client';
 import UserSecurityPanel from '../../../../components/users/UserSecurityPanel';
 
@@ -23,6 +23,7 @@ export default function UserDetailPage() {
   const [rolesLoading, setRolesLoading] = useState(true);
   const [assigning, setAssigning] = useState(false);
   const [removingRoleId, setRemovingRoleId] = useState<string | null>(null);
+  const [sendingAccess, setSendingAccess] = useState<'invite' | 'reset' | null>(null);
   const [selectedRoleId, setSelectedRoleId] = useState('');
   const [roleOpen, setRoleOpen] = useState(false);
   const [confirmRoleId, setConfirmRoleId] = useState<string | null>(null);
@@ -58,6 +59,26 @@ export default function UserDetailPage() {
       setSuccess(user.isActive ? 'User account deactivated.' : 'User account activated.');
       await loadUser();
     } catch (e: any) { setError(e?.message ?? 'Unable to update account'); }
+  }
+
+  async function sendAccessEmail(action: 'invite' | 'reset') {
+    if (!user) return;
+    setSendingAccess(action); setError(null); setSuccess(null);
+    try {
+      const result = await apiFetch(`/users/${user.id}/access-email`, {
+        method: 'POST',
+        body: JSON.stringify({ action }),
+      });
+      if (result.emailSent) {
+        setSuccess(action === 'invite' ? `Invitation email sent to ${user.email}.` : `Password reset email sent to ${user.email}.`);
+      } else if (result.setupUrl) {
+        await navigator.clipboard?.writeText(result.setupUrl).catch(() => undefined);
+        setSuccess('SMTP email is not configured. The one-time setup link was generated and copied to your clipboard.');
+      } else {
+        setSuccess('Access link generated. Email delivery is currently disabled.');
+      }
+    } catch (e: any) { setError(e?.message ?? 'Unable to send access email.'); }
+    finally { setSendingAccess(null); }
   }
 
   async function assignRole() {
@@ -96,7 +117,11 @@ export default function UserDetailPage() {
 
       <section className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-4"><div className="grid h-14 w-14 place-items-center rounded-2xl bg-blue-50 text-blue-700"><Users size={24}/></div><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">User profile</p><h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950">{user.firstName} {user.lastName}</h1><p className="mt-1 text-sm text-slate-500">{user.email}</p></div></div>
-        <button type="button" onClick={toggleAccount} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">{user.isActive ? <UserX size={16}/> : <UserCheck size={16}/>} {user.isActive ? 'Deactivate account' : 'Activate account'}</button>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" disabled={!user.isActive || !!sendingAccess} onClick={() => void sendAccessEmail('invite')} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50"><Mail size={16}/> {sendingAccess === 'invite' ? 'Sending…' : 'Send invite'}</button>
+          <button type="button" disabled={!user.isActive || !!sendingAccess} onClick={() => void sendAccessEmail('reset')} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"><RefreshCw size={16}/> {sendingAccess === 'reset' ? 'Sending…' : 'Reset access'}</button>
+          <button type="button" onClick={toggleAccount} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">{user.isActive ? <UserX size={16}/> : <UserCheck size={16}/>} {user.isActive ? 'Deactivate account' : 'Activate account'}</button>
+        </div>
       </section>
 
       <div className="grid gap-5 lg:grid-cols-2">
