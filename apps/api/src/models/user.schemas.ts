@@ -31,6 +31,9 @@ export class User {
 
   @Prop({ default: true }) isActive!: boolean;
   @Prop({ default: false }) forcePasswordReset!: boolean;
+  @Prop({ index: true }) accessTokenHash?: string;
+  @Prop() accessTokenIssuedAt?: Date;
+  @Prop({ index: true }) accessTokenExpiresAt?: Date;
   @Prop() externalScimId?: string;
   @Prop({ type: [String], default: [] }) roleIds!: string[];
   @Prop() departmentId?: string;
@@ -39,6 +42,8 @@ export class User {
 
 export const UserSchema = SchemaFactory.createForClass(User);
 UserSchema.index({ companyId: 1, externalScimId: 1 }, { unique: true, sparse: true });
+UserSchema.index({ accountType: 1, accessTokenHash: 1 }, { sparse: true });
+UserSchema.index({ accessTokenExpiresAt: 1 }, { expireAfterSeconds: 0, sparse: true });
 
 export const SessionModelName = 'Session';
 export type SessionDocument = HydratedDocument<Session>;
