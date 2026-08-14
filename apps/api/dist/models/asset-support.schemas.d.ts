@@ -78,6 +78,7 @@ export declare class AssetDocumentMeta {
     fileName: string;
     contentType?: string;
     sizeBytes?: number;
+    documentType?: string;
 }
 export declare const AssetDocumentSchema: import("mongoose").Schema<AssetDocumentMeta, import("mongoose").Model<AssetDocumentMeta, any, any, any, import("mongoose").Document<unknown, any, AssetDocumentMeta, any, {}> & AssetDocumentMeta & {
     _id: import("mongoose").Types.ObjectId;

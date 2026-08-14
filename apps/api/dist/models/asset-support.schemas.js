@@ -146,6 +146,10 @@ __decorate([
     (0, mongoose_1.Prop)(),
     __metadata("design:type", Number)
 ], AssetDocumentMeta.prototype, "sizeBytes", void 0);
+__decorate([
+    (0, mongoose_1.Prop)(),
+    __metadata("design:type", String)
+], AssetDocumentMeta.prototype, "documentType", void 0);
 exports.AssetDocumentMeta = AssetDocumentMeta = __decorate([
     (0, mongoose_1.Schema)({ collection: 'asset_documents', timestamps: true, versionKey: false })
 ], AssetDocumentMeta);

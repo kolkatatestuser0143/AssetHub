@@ -18,6 +18,8 @@ const provisioning_service_1 = require("./modules/auth/provisioning.service");
 const session_service_1 = require("./modules/auth/session.service");
 const assets_controller_1 = require("./modules/assets/assets.controller");
 const assets_service_1 = require("./modules/assets/assets.service");
+const asset_documents_controller_1 = require("./modules/assets/asset-documents.controller");
+const asset_documents_service_1 = require("./modules/assets/asset-documents.service");
 const custom_fields_controller_1 = require("./modules/assets/custom-fields.controller");
 const custom_fields_service_1 = require("./modules/assets/custom-fields.service");
 const warranty_controller_1 = require("./modules/assets/warranty.controller");
@@ -55,12 +57,12 @@ exports.AppModule = AppModule = __decorate([
         controllers: [
             auth_controller_1.AuthController,
             assets_controller_1.AssetsController,
+            asset_documents_controller_1.AssetDocumentsController,
             warranty_controller_1.WarrantyController,
             custom_fields_controller_1.CustomFieldsController,
             tenancy_controller_1.TenancyController,
             rbac_controller_1.RbacController,
             identity_controller_1.IdentityController,
-            identity_admin_controller_1.IdentityAdminController,
             users_controller_1.UsersController,
         ],
         providers: [
@@ -69,12 +71,14 @@ exports.AppModule = AppModule = __decorate([
             provisioning_service_1.ProvisioningService,
             session_service_1.SessionService,
             assets_service_1.AssetsService,
+            asset_documents_service_1.AssetDocumentsService,
             warranty_service_1.WarrantyService,
             custom_fields_service_1.CustomFieldsService,
             tenancy_service_1.TenancyService,
             rbac_service_1.RbacService,
             identity_service_1.IdentityService,
             identity_security_cache_service_1.IdentitySecurityCacheService,
+            identity_admin_controller_1.IdentityAdminController,
             users_service_1.UsersService,
         ],
     })
