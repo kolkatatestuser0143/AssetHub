@@ -4,10 +4,16 @@ import { MongooseDatabaseService } from '../../common/mongoose-database.service'
 import { AuthContext } from '../../common/guards/tenant-context.guard';
 import { TenantScopedRepository } from '../../common/tenant-scoped.repository';
 import { toDto, toDtoArray } from '../../common/mongoose.utils';
+import { InviteService } from '../auth/invite.service';
+import { MailService } from '../../common/mail/mail.service';
 
 @Injectable()
 export class UsersService extends TenantScopedRepository {
-  constructor(private readonly db: MongooseDatabaseService) { super(); }
+  constructor(
+    private readonly db: MongooseDatabaseService,
+    private readonly invites: InviteService,
+    private readonly mail: MailService,
+  ) { super(); }
 
   private safe(user: any) {
     if (!user) return user;
@@ -16,6 +22,9 @@ export class UsersService extends TenantScopedRepository {
       delete (dto as any).passwordHash;
       delete (dto as any).totpSecretEnc;
       delete (dto as any).backupCodesHash;
+      delete (dto as any).accessTokenHash;
+      delete (dto as any).accessTokenIssuedAt;
+      delete (dto as any).accessTokenExpiresAt;
     }
     return dto;
   }
@@ -55,6 +64,34 @@ export class UsersService extends TenantScopedRepository {
       backupCodesHash: [],
     });
     return this.safe(doc.toObject());
+  }
+
+  async sendAccessEmail(auth: AuthContext, userId: string, action: 'invite' | 'reset') {
+    if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found');
+    const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
+    if (!user) throw new NotFoundException('User not found');
+    if (!user.isActive) throw new ConflictException('Cannot send access email to an inactive user');
+
+    const token = await this.invites.createInternalToken(String(user._id));
+    const appUrl = (process.env.WEB_APP_URL ?? 'http://localhost:3000').replace(/\/$/, '');
+    const setupUrl = `${appUrl}/accept-invite?token=${encodeURIComponent(token.rawToken)}`;
+    const result = await this.mail.sendTenantAccessEmail({
+      to: user.email,
+      firstName: user.firstName,
+      action,
+      setupUrl,
+      expiresAt: token.expiresAt,
+    });
+
+    return {
+      ok: true,
+      action,
+      email: user.email,
+      emailSent: result.sent,
+      emailConfigured: this.mail.isEnabled(),
+      setupUrl: result.sent ? undefined : setupUrl,
+      expiresAt: token.expiresAt,
+    };
   }
 
   async setActive(auth: AuthContext, userId: string, active: boolean) {
