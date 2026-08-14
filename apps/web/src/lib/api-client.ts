@@ -9,7 +9,7 @@ async function refreshSession() {
   if (refreshing) return refreshing;
   refreshing = fetch(`${API_BASE}/auth/refresh`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Auth-Scope': 'tenant' },
     credentials: 'include',
   }).then((res) => {
     if (!res.ok) throw new Error('Session expired');
@@ -24,7 +24,7 @@ export async function apiFetch(path: string, options: RequestInit = {}, retry = 
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      ...options.headers,
+      ...(options.headers ?? {}),
     },
     credentials: 'include',
   });
@@ -60,10 +60,12 @@ export async function logout() {
   try {
     await fetch(`${API_BASE}/auth/logout`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Auth-Scope': 'tenant' },
       credentials: 'include',
     });
   } catch {
-    // Server logout may be unreachable; the local browser still has no token to clear.
+    // Server logout may be unreachable; the browser has no bearer token to clear.
   }
+  sessionStorage.removeItem('itam_refresh_token');
+  sessionStorage.removeItem('itam_access_token');
 }
