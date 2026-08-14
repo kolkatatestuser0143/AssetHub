@@ -33,6 +33,10 @@ import { IdentityController } from './modules/identity/identity.controller';
 import { IdentityService } from './modules/identity/identity.service';
 import { IdentityAdminController } from './modules/identity/identity-admin.controller';
 
+// Audit
+import { AuditController } from './modules/audit/audit.controller';
+import { AuditService } from './modules/audit/audit.service';
+
 // Users
 import { UsersController } from './modules/users/users.controller';
 import { UsersService } from './modules/users/users.service';
@@ -73,6 +77,10 @@ import { UsersService } from './modules/users/users.service';
 
     // Identity
     IdentityController,
+    IdentityAdminController,
+
+    // Audit
+    AuditController,
 
     // Users
     UsersController,
@@ -101,7 +109,9 @@ import { UsersService } from './modules/users/users.service';
     // Identity
     IdentityService,
     IdentitySecurityCacheService,
-    IdentityAdminController,
+
+    // Audit
+    AuditService,
 
     // Users
     UsersService,
