@@ -9,19 +9,27 @@ export class SystemSubscriptionService {
   async overview() {
     const [plans, subscriptions] = await Promise.all([
       this.db.plan.find({}).sort({ name: 1 }).lean(),
-      this.db.subscription.find({}).sort({ createdAt: -1 }).lean(),
+      this.db.subscription.find({ status: { $ne: 'revoked' } }).sort({ createdAt: -1 }).lean(),
     ]);
     return {
       plans: plans.map((plan: any) => ({ id: String(plan._id), name: plan.name, features: plan.features ?? {} })),
-      subscriptions: subscriptions.map((sub: any) => ({
-        id: String(sub._id),
-        tenantId: sub.tenantId,
-        planId: sub.planId,
-        status: sub.status,
-        startedAt: sub.startedAt,
-        endsAt: sub.endsAt ?? null,
-      })),
+      subscriptions: subscriptions.map((sub: any) => this.dto(sub)),
     };
+  }
+
+  async revokedTenants() {
+    const [subscriptions, tenants, plans] = await Promise.all([
+      this.db.subscription.find({ status: 'revoked' }).sort({ updatedAt: -1, createdAt: -1 }).lean(),
+      this.db.tenant.find({}).lean(),
+      this.db.plan.find({}).lean(),
+    ]);
+    const tenantMap = new Map(tenants.map((tenant: any) => [String(tenant._id), tenant]));
+    const planMap = new Map(plans.map((plan: any) => [String(plan._id), plan]));
+    return subscriptions.map((sub: any) => ({
+      ...this.dto(sub),
+      tenantName: tenantMap.get(String(sub.tenantId))?.name ?? String(sub.tenantId),
+      planName: planMap.get(String(sub.planId))?.name ?? String(sub.planId),
+    }));
   }
 
   private async getTenantOrThrow(tenantId: string) {
@@ -68,12 +76,9 @@ export class SystemSubscriptionService {
     const expiry = endsAt ? new Date(endsAt) : undefined;
     if (expiry && Number.isNaN(expiry.getTime())) throw new BadRequestException('Invalid endsAt');
 
+    const update = { $set: { planId: String(plan._id), status, ...(expiry ? { endsAt: expiry } : {}) } };
     const subscription = current
-      ? await this.db.subscription.findOneAndUpdate(
-          { _id: current._id },
-          { $set: { planId: String(plan._id), status, ...(expiry ? { endsAt: expiry } : {}) } },
-          { new: true },
-        ).lean()
+      ? await this.db.subscription.findOneAndUpdate({ _id: current._id }, update, { new: true }).lean()
       : await this.db.subscription.create({
           tenantId,
           planId: String(plan._id),
@@ -83,7 +88,7 @@ export class SystemSubscriptionService {
         });
 
     if (!subscription) throw new NotFoundException('Subscription could not be saved');
-    await this.audit(tenantId, current ? 'subscription.updated' : 'subscription.created', String(subscription._id), {
+    await this.audit(tenantId, current?.status === 'revoked' ? 'subscription.reactivated' : current ? 'subscription.updated' : 'subscription.created', String(subscription._id), {
       planId: String(plan._id),
       status,
       endsAt: subscription.endsAt ?? null,
@@ -104,7 +109,7 @@ export class SystemSubscriptionService {
       { new: true },
     ).lean();
     if (!subscription) throw new NotFoundException('Subscription could not be renewed');
-    await this.audit(tenantId, 'subscription.renewed', String(subscription._id), { endsAt: expiry }, actorUserId);
+    await this.audit(tenantId, current.status === 'revoked' ? 'subscription.reactivated' : 'subscription.renewed', String(subscription._id), { endsAt: expiry }, actorUserId);
     return this.dto(subscription);
   }
 
@@ -126,11 +131,15 @@ export class SystemSubscriptionService {
     await this.getTenantOrThrow(tenantId);
     const current = await this.db.subscription.findOne({ tenantId }).sort({ createdAt: -1 }).lean();
     if (!current) throw new NotFoundException('No subscription found for tenant');
+    const subscription = await this.db.subscription.findOneAndUpdate(
+      { _id: current._id },
+      { $set: { status: 'revoked', endsAt: new Date() } },
+      { new: true },
+    ).lean();
+    if (!subscription) throw new NotFoundException('Subscription could not be revoked');
     await this.db.entitlement.deleteMany({ subscriptionId: String(current._id) });
-    const removed = await this.db.subscription.deleteOne({ _id: current._id });
-    if (!removed.deletedCount) throw new NotFoundException('Subscription could not be revoked');
-    await this.audit(tenantId, 'subscription.revoked', String(current._id), { planId: current.planId }, actorUserId);
-    return { ok: true, tenantId };
+    await this.audit(tenantId, 'subscription.revoked', String(subscription._id), { planId: current.planId }, actorUserId);
+    return this.dto(subscription);
   }
 
   async setEntitlement(subscriptionId: string, key: string, value: unknown, actorUserId?: string) {
