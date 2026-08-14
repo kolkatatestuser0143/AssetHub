@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { LoginDto, RefreshDto } from './auth.dto';
@@ -30,7 +30,7 @@ export class AuthController {
   @Post('refresh')
   async refresh(@Body() dto: RefreshDto, @Req() req: any, @Res({ passthrough: true }) res: any) {
     const refreshToken = dto.refreshToken || readCookie(req, REFRESH_COOKIE);
-    if (!refreshToken) throw new Error('Missing refresh token');
+    if (!refreshToken) throw new UnauthorizedException('Missing refresh token');
     const result = await this.authService.refresh(refreshToken, req.ip, req.headers['user-agent'] ?? '');
     return this.sendSession(res, result);
   }
@@ -41,6 +41,9 @@ export class AuthController {
       await this.authService.logout(req.authContext.sessionId, req.authContext.userId);
     } else if (req.systemAuth?.sessionId && req.systemAuth?.sub) {
       await this.authService.logout(req.systemAuth.sessionId, req.systemAuth.sub);
+    } else {
+      const refreshToken = readCookie(req, REFRESH_COOKIE);
+      if (refreshToken) await this.authService.logoutByRefreshToken(refreshToken);
     }
     clearAuthCookies(res);
     return { ok: true };
