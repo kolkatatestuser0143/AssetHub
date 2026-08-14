@@ -102,9 +102,10 @@ async function main() {
       });
       const roleId = new mongoose.Types.ObjectId();
       const result = await roles.findOneAndUpdate(
-        { tenantId, name: roleName },
+        { tenantId: String(tenantId), name: roleName },
         {
           $set: {
+            tenantId: String(tenantId),
             companyId: roleName === 'Platform Admin' ? null : String(companyId),
             isSystem: true,
             permissions: permRefs,
