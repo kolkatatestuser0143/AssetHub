@@ -8,17 +8,25 @@ export type AuditEventDocument = HydratedDocument<AuditEvent>;
 export class AuditEvent {
   @Prop({ required: true, index: true }) tenantId!: string;
   @Prop({ index: true }) companyId?: string;
-  @Prop() actorUserId?: string;
-  @Prop({ required: true }) action!: string; // "asset.status_changed" | "user.login" | ...
+  @Prop({ index: true }) actorUserId?: string;
+  @Prop({ required: true, index: true }) action!: string;
   @Prop() targetType?: string;
   @Prop() targetId?: string;
   @Prop({ type: Object }) metadata?: Record<string, unknown>;
-  @Prop({ default: Date.now }) occurredAt!: Date;
+  @Prop() result?: string;
+  @Prop() route?: string;
+  @Prop() method?: string;
+  @Prop() statusCode?: number;
+  @Prop() ipAddress?: string;
+  @Prop() userAgent?: string;
+  @Prop({ default: Date.now, index: true }) occurredAt!: Date;
 }
 
 export const AuditEventSchema = SchemaFactory.createForClass(AuditEvent);
 AuditEventSchema.index({ tenantId: 1, occurredAt: -1 });
 AuditEventSchema.index({ companyId: 1, occurredAt: -1 });
+AuditEventSchema.index({ actorUserId: 1, occurredAt: -1 });
+AuditEventSchema.index({ action: 1, occurredAt: -1 });
 
 export const PlatformAdminNoteModelName = 'PlatformAdminNote';
 export type PlatformAdminNoteDocument = HydratedDocument<PlatformAdminNote>;
