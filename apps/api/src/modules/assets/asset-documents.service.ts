@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { createReadStream, existsSync, mkdirSync, unlinkSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'fs';
 import { basename, join } from 'path';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 import { AuthContext } from '../../common/guards/tenant-context.guard';
@@ -40,13 +40,13 @@ export class AssetDocumentsService extends TenantScopedRepository {
     );
   }
 
-  async upload(auth: AuthContext, assetId: string, file: Express.Multer.File, documentType?: string) {
+  async upload(auth: AuthContext, assetId: string, file: any, documentType?: string) {
     await this.requireAsset(auth, assetId);
     if (!file?.buffer?.length) throw new BadRequestException('Document file is required');
     if (file.size > MAX_FILE_BYTES) throw new BadRequestException('Document exceeds the 25 MB limit');
     if (!ALLOWED_TYPES.has(file.mimetype)) throw new BadRequestException('Unsupported document type');
 
-    const safeName = basename(file.originalname).replace(/[^a-zA-Z0-9._-]/g, '_');
+    const safeName = basename(String(file.originalname ?? 'document')).replace(/[^a-zA-Z0-9._-]/g, '_');
     const key = join(auth.tenantId, auth.companyId, assetId, `${randomUUID()}-${safeName}`);
     const absolutePath = join(this.root, key);
     mkdirSync(join(this.root, auth.tenantId, auth.companyId, assetId), { recursive: true });
@@ -58,11 +58,11 @@ export class AssetDocumentsService extends TenantScopedRepository {
         companyId: auth.companyId,
         assetId,
         s3Key: key,
-        fileName: file.originalname,
-        contentType: file.mimetype,
-        sizeBytes: file.size,
+        fileName: String(file.originalname ?? safeName),
+        contentType: String(file.mimetype ?? 'application/octet-stream'),
+        sizeBytes: Number(file.size ?? file.buffer.length),
         ...(documentType ? { documentType: documentType.trim() } : {}),
-      } as never);
+      });
       return toDto(doc.toObject());
     } catch (error) {
       if (existsSync(absolutePath)) unlinkSync(absolutePath);
