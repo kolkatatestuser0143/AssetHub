@@ -16,6 +16,8 @@ import { SessionService } from './modules/auth/session.service';
 // Assets
 import { AssetsController } from './modules/assets/assets.controller';
 import { AssetsService } from './modules/assets/assets.service';
+import { AssetDocumentsController } from './modules/assets/asset-documents.controller';
+import { AssetDocumentsService } from './modules/assets/asset-documents.service';
 import { CustomFieldsController } from './modules/assets/custom-fields.controller';
 import { CustomFieldsService } from './modules/assets/custom-fields.service';
 import { WarrantyController } from './modules/assets/warranty.controller';
@@ -68,6 +70,7 @@ import { UsersService } from './modules/users/users.service';
 
     // Assets
     AssetsController,
+    AssetDocumentsController,
     WarrantyController,
     CustomFieldsController,
 
@@ -99,6 +102,7 @@ import { UsersService } from './modules/users/users.service';
 
     // Assets
     AssetsService,
+    AssetDocumentsService,
     WarrantyService,
     CustomFieldsService,
 
