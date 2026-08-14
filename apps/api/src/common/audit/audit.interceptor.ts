@@ -1,7 +1,7 @@
 import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { catchError, tap } from 'rxjs/operators';
-import { AuditService } from './audit.service';
+import { AuditService } from '../../modules/audit/audit.service';
 
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
@@ -14,43 +14,34 @@ export class AuditInterceptor implements NestInterceptor {
     const method = String(req.method ?? 'GET').toUpperCase();
     const route = String(req.route?.path ?? req.originalUrl ?? req.url ?? 'unknown');
 
-    const ignored =
-      method === 'OPTIONS' ||
-      route.includes('/api/docs') ||
-      route.includes('/health') ||
-      route.includes('/audit');
-
-    if (ignored || !req.authContext?.tenantId) {
-      return next.handle();
-    }
+    const ignored = method === 'OPTIONS' || route.includes('/api/docs') || route.includes('/health') || route.includes('/audit');
+    const auth = req.authContext;
+    if (ignored || !auth?.tenantId) return next.handle();
 
     const shouldRecord = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
-    if (!shouldRecord) {
-      return next.handle();
-    }
+    if (!shouldRecord) return next.handle();
 
-    const auth = req.authContext;
-    const targetId =
-      req.params?.assetId ??
-      req.params?.userId ??
-      req.params?.companyId ??
-      req.params?.vendorId ??
-      req.params?.roleId ??
-      req.params?.idpConfigId ??
-      req.params?.tokenId ??
-      undefined;
-
+    const targetId = req.params?.assetId
+      ?? req.params?.userId
+      ?? req.params?.companyId
+      ?? req.params?.vendorId
+      ?? req.params?.roleId
+      ?? req.params?.idpConfigId
+      ?? req.params?.tokenId;
     const targetType = this.inferTargetType(route, req.params ?? {});
+    const base = {
+      tenantId: auth.tenantId,
+      companyId: auth.companyId,
+      actorUserId: auth.userId,
+      targetType,
+      targetId: targetId ? String(targetId) : undefined,
+    };
 
     return next.handle().pipe(
       tap(() => {
         void this.audit.record({
-          tenantId: auth.tenantId,
-          companyId: auth.companyId,
-          actorUserId: auth.userId,
+          ...base,
           action: `${method.toLowerCase()}.${this.normalizeRoute(route)}`,
-          targetType,
-          targetId: targetId ? String(targetId) : undefined,
           metadata: {
             statusCode: res.statusCode,
             route,
@@ -62,12 +53,8 @@ export class AuditInterceptor implements NestInterceptor {
       }),
       catchError((error) => {
         void this.audit.record({
-          tenantId: auth.tenantId,
-          companyId: auth.companyId,
-          actorUserId: auth.userId,
+          ...base,
           action: `${method.toLowerCase()}.${this.normalizeRoute(route)}.failed`,
-          targetType,
-          targetId: targetId ? String(targetId) : undefined,
           metadata: {
             statusCode: error?.status ?? 500,
             route,
