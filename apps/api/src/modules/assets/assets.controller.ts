@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
-import { IsDateString, IsIn, IsInt, IsObject, IsOptional, IsString, Min } from 'class-validator';
+import { IsIn, IsInt, IsObject, IsOptional, IsString, Min } from 'class-validator';
 import { AssetLifecycleState } from '../../common/enums';
 import { AssetsService } from './assets.service';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
@@ -30,11 +30,6 @@ class CreateAssetTypeDto {
 class VendorDto {
   @IsString() name: string;
   @IsOptional() @IsString() contact?: string;
-}
-class WarrantyDto {
-  @IsString() assetId: string;
-  @IsOptional() @IsString() provider?: string;
-  @IsOptional() @IsDateString() expiresAt?: string;
 }
 
 @Controller('assets')
@@ -70,15 +65,15 @@ export class AssetsController {
   @RequirePermission('asset:read')
   listWarranties(@Req() req: any) { return this.assets.listWarranties(req.authContext); }
 
+  @Get('types')
+  @RequirePermission('asset:read')
+  listTypes(@Req() req: any) { return this.assets.listAssetTypes(req.authContext); }
+
   @Post('types')
   @RequirePermission('asset:write')
   createType(@Body() dto: CreateAssetTypeDto, @Req() req: any) {
     return this.assets.createAssetType(req.authContext, dto.name, { prefix: dto.prefix, separator: dto.separator, padding: dto.padding });
   }
-
-  @Get('types')
-  @RequirePermission('asset:read')
-  listTypes(@Req() req: any) { return this.assets.listAssetTypes(req.authContext); }
 
   @Post()
   @RequirePermission('asset:write')
@@ -105,10 +100,4 @@ export class AssetsController {
   @Post(':assetId/transition')
   @RequirePermission('asset:write')
   transition(@Param('assetId') assetId: string, @Body() dto: TransitionDto, @Req() req: any) { return this.assets.transitionState(req.authContext, assetId, dto.toState, req.authContext.userId, dto.reason); }
-
-  @Post(':assetId/warranty')
-  @RequirePermission('asset:write')
-  upsertWarranty(@Param('assetId') assetId: string, @Body() dto: Omit<WarrantyDto, 'assetId'>, @Req() req: any) {
-    return this.assets.upsertWarranty(req.authContext, assetId, dto.provider, dto.expiresAt ? new Date(dto.expiresAt) : undefined);
-  }
 }
