@@ -1,12 +1,9 @@
 {
   "/_not-found/page": "app/_not-found/page.js",
   "/login/page": "app/login/page.js",
-  "/(protected)/users/page": "app/(protected)/users/page.js",
-  "/(protected)/asset-types/page": "app/(protected)/asset-types/page.js",
-  "/(protected)/vendors/page": "app/(protected)/vendors/page.js",
-  "/(protected)/custom-fields/page": "app/(protected)/custom-fields/page.js",
-  "/(protected)/assets/page": "app/(protected)/assets/page.js",
-  "/(protected)/identity/page": "app/(protected)/identity/page.js",
   "/system/settings/page": "app/system/settings/page.js",
-  "/(protected)/dashboard/page": "app/(protected)/dashboard/page.js"
+  "/(protected)/dashboard/page": "app/(protected)/dashboard/page.js",
+  "/(protected)/assets/page": "app/(protected)/assets/page.js",
+  "/(protected)/vendors/page": "app/(protected)/vendors/page.js",
+  "/(protected)/identity/page": "app/(protected)/identity/page.js"
 }
