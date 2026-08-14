@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { IsArray, IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
 import { UsersService } from './users.service';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
