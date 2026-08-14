@@ -1,13 +1,22 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001/api/v1';
 
-let accessToken: string | null = null;
+let refreshing: Promise<void> | null = null;
 
-export function setAccessToken(token: string | null) {
-  accessToken = token;
-}
+export function setAccessToken(_token: string | null) {}
+export function getAccessToken() { return null; }
 
-export function getAccessToken() {
-  return accessToken;
+async function refreshSession() {
+  if (refreshing) return refreshing;
+  refreshing = fetch(`${API_BASE}/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+  }).then((res) => {
+    if (!res.ok) throw new Error('Session expired');
+  }).finally(() => {
+    refreshing = null;
+  });
+  return refreshing;
 }
 
 export async function apiFetch(path: string, options: RequestInit = {}, retry = true) {
@@ -15,27 +24,14 @@ export async function apiFetch(path: string, options: RequestInit = {}, retry = 
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...options.headers,
     },
     credentials: 'include',
   });
 
-  if (res.status === 401 && retry && typeof window !== 'undefined') {
-    const refreshToken = sessionStorage.getItem('itam_refresh_token');
-    if (refreshToken && path !== '/auth/refresh') {
-      const refreshed = await fetch(`${API_BASE}/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken }),
-      });
-      if (refreshed.ok) {
-        const data = await refreshed.json();
-        setAccessToken(data.accessToken);
-        sessionStorage.setItem('itam_refresh_token', data.refreshToken);
-        return apiFetch(path, options, false);
-      }
-    }
+  if (res.status === 401 && retry && path !== '/auth/refresh') {
+    await refreshSession();
+    return apiFetch(path, options, false);
   }
 
   if (!res.ok) {
@@ -46,40 +42,28 @@ export async function apiFetch(path: string, options: RequestInit = {}, retry = 
 }
 
 export async function login(email: string, password: string) {
-  const result = await apiFetch('/auth/login', {
+  return apiFetch('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   });
-  setAccessToken(result.accessToken);
-  return result;
 }
 
 export async function systemLogin(email: string, password: string) {
-  const result = await apiFetch('/auth/system/login', {
+  return apiFetch('/auth/system/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   });
-  setAccessToken(result.accessToken);
-  return result;
 }
 
 export async function logout() {
   if (typeof window === 'undefined') return;
-  const token = accessToken;
-  if (token) {
-    try {
-      await fetch(`${API_BASE}/auth/logout`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        credentials: 'include',
-      });
-    } catch {
-      // Clear client state even if the API is unreachable.
-    }
+  try {
+    await fetch(`${API_BASE}/auth/logout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+    });
+  } catch {
+    // Server logout may be unreachable; the local browser still has no token to clear.
   }
-  accessToken = null;
-  sessionStorage.removeItem('itam_refresh_token');
 }
