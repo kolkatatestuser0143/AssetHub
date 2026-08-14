@@ -1,6 +1,5 @@
-import { BadRequestException, Controller, Delete, Get, Param, Post, Query, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Controller, Delete, Get, Param, Post, Query, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { Response } from 'express';
 import { AssetDocumentsService } from './asset-documents.service';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 import { RbacGuard } from '../../common/guards/rbac.guard';
@@ -42,14 +41,14 @@ export class AssetDocumentsController {
       callback(null, true);
     },
   }))
-  upload(@Param('assetId') assetId: string, @UploadedFile() file: Express.Multer.File, @Query('documentType') documentType: string | undefined, req: any) {
+  upload(@Param('assetId') assetId: string, @UploadedFile() file: any, @Query('documentType') documentType: string | undefined, req: any) {
     if (!file) throw new BadRequestException('Multipart field "file" is required');
     return this.documents.upload(req.authContext, assetId, file, documentType);
   }
 
   @Get(':documentId/download')
   @RequirePermission('asset:read')
-  async download(@Param('assetId') assetId: string, @Param('documentId') documentId: string, @Res() res: Response, req: any) {
+  async download(@Param('assetId') assetId: string, @Param('documentId') documentId: string, @Res() res: any, req: any) {
     const result = await this.documents.download(req.authContext, assetId, documentId);
     res.setHeader('Content-Type', result.contentType);
     const safeFileName = result.fileName.replace(/[\r\n"]/g, '');
