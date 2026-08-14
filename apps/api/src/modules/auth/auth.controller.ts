@@ -1,4 +1,5 @@
-import { Body, Controller, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { LoginDto, RefreshDto } from './auth.dto';
@@ -7,7 +8,9 @@ import {
   clearTenantAuthCookies,
   readCookie,
   LEGACY_REFRESH_COOKIE,
+  SYSTEM_ACCESS_COOKIE,
   SYSTEM_REFRESH_COOKIE,
+  TENANT_ACCESS_COOKIE,
   TENANT_REFRESH_COOKIE,
   setSystemAuthCookies,
   setTenantAuthCookies,
@@ -15,12 +18,21 @@ import {
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly jwt: JwtService,
+  ) {}
 
   private sendSession(res: any, result: any, scope: 'tenant' | 'system') {
     if (scope === 'system') setSystemAuthCookies(res, result.accessToken, result.refreshToken);
     else setTenantAuthCookies(res, result.accessToken, result.refreshToken);
     return { ok: true, sessionId: result.sessionId, accountType: result.accountType };
+  }
+
+  private cookieNames(scope: 'tenant' | 'system') {
+    return scope === 'system'
+      ? { access: SYSTEM_ACCESS_COOKIE, refresh: SYSTEM_REFRESH_COOKIE }
+      : { access: TENANT_ACCESS_COOKIE, refresh: TENANT_REFRESH_COOKIE };
   }
 
   @Post('login')
@@ -35,6 +47,39 @@ export class AuthController {
   async systemLogin(@Body() dto: LoginDto, @Req() req: any, @Res({ passthrough: true }) res: any) {
     const result = await this.authService.systemLogin(dto.email, dto.password, req.ip, req.headers['user-agent'] ?? '');
     return this.sendSession(res, result, 'system');
+  }
+
+  @Get('session')
+  async session(@Req() req: any, @Res({ passthrough: true }) res: any) {
+    const requestedScope = req.headers['x-auth-scope'] === 'system' ? 'system' : 'tenant';
+    const names = this.cookieNames(requestedScope);
+    const accessToken = readCookie(req, names.access);
+
+    if (accessToken) {
+      try {
+        const payload = this.jwt.verify(accessToken);
+        const matchesScope = requestedScope === 'system'
+          ? payload?.accountType === 'SYSTEM' && payload?.systemAdmin === true
+          : payload?.accountType === 'TENANT';
+        if (matchesScope) return { authenticated: true, accountType: payload.accountType };
+      } catch {
+        // Access token may be expired; fall through to refresh.
+      }
+    }
+
+    const refreshToken = readCookie(req, names.refresh) ?? readCookie(req, LEGACY_REFRESH_COOKIE);
+    if (!refreshToken) return { authenticated: false };
+
+    try {
+      const result = await this.authService.refresh(refreshToken, req.ip, req.headers['user-agent'] ?? '');
+      const actualScope = result.accountType === 'SYSTEM' ? 'system' : 'tenant';
+      this.sendSession(res, result, actualScope);
+      return { authenticated: true, accountType: result.accountType };
+    } catch {
+      if (requestedScope === 'system') clearSystemAuthCookies(res);
+      else clearTenantAuthCookies(res);
+      return { authenticated: false };
+    }
   }
 
   @Post('refresh')
@@ -58,8 +103,6 @@ export class AuthController {
     const actualScope = result.accountType === 'SYSTEM' ? 'system' : 'tenant';
     const response = this.sendSession(res, result, actualScope);
 
-    // Always clear the legacy cookie after a successful refresh. This makes the
-    // migration one-way and leaves the browser with only scoped auth cookies.
     if (legacyRefreshToken) {
       const cookies = [
         `${LEGACY_REFRESH_COOKIE}=; Max-Age=0; Path=/api/v1/auth; HttpOnly; SameSite=Strict${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`,
