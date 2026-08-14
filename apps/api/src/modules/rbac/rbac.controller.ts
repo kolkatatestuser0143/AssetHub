@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { ArrayMinSize, IsArray, IsString, MinLength } from 'class-validator';
 import { RbacService } from './rbac.service';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
@@ -41,5 +41,15 @@ export class RbacController {
     @Req() req: any,
   ) {
     return this.rbac.assignRole(req.authContext, userId, roleId);
+  }
+
+  @Delete(':roleId/assign/:userId')
+  @RequirePermission('role:write')
+  unassignRole(
+    @Param('roleId') roleId: string,
+    @Param('userId') userId: string,
+    @Req() req: any,
+  ) {
+    return this.rbac.unassignRole(req.authContext, userId, roleId);
   }
 }
