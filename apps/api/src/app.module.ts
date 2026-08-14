@@ -31,6 +31,7 @@ import { RbacService } from './modules/rbac/rbac.service';
 import { IdentitySecurityCacheService } from './modules/identity/identity-security-cache.service';
 import { IdentityController } from './modules/identity/identity.controller';
 import { IdentityService } from './modules/identity/identity.service';
+import { IdentityAdminController } from './modules/identity/identity-admin.controller';
 
 // Users
 import { UsersController } from './modules/users/users.controller';
@@ -100,6 +101,7 @@ import { UsersService } from './modules/users/users.service';
     // Identity
     IdentityService,
     IdentitySecurityCacheService,
+    IdentityAdminController,
 
     // Users
     UsersService,
