@@ -16,22 +16,6 @@ export class SystemSubscriptionController {
   @SystemPermission('platform:billing:read')
   revoked() { return this.subscriptions.revokedTenants(); }
 
-  @Get('/../plans')
-  @SystemPermission('platform:billing:read')
-  plans() { return this.subscriptions.listPlans(true); }
-
-  @Post('/../plans')
-  @SystemPermission('platform:billing:manage')
-  createPlan(@Body() body: { name: string; features?: Record<string, unknown> }) { return this.subscriptions.createPlan(body.name, body.features ?? {}); }
-
-  @Patch('/../plans/:planId')
-  @SystemPermission('platform:billing:manage')
-  updatePlan(@Param('planId') planId: string, @Body() body: { name: string; features: Record<string, unknown> }) { return this.subscriptions.updatePlan(planId, body.name, body.features ?? {}); }
-
-  @Patch('/../plans/:planId/status')
-  @SystemPermission('platform:billing:manage')
-  planStatus(@Param('planId') planId: string, @Body() body: { isActive: boolean }) { return this.subscriptions.setPlanActive(planId, body.isActive); }
-
   @Patch(':tenantId')
   @SystemPermission('platform:billing:manage')
   assign(
