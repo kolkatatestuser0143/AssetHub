@@ -14,6 +14,7 @@ const navigation: Array<{ label: string; href: string; icon: LucideIcon; exact?:
   { label: 'Tenants', href: '/system/tenants', icon: Building2 },
   { label: 'Platform Users', href: '/system/users', icon: Users },
   { label: 'Roles & Permissions', href: '/system/roles', icon: ShieldCheck },
+  { label: 'Plans', href: '/system/plans', icon: CreditCard },
   { label: 'Subscriptions', href: '/system/subscriptions', icon: CreditCard },
   { label: 'Revoked Tenants', href: '/system/subscriptions/revoked', icon: ShieldCheck },
   { label: 'Audit & Security', href: '/system/audit', icon: FileSearch },
