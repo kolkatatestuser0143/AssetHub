@@ -43,6 +43,10 @@ import { TenantLicenseService } from './modules/billing/tenant-license.service';
 import { SystemSubscriptionController } from './modules/billing/system-subscription.controller';
 import { SystemSubscriptionService } from './modules/billing/system-subscription.service';
 
+// System administration
+import { SystemAdminController } from './modules/system/system-admin.controller';
+import { SystemAdminService } from './modules/system/system-admin.service';
+
 // Audit
 import { AuditController } from './modules/audit/audit.controller';
 import { AuditService } from './modules/audit/audit.service';
@@ -54,58 +58,21 @@ import { UsersService } from './modules/users/users.service';
 @Module({
   imports: [
     DatabaseModule,
-
-    JwtModule.register({
-      secret: process.env.JWT_ACCESS_SECRET,
-      signOptions: {
-        algorithm: 'HS256',
-      },
-    }),
-
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60_000,
-        limit: 100,
-      },
-    ]),
+    JwtModule.register({ secret: process.env.JWT_ACCESS_SECRET, signOptions: { algorithm: 'HS256' } }),
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
   ],
-
   controllers: [
-    AuthController,
-    AssetsController,
-    AssetDocumentsController,
-    WarrantyController,
-    CustomFieldsController,
-    TenancyController,
-    RbacController,
-    IdentityController,
-    IdentityAdminController,
-    TenantLicenseController,
-    SystemSubscriptionController,
-    AuditController,
-    UsersController,
+    AuthController, AssetsController, AssetDocumentsController, WarrantyController, CustomFieldsController,
+    TenancyController, RbacController, IdentityController, IdentityAdminController,
+    TenantLicenseController, SystemSubscriptionController, SystemAdminController,
+    AuditController, UsersController,
   ],
-
   providers: [
-    MongooseDatabaseService,
-    AuthService,
-    ProvisioningService,
-    SessionService,
-    AssetsService,
-    AssetDocumentsService,
-    WarrantyService,
-    CustomFieldsService,
-    TenancyService,
-    RbacService,
-    IdentityService,
-    IdentitySecurityCacheService,
-    TenantLicenseService,
-    SystemSubscriptionService,
-    AuditService,
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: AuditInterceptor,
-    },
+    MongooseDatabaseService, AuthService, ProvisioningService, SessionService,
+    AssetsService, AssetDocumentsService, WarrantyService, CustomFieldsService,
+    TenancyService, RbacService, IdentityService, IdentitySecurityCacheService,
+    TenantLicenseService, SystemSubscriptionService, SystemAdminService, AuditService,
+    { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
     UsersService,
   ],
 })
