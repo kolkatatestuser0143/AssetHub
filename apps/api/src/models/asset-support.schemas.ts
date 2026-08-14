@@ -69,6 +69,7 @@ export class AssetDocumentMeta {
   @Prop({ required: true }) fileName!: string;
   @Prop() contentType?: string;
   @Prop() sizeBytes?: number;
+  @Prop() documentType?: string;
 }
 
 export const AssetDocumentSchema = SchemaFactory.createForClass(AssetDocumentMeta);
