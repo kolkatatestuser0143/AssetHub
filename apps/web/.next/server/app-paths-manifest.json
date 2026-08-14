@@ -1,5 +1,8 @@
 {
   "/_not-found/page": "app/_not-found/page.js",
-  "/system/login/page": "app/system/login/page.js",
-  "/(protected)/users/page": "app/(protected)/users/page.js"
+  "/(protected)/users/page": "app/(protected)/users/page.js",
+  "/system/roles/page": "app/system/roles/page.js",
+  "/system/subscriptions/page": "app/system/subscriptions/page.js",
+  "/system/analytics/page": "app/system/analytics/page.js",
+  "/system/settings/page": "app/system/settings/page.js"
 }

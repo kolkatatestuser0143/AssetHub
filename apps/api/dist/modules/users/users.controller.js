@@ -64,6 +64,9 @@ let UsersController = class UsersController {
     constructor(users) {
         this.users = users;
     }
+    me(req) {
+        return this.users.get(req.authContext, req.authContext.userId);
+    }
     list(req) {
         return this.users.list(req.authContext);
     }
@@ -90,6 +93,14 @@ let UsersController = class UsersController {
     }
 };
 exports.UsersController = UsersController;
+__decorate([
+    (0, common_1.Get)('me'),
+    (0, require_permission_decorator_1.RequirePermission)('user:read'),
+    __param(0, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], UsersController.prototype, "me", null);
 __decorate([
     (0, common_1.Get)(),
     (0, require_permission_decorator_1.RequirePermission)('user:read'),

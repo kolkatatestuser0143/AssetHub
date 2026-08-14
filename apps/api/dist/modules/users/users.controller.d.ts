@@ -12,6 +12,7 @@ declare class CreateUserDto {
 export declare class UsersController {
     private readonly users;
     constructor(users: UsersService);
+    me(req: any): Promise<any>;
     list(req: any): Promise<any[]>;
     get(userId: string, req: any): Promise<any>;
     sessions(userId: string, req: any): Promise<any[]>;

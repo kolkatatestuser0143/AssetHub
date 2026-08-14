@@ -26,6 +26,46 @@
       "static/chunks/main-app.js",
       "static/chunks/app/(protected)/layout.js"
     ],
+    "/system/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/system/page.js"
+    ],
+    "/system/tenants/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/system/tenants/page.js"
+    ],
+    "/system/users/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/system/users/page.js"
+    ],
+    "/system/roles/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/system/roles/page.js"
+    ],
+    "/system/subscriptions/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/system/subscriptions/page.js"
+    ],
+    "/system/health/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/system/health/page.js"
+    ],
+    "/system/analytics/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/system/analytics/page.js"
+    ],
+    "/system/settings/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/system/settings/page.js"
+    ],
     "/_not-found/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
