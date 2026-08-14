@@ -4,10 +4,14 @@ import { AuthContext } from '../../common/guards/tenant-context.guard';
 import { TenantScopedRepository } from '../../common/tenant-scoped.repository';
 import { AssetLifecycleState } from '../../common/enums';
 import { toDto, toDtoArray } from '../../common/mongoose.utils';
+import { EntitlementService } from '../billing/entitlement.service';
 
 @Injectable()
 export class AssetsService extends TenantScopedRepository {
-  constructor(private readonly db: MongooseDatabaseService) { super(); }
+  constructor(
+    private readonly db: MongooseDatabaseService,
+    private readonly entitlements: EntitlementService,
+  ) { super(); }
 
   async listAssets(auth: AuthContext) {
     return toDtoArray(await this.db.asset.find(this.scope(auth)).sort({ createdAt: -1 }).lean());
@@ -34,6 +38,9 @@ export class AssetsService extends TenantScopedRepository {
   async createAsset(auth: AuthContext, assetTypeId: string, fields: Record<string, unknown>) {
     const assetType = await this.db.assetType.findOne({ _id: assetTypeId, companyId: auth.companyId }).lean();
     if (!assetType) throw new ForbiddenException('Asset type does not belong to your company');
+
+    const currentAssetCount = await this.db.asset.countDocuments({ tenantId: auth.tenantId });
+    await this.entitlements.requireWithinLimit(auth.tenantId, 'max_assets', currentAssetCount, 1);
 
     const locationId = this.readOptionalId(fields.locationId);
     const departmentId = this.readOptionalId(fields.departmentId);
@@ -106,7 +113,7 @@ export class AssetsService extends TenantScopedRepository {
     const assetIds = assets.map((asset: any) => String(asset._id));
     const [assignments, warranties, vendors] = await Promise.all([
       assetIds.length ? this.db.assetAssignment.find({ assetId: { $in: assetIds } }).select({ assetId: 1, userId: 1, assignedAt: 1, returnedAt: 1 }).lean() : [],
-      this.db.warranty.find({ companyId: auth.companyId, ...(assetIds.length ? { assetId: { $in: assetIds } } : { assetId: '__none__' }) }).select({ assetId: 1, provider: 1, expiresAt: 1 }).lean(),
+      this.db.warranty.find({ companyId: auth.companyId, ...(assetIds.length ? { assetId: { $in: assetIds } } : { assetId: '__none__' }) }).select({ assetId: 1, provider: 1, expiresAt: 1 }).lean() : [],
       this.db.vendor.find({ companyId: auth.companyId }).select({ _id: 1 }).lean(),
     ]);
 
