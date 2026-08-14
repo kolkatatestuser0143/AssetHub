@@ -17,8 +17,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    void apiFetch('/auth/refresh')
-      .then(() => setStatus('authenticated'))
+    void fetch(`${process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001/api/v1'}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Auth-Scope': 'tenant' },
+      credentials: 'include',
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error('Session expired');
+        setStatus('authenticated');
+      })
       .catch(() => setStatus('unauthenticated'));
   }, []);
 
