@@ -7,9 +7,7 @@ import { toDto, toDtoArray } from '../../common/mongoose.utils';
 
 @Injectable()
 export class AssetsService extends TenantScopedRepository {
-  constructor(private readonly db: MongooseDatabaseService) {
-    super();
-  }
+  constructor(private readonly db: MongooseDatabaseService) { super(); }
 
   async listAssets(auth: AuthContext) {
     return toDtoArray(await this.db.asset.find(this.scope(auth)).sort({ createdAt: -1 }).lean());
@@ -89,6 +87,34 @@ export class AssetsService extends TenantScopedRepository {
       customFields: customFields as Record<string, string>,
     });
     return toDto(doc.toObject());
+  }
+
+  async listAssignments(auth: AuthContext) {
+    const assets = await this.db.asset.find(this.scope(auth)).select({ _id: 1, assetNumber: 1, status: 1, assetTypeId: 1 }).lean();
+    if (!assets.length) return [];
+
+    const assetIds = assets.map((asset: any) => String(asset._id));
+    const assignments = await this.db.assetAssignment.find({ assetId: { $in: assetIds } }).sort({ assignedAt: -1 }).lean();
+    if (!assignments.length) return [];
+
+    const userIds = [...new Set(assignments.map((assignment: any) => String(assignment.userId)).filter(Boolean))];
+    const users = userIds.length
+      ? await this.db.user.find({ _id: { $in: userIds }, tenantId: auth.tenantId, companyId: auth.companyId }).select({ _id: 1, email: 1, firstName: 1, lastName: 1, isActive: 1 }).lean()
+      : [];
+
+    const assetById = new Map(assets.map((asset: any) => [String(asset._id), asset]));
+    const userById = new Map(users.map((user: any) => [String(user._id), user]));
+
+    return assignments.map((assignment: any) => {
+      const asset = assetById.get(String(assignment.assetId));
+      const user = assignment.userId ? userById.get(String(assignment.userId)) : null;
+      return {
+        ...toDto(assignment),
+        asset: asset ? toDto(asset) : null,
+        user: user ? toDto(user) : null,
+        active: !assignment.returnedAt,
+      };
+    });
   }
 
   async assignAsset(auth: AuthContext, assetId: string, userId: string, notes?: string) {
