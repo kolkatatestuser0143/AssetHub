@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
+import { TenantStatus } from '../../models/tenancy.schemas';
 
 @Injectable()
 export class SystemAdminService {
@@ -26,16 +27,36 @@ export class SystemAdminService {
       const sub: any = byTenant.get(String(tenant._id));
       return {
         id: String(tenant._id), name: tenant.name, slug: tenant.slug,
+        status: tenant.status ?? TenantStatus.ACTIVE,
         subscriptionStatus: sub?.status ?? 'unlicensed', planId: sub?.planId ?? null, endsAt: sub?.endsAt ?? null,
+        suspendedAt: tenant.suspendedAt ?? null,
+        suspensionReason: tenant.suspensionReason ?? null,
       };
     });
   }
 
-  async setTenantStatus(tenantId: string, active: boolean, actorUserId?: string) {
+  async setTenantStatus(tenantId: string, active: boolean, actorUserId?: string, reason?: string) {
     const tenant = await this.db.tenant.findById(tenantId).lean();
     if (!tenant) throw new NotFoundException('Tenant not found');
-    await this.db.subscription.updateMany({ tenantId }, { $set: { status: active ? 'active' : 'canceled', endsAt: active ? undefined : new Date() } });
-    return { ok: true, tenantId, active, actorUserId: actorUserId ?? null };
+
+    if (active) {
+      await this.db.tenant.updateOne(
+        { _id: tenantId },
+        { $set: { status: TenantStatus.ACTIVE }, $unset: { suspendedAt: 1, suspendedBy: 1, suspensionReason: 1 } },
+      );
+    } else {
+      await this.db.tenant.updateOne(
+        { _id: tenantId },
+        { $set: { status: TenantStatus.SUSPENDED, suspendedAt: new Date(), suspendedBy: actorUserId, suspensionReason: reason?.trim() || 'Suspended by platform administrator' } },
+      );
+    }
+
+    return {
+      ok: true,
+      tenantId,
+      status: active ? TenantStatus.ACTIVE : TenantStatus.SUSPENDED,
+      actorUserId: actorUserId ?? null,
+    };
   }
 
   async platformUsers() {
