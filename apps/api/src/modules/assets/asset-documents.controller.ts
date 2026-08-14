@@ -52,7 +52,8 @@ export class AssetDocumentsController {
   async download(@Param('assetId') assetId: string, @Param('documentId') documentId: string, @Res() res: Response, req: any) {
     const result = await this.documents.download(req.authContext, assetId, documentId);
     res.setHeader('Content-Type', result.contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="${result.fileName.replace(/"/g, '')}"`);
+    const safeFileName = result.fileName.replace(/[\r\n"]/g, '');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFileName}"`);
     return res.sendFile(result.path);
   }
 
