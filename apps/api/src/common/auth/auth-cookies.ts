@@ -1,0 +1,37 @@
+export const ACCESS_COOKIE = 'assethub_access';
+export const REFRESH_COOKIE = 'assethub_refresh';
+
+function parseCookies(header?: string): Record<string, string> {
+  if (!header) return {};
+  return header.split(';').reduce<Record<string, string>>((acc, chunk) => {
+    const index = chunk.indexOf('=');
+    if (index <= 0) return acc;
+    const key = chunk.slice(0, index).trim();
+    const value = chunk.slice(index + 1).trim();
+    if (key) acc[key] = decodeURIComponent(value);
+    return acc;
+  }, {});
+}
+
+export function readCookie(req: any, name: string): string | undefined {
+  return parseCookies(req?.headers?.cookie)[name];
+}
+
+function cookie(name: string, value: string, maxAge: number, path: string) {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  return `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=${path}; HttpOnly; SameSite=Strict${secure}`;
+}
+
+export function setAuthCookies(res: any, accessToken: string, refreshToken: string) {
+  res.setHeader('Set-Cookie', [
+    cookie(ACCESS_COOKIE, accessToken, 10 * 60, '/api/v1'),
+    cookie(REFRESH_COOKIE, refreshToken, 30 * 24 * 60 * 60, '/api/v1/auth'),
+  ]);
+}
+
+export function clearAuthCookies(res: any) {
+  res.setHeader('Set-Cookie', [
+    cookie(ACCESS_COOKIE, '', 0, '/api/v1'),
+    cookie(REFRESH_COOKIE, '', 0, '/api/v1/auth'),
+  ]);
+}
