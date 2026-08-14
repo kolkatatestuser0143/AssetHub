@@ -3,10 +3,14 @@ import { MongooseDatabaseService } from '../../common/mongoose-database.service'
 import { AuthContext } from '../../common/guards/tenant-context.guard';
 import { TenantScopedRepository } from '../../common/tenant-scoped.repository';
 import { toDto, toDtoArray } from '../../common/mongoose.utils';
+import { EntitlementService } from '../billing/entitlement.service';
 
 @Injectable()
 export class TenancyService extends TenantScopedRepository {
-  constructor(private readonly db: MongooseDatabaseService) {
+  constructor(
+    private readonly db: MongooseDatabaseService,
+    private readonly entitlements: EntitlementService,
+  ) {
     super();
   }
 
@@ -16,11 +20,9 @@ export class TenancyService extends TenantScopedRepository {
   }
 
   async createCompany(auth: AuthContext, name: string, code: string) {
-    const doc = await this.db.company.create({
-      tenantId: auth.tenantId,
-      name,
-      code,
-    });
+    const count = await this.db.company.countDocuments({ tenantId: auth.tenantId });
+    await this.entitlements.requireWithinLimit(auth.tenantId, 'max_companies', count);
+    const doc = await this.db.company.create({ tenantId: auth.tenantId, name, code });
     return toDto(doc.toObject());
   }
 
@@ -32,6 +34,8 @@ export class TenancyService extends TenantScopedRepository {
 
   async createBusinessUnit(auth: AuthContext, companyId: string, name: string) {
     await this.assertCompanyInScope(auth, companyId);
+    const count = await this.db.businessUnit.countDocuments({ companyId });
+    await this.entitlements.requireWithinLimit(auth.tenantId, 'max_business_units', count);
     const doc = await this.db.businessUnit.create({ companyId, name });
     return toDto(doc.toObject());
   }
@@ -48,6 +52,8 @@ export class TenancyService extends TenantScopedRepository {
     const bu = await this.db.businessUnit.findById(businessUnitId).lean();
     if (!bu) throw new NotFoundException('BusinessUnit not found');
     await this.assertCompanyInScope(auth, bu.companyId);
+    const count = await this.db.plant.countDocuments({ businessUnitId });
+    await this.entitlements.requireWithinLimit(auth.tenantId, 'max_plants', count);
     const doc = await this.db.plant.create({ businessUnitId, name });
     return toDto(doc.toObject());
   }
@@ -68,6 +74,8 @@ export class TenancyService extends TenantScopedRepository {
     const bu = await this.db.businessUnit.findById(plant.businessUnitId).lean();
     if (!bu) throw new NotFoundException('BusinessUnit not found');
     await this.assertCompanyInScope(auth, bu.companyId);
+    const count = await this.db.location.countDocuments({ plantId });
+    await this.entitlements.requireWithinLimit(auth.tenantId, 'max_locations', count);
     const doc = await this.db.location.create({ plantId, name });
     return toDto(doc.toObject());
   }
@@ -92,6 +100,8 @@ export class TenancyService extends TenantScopedRepository {
     const bu = await this.db.businessUnit.findById(plant.businessUnitId).lean();
     if (!bu) throw new NotFoundException('BusinessUnit not found');
     await this.assertCompanyInScope(auth, bu.companyId);
+    const count = await this.db.department.countDocuments({ locationId });
+    await this.entitlements.requireWithinLimit(auth.tenantId, 'max_departments', count);
     const doc = await this.db.department.create({ locationId, name });
     return toDto(doc.toObject());
   }
