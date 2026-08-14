@@ -10,15 +10,15 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
   'Platform Admin': [
     'platform:console:access','platform:overview:read','platform:tenants:read','platform:tenants:manage','platform:users:read','platform:users:manage',
     'platform:roles:read','platform:roles:manage','platform:billing:read','platform:billing:manage','platform:audit:read','platform:health:read',
-    'platform:analytics:read','platform:settings:read','platform:settings:manage','platform:support:read','platform:support:manage','platform:manage_tenants',
+    'platform:analytics:read','platform:settings:read','platform:settings:manage','platform:support:read','platform:support:manage',
   ],
-  'Sales Manager': ['platform:console:access','platform:overview:read','platform:tenants:read','platform:tenants:manage','platform:billing:read','platform:analytics:read','platform:manage_tenants'],
-  'Sales': ['platform:console:access','platform:overview:read','platform:tenants:read','platform:billing:read','platform:manage_tenants'],
-  'Billing Manager': ['platform:console:access','platform:overview:read','platform:tenants:read','platform:billing:read','platform:billing:manage','platform:analytics:read','platform:manage_tenants'],
-  'Support Manager': ['platform:console:access','platform:overview:read','platform:tenants:read','platform:users:read','platform:support:read','platform:support:manage','platform:audit:read','platform:manage_tenants'],
-  'Support Agent': ['platform:console:access','platform:overview:read','platform:tenants:read','platform:users:read','platform:support:read','platform:manage_tenants'],
-  'Security Auditor': ['platform:console:access','platform:overview:read','platform:users:read','platform:roles:read','platform:audit:read','platform:health:read','platform:manage_tenants'],
-  'Operations Manager': ['platform:console:access','platform:overview:read','platform:tenants:read','platform:users:read','platform:roles:read','platform:health:read','platform:analytics:read','platform:billing:read','platform:manage_tenants'],
+  'Sales Manager': ['platform:console:access','platform:overview:read','platform:tenants:read','platform:tenants:manage','platform:billing:read','platform:analytics:read'],
+  'Sales': ['platform:console:access','platform:overview:read','platform:tenants:read','platform:billing:read'],
+  'Billing Manager': ['platform:console:access','platform:overview:read','platform:tenants:read','platform:billing:read','platform:billing:manage','platform:analytics:read'],
+  'Support Manager': ['platform:console:access','platform:overview:read','platform:tenants:read','platform:users:read','platform:support:read','platform:support:manage','platform:audit:read'],
+  'Support Agent': ['platform:console:access','platform:overview:read','platform:tenants:read','platform:users:read','platform:support:read'],
+  'Security Auditor': ['platform:console:access','platform:overview:read','platform:users:read','platform:roles:read','platform:audit:read','platform:health:read'],
+  'Operations Manager': ['platform:console:access','platform:overview:read','platform:tenants:read','platform:users:read','platform:roles:read','platform:health:read','platform:analytics:read','platform:billing:read'],
 };
 
 async function main() {
@@ -57,7 +57,6 @@ async function main() {
     }
 
     console.log(`Seeded ${Object.keys(ROLE_PERMISSIONS).length} platform roles under tenant scope ${PLATFORM_TENANT_ID}.`);
-    console.log(Object.entries(ROLE_PERMISSIONS).map(([name, permissions]) => `${name}: ${permissions.join(', ')}`).join('\n'));
   } finally {
     await connection.close();
   }
