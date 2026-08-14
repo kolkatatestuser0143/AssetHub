@@ -8,6 +8,7 @@ export type PlanDocument = HydratedDocument<Plan>;
 export class Plan {
   @Prop({ required: true, unique: true }) name!: string;
   @Prop({ type: Object }) features?: Record<string, unknown>; // feature flags + limits
+  @Prop({ default: true, index: true }) isActive!: boolean;
 }
 
 export const PlanSchema = SchemaFactory.createForClass(Plan);
@@ -19,7 +20,7 @@ export type SubscriptionDocument = HydratedDocument<Subscription>;
 export class Subscription {
   @Prop({ required: true, index: true }) tenantId!: string;
   @Prop({ required: true }) planId!: string;
-  @Prop({ required: true }) status!: string; // "active" | "trialing" | "past_due" | "canceled"
+  @Prop({ required: true }) status!: string; // "active" | "trialing" | "past_due" | "canceled" | "revoked"
   @Prop({ default: Date.now }) startedAt!: Date;
   @Prop() endsAt?: Date;
 }
