@@ -1,5 +1,7 @@
-export const ACCESS_COOKIE = 'assethub_access';
-export const REFRESH_COOKIE = 'assethub_refresh';
+export const TENANT_ACCESS_COOKIE = 'assethub_tenant_access';
+export const TENANT_REFRESH_COOKIE = 'assethub_tenant_refresh';
+export const SYSTEM_ACCESS_COOKIE = 'assethub_system_access';
+export const SYSTEM_REFRESH_COOKIE = 'assethub_system_refresh';
 
 function parseCookies(header?: string): Record<string, string> {
   if (!header) return {};
@@ -22,16 +24,39 @@ function cookie(name: string, value: string, maxAge: number, path: string) {
   return `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Path=${path}; HttpOnly; SameSite=Strict${secure}`;
 }
 
-export function setAuthCookies(res: any, accessToken: string, refreshToken: string) {
+export function setTenantAuthCookies(res: any, accessToken: string, refreshToken: string) {
   res.setHeader('Set-Cookie', [
-    cookie(ACCESS_COOKIE, accessToken, 10 * 60, '/api/v1'),
-    cookie(REFRESH_COOKIE, refreshToken, 30 * 24 * 60 * 60, '/api/v1/auth'),
+    cookie(TENANT_ACCESS_COOKIE, accessToken, 10 * 60, '/api/v1'),
+    cookie(TENANT_REFRESH_COOKIE, refreshToken, 30 * 24 * 60 * 60, '/api/v1/auth'),
+  ]);
+}
+
+export function setSystemAuthCookies(res: any, accessToken: string, refreshToken: string) {
+  res.setHeader('Set-Cookie', [
+    cookie(SYSTEM_ACCESS_COOKIE, accessToken, 10 * 60, '/api/v1'),
+    cookie(SYSTEM_REFRESH_COOKIE, refreshToken, 30 * 24 * 60 * 60, '/api/v1/auth'),
   ]);
 }
 
 export function clearAuthCookies(res: any) {
   res.setHeader('Set-Cookie', [
-    cookie(ACCESS_COOKIE, '', 0, '/api/v1'),
-    cookie(REFRESH_COOKIE, '', 0, '/api/v1/auth'),
+    cookie(TENANT_ACCESS_COOKIE, '', 0, '/api/v1'),
+    cookie(TENANT_REFRESH_COOKIE, '', 0, '/api/v1/auth'),
+    cookie(SYSTEM_ACCESS_COOKIE, '', 0, '/api/v1'),
+    cookie(SYSTEM_REFRESH_COOKIE, '', 0, '/api/v1/auth'),
+  ]);
+}
+
+export function clearTenantAuthCookies(res: any) {
+  res.setHeader('Set-Cookie', [
+    cookie(TENANT_ACCESS_COOKIE, '', 0, '/api/v1'),
+    cookie(TENANT_REFRESH_COOKIE, '', 0, '/api/v1/auth'),
+  ]);
+}
+
+export function clearSystemAuthCookies(res: any) {
+  res.setHeader('Set-Cookie', [
+    cookie(SYSTEM_ACCESS_COOKIE, '', 0, '/api/v1'),
+    cookie(SYSTEM_REFRESH_COOKIE, '', 0, '/api/v1/auth'),
   ]);
 }
