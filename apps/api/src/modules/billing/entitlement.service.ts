@@ -21,6 +21,15 @@ export class EntitlementService {
     return (plan.features as any)?.[key];
   }
 
+  async getNumber(tenantId: string, key: string): Promise<number | null> {
+    const value = await this.get(tenantId, key);
+    if (value === null || value === undefined) return null;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+      throw new ForbiddenException(`Invalid numeric entitlement: ${key}`);
+    }
+    return value;
+  }
+
   async requireFeature(tenantId: string, key: string) {
     const value = await this.get(tenantId, key);
     if (value !== true) throw new ForbiddenException(`Feature not enabled: ${key}`);
@@ -28,9 +37,8 @@ export class EntitlementService {
   }
 
   async requireWithinLimit(tenantId: string, key: string, currentCount: number, increment = 1) {
-    const value = await this.get(tenantId, key);
-    if (value === null || value === undefined) return true;
-    if (typeof value !== 'number' || !Number.isFinite(value)) throw new ForbiddenException(`Invalid license limit: ${key}`);
+    const value = await this.getNumber(tenantId, key);
+    if (value === null) return true;
     if (currentCount + increment > value) throw new ForbiddenException(`License limit reached: ${key} (${value})`);
     return true;
   }
