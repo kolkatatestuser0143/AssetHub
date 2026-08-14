@@ -37,6 +37,10 @@ export class AssetsController {
   @RequirePermission('asset:read')
   list(@Req() req: any) { return this.assets.listAssets(req.authContext); }
 
+  @Get('assignments')
+  @RequirePermission('asset:read')
+  listAssignments(@Req() req: any) { return this.assets.listAssignments(req.authContext); }
+
   @Get('types')
   @RequirePermission('asset:read')
   listTypes(@Req() req: any) { return this.assets.listAssetTypes(req.authContext); }
