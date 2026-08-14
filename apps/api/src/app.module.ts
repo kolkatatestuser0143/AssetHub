@@ -12,6 +12,8 @@ import { AuthController } from './modules/auth/auth.controller';
 import { AuthService } from './modules/auth/auth.service';
 import { ProvisioningService } from './modules/auth/provisioning.service';
 import { SessionService } from './modules/auth/session.service';
+import { InviteController } from './modules/auth/invite.controller';
+import { InviteService } from './modules/auth/invite.service';
 
 // Assets
 import { AssetsController } from './modules/assets/assets.controller';
@@ -62,13 +64,13 @@ import { UsersService } from './modules/users/users.service';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
   ],
   controllers: [
-    AuthController, AssetsController, AssetDocumentsController, WarrantyController, CustomFieldsController,
+    AuthController, InviteController, AssetsController, AssetDocumentsController, WarrantyController, CustomFieldsController,
     TenancyController, RbacController, IdentityController, IdentityAdminController,
     TenantLicenseController, SystemSubscriptionController, SystemAdminController,
     AuditController, UsersController,
   ],
   providers: [
-    MongooseDatabaseService, AuthService, ProvisioningService, SessionService,
+    MongooseDatabaseService, AuthService, ProvisioningService, SessionService, InviteService,
     AssetsService, AssetDocumentsService, WarrantyService, CustomFieldsService,
     TenancyService, RbacService, IdentityService, IdentitySecurityCacheService,
     TenantLicenseService, SystemSubscriptionService, SystemAdminService, AuditService,
