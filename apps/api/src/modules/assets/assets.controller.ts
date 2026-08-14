@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
-import { IsIn, IsInt, IsObject, IsOptional, IsString, Min } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsObject, IsOptional, IsString, Min } from 'class-validator';
 import { AssetLifecycleState } from '../../common/enums';
 import { AssetsService } from './assets.service';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
@@ -44,6 +44,10 @@ export class AssetsController {
   @Get('assignments')
   @RequirePermission('asset:read')
   listAssignments(@Req() req: any) { return this.assets.listAssignments(req.authContext); }
+
+  @Get('reports/summary')
+  @RequirePermission('asset:read')
+  reportSummary(@Req() req: any) { return this.assets.getReportSummary(req.authContext); }
 
   @Get('vendors')
   @RequirePermission('asset:read')
