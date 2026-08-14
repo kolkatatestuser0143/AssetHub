@@ -6,6 +6,7 @@ import { MongooseDatabaseService } from '../../common/mongoose-database.service'
 import { AuthContext } from '../../common/guards/tenant-context.guard';
 import { TenantScopedRepository } from '../../common/tenant-scoped.repository';
 import { toDto, toDtoArray } from '../../common/mongoose.utils';
+import { EntitlementService } from '../billing/entitlement.service';
 
 const ALLOWED_TYPES = new Set([
   'application/pdf',
@@ -24,7 +25,7 @@ const MAX_FILE_BYTES = 25 * 1024 * 1024;
 export class AssetDocumentsService extends TenantScopedRepository {
   private readonly root = process.env.ASSET_DOCUMENTS_DIR || join(process.cwd(), 'storage', 'asset-documents');
 
-  constructor(private readonly db: MongooseDatabaseService) {
+  constructor(private readonly db: MongooseDatabaseService, private readonly entitlements: EntitlementService) {
     super();
     mkdirSync(this.root, { recursive: true });
   }
@@ -45,6 +46,14 @@ export class AssetDocumentsService extends TenantScopedRepository {
     if (!file?.buffer?.length) throw new BadRequestException('Document file is required');
     if (file.size > MAX_FILE_BYTES) throw new BadRequestException('Document exceeds the 25 MB limit');
     if (!ALLOWED_TYPES.has(file.mimetype)) throw new BadRequestException('Unsupported document type');
+
+    const currentDocumentCount = await this.db.assetDocument.countDocuments({ tenantId: auth.tenantId });
+    await this.entitlements.requireWithinLimit(auth.tenantId, 'max_asset_documents', currentDocumentCount, 1);
+
+    const configuredMaxSize = await this.entitlements.get(auth.tenantId, 'max_asset_document_size_mb');
+    if (typeof configuredMaxSize === 'number' && Number.isFinite(configuredMaxSize) && file.size > configuredMaxSize * 1024 * 1024) {
+      throw new BadRequestException(`Document exceeds the licensed ${configuredMaxSize} MB size limit`);
+    }
 
     const safeName = basename(String(file.originalname ?? 'document')).replace(/[^a-zA-Z0-9._-]/g, '_');
     const key = join(auth.tenantId, auth.companyId, assetId, `${randomUUID()}-${safeName}`);
