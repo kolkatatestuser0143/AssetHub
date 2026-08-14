@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 import { UserAccountType } from '../../models/user.schemas';
+import { TenantStatus } from '../../models/tenancy.schemas';
 import { toDto } from '../../common/mongoose.utils';
 
 const ACCESS_TOKEN_TTL = '10m';
@@ -21,6 +22,13 @@ export class SessionService {
     }
     if (!system && rawUser.accountType !== UserAccountType.TENANT) {
       throw new UnauthorizedException('Tenant session requires a tenant account');
+    }
+
+    if (!system) {
+      const tenant = await this.db.tenant.findById(rawUser.tenantId).select({ status: 1 }).lean();
+      if (!tenant) throw new UnauthorizedException('Tenant account is unavailable');
+      if (tenant.status === TenantStatus.SUSPENDED) throw new UnauthorizedException('Tenant account is suspended');
+      if (tenant.status === TenantStatus.ARCHIVED) throw new UnauthorizedException('Tenant account is archived');
     }
 
     const permissions = system
