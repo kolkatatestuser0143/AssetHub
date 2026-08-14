@@ -89,37 +89,41 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", Number)
 ], CreateAssetTypeDto.prototype, "padding", void 0);
+class VendorDto {
+}
+__decorate([
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], VendorDto.prototype, "name", void 0);
+__decorate([
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], VendorDto.prototype, "contact", void 0);
 let AssetsController = class AssetsController {
     constructor(assets) {
         this.assets = assets;
     }
     list(req) { return this.assets.listAssets(req.authContext); }
+    listAssignments(req) { return this.assets.listAssignments(req.authContext); }
+    reportSummary(req) { return this.assets.getReportSummary(req.authContext); }
+    listVendors(req) { return this.assets.listVendors(req.authContext); }
+    createVendor(dto, req) { return this.assets.createVendor(req.authContext, dto.name, dto.contact); }
+    updateVendor(vendorId, dto, req) { return this.assets.updateVendor(req.authContext, vendorId, dto.name, dto.contact); }
+    deleteVendor(vendorId, req) { return this.assets.deleteVendor(req.authContext, vendorId); }
+    listWarranties(req) { return this.assets.listWarranties(req.authContext); }
     listTypes(req) { return this.assets.listAssetTypes(req.authContext); }
     createType(dto, req) {
-        return this.assets.createAssetType(req.authContext, dto.name, {
-            prefix: dto.prefix, separator: dto.separator, padding: dto.padding,
-        });
+        return this.assets.createAssetType(req.authContext, dto.name, { prefix: dto.prefix, separator: dto.separator, padding: dto.padding });
     }
     create(dto, req) {
-        return this.assets.createAsset(req.authContext, dto.assetTypeId, {
-            ...(dto.fields ?? {}), locationId: dto.locationId, departmentId: dto.departmentId, vendorId: dto.vendorId,
-        });
+        return this.assets.createAsset(req.authContext, dto.assetTypeId, { ...(dto.fields ?? {}), locationId: dto.locationId, departmentId: dto.departmentId, vendorId: dto.vendorId });
     }
-    assign(assetId, dto, req) {
-        return this.assets.assignAsset(req.authContext, assetId, dto.userId, dto.notes);
-    }
-    currentAssignment(assetId, req) {
-        return this.assets.getCurrentAssignment(req.authContext, assetId);
-    }
-    unassign(assetId, dto, req) {
-        return this.assets.unassignAsset(req.authContext, assetId, dto.notes);
-    }
-    history(assetId, req) {
-        return this.assets.listAssignmentHistory(req.authContext, assetId);
-    }
-    transition(assetId, dto, req) {
-        return this.assets.transitionState(req.authContext, assetId, dto.toState, req.authContext.userId, dto.reason);
-    }
+    assign(assetId, dto, req) { return this.assets.assignAsset(req.authContext, assetId, dto.userId, dto.notes); }
+    currentAssignment(assetId, req) { return this.assets.getCurrentAssignment(req.authContext, assetId); }
+    unassign(assetId, dto, req) { return this.assets.unassignAsset(req.authContext, assetId, dto.notes); }
+    history(assetId, req) { return this.assets.listAssignmentHistory(req.authContext, assetId); }
+    transition(assetId, dto, req) { return this.assets.transitionState(req.authContext, assetId, dto.toState, req.authContext.userId, dto.reason); }
 };
 exports.AssetsController = AssetsController;
 __decorate([
@@ -130,6 +134,66 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
 ], AssetsController.prototype, "list", null);
+__decorate([
+    (0, common_1.Get)('assignments'),
+    (0, require_permission_decorator_1.RequirePermission)('asset:read'),
+    __param(0, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], AssetsController.prototype, "listAssignments", null);
+__decorate([
+    (0, common_1.Get)('reports/summary'),
+    (0, require_permission_decorator_1.RequirePermission)('asset:read'),
+    __param(0, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], AssetsController.prototype, "reportSummary", null);
+__decorate([
+    (0, common_1.Get)('vendors'),
+    (0, require_permission_decorator_1.RequirePermission)('asset:read'),
+    __param(0, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], AssetsController.prototype, "listVendors", null);
+__decorate([
+    (0, common_1.Post)('vendors'),
+    (0, require_permission_decorator_1.RequirePermission)('asset:write'),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [VendorDto, Object]),
+    __metadata("design:returntype", void 0)
+], AssetsController.prototype, "createVendor", null);
+__decorate([
+    (0, common_1.Patch)('vendors/:vendorId'),
+    (0, require_permission_decorator_1.RequirePermission)('asset:write'),
+    __param(0, (0, common_1.Param)('vendorId')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, VendorDto, Object]),
+    __metadata("design:returntype", void 0)
+], AssetsController.prototype, "updateVendor", null);
+__decorate([
+    (0, common_1.Delete)('vendors/:vendorId'),
+    (0, require_permission_decorator_1.RequirePermission)('asset:write'),
+    __param(0, (0, common_1.Param)('vendorId')),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", void 0)
+], AssetsController.prototype, "deleteVendor", null);
+__decorate([
+    (0, common_1.Get)('warranties'),
+    (0, require_permission_decorator_1.RequirePermission)('asset:read'),
+    __param(0, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], AssetsController.prototype, "listWarranties", null);
 __decorate([
     (0, common_1.Get)('types'),
     (0, require_permission_decorator_1.RequirePermission)('asset:read'),

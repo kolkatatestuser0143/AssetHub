@@ -14,8 +14,14 @@ export declare class UsersController {
     constructor(users: UsersService);
     list(req: any): Promise<any[]>;
     get(userId: string, req: any): Promise<any>;
+    sessions(userId: string, req: any): Promise<any[]>;
+    loginHistory(userId: string, req: any): Promise<any[]>;
     create(dto: CreateUserDto, req: any): Promise<any>;
     activate(userId: string, req: any): Promise<any>;
     deactivate(userId: string, req: any): Promise<any>;
+    revokeSession(userId: string, sessionId: string, req: any): Promise<{
+        ok: boolean;
+        sessionId: string;
+    }>;
 }
 export {};

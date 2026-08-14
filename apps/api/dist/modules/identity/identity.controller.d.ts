@@ -17,6 +17,8 @@ export declare class IdentityController {
         config: Record<string, unknown>;
         attributeMapping: Record<string, string>;
         isEnabled: boolean;
+        createdAt: Date;
+        updatedAt: Date;
         _id: import("mongoose").Types.ObjectId;
         __v: number;
         id: string;

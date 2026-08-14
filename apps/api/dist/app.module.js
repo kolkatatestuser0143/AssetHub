@@ -29,6 +29,7 @@ const rbac_service_1 = require("./modules/rbac/rbac.service");
 const identity_security_cache_service_1 = require("./modules/identity/identity-security-cache.service");
 const identity_controller_1 = require("./modules/identity/identity.controller");
 const identity_service_1 = require("./modules/identity/identity.service");
+const identity_admin_controller_1 = require("./modules/identity/identity-admin.controller");
 const users_controller_1 = require("./modules/users/users.controller");
 const users_service_1 = require("./modules/users/users.service");
 let AppModule = class AppModule {
@@ -59,6 +60,7 @@ exports.AppModule = AppModule = __decorate([
             tenancy_controller_1.TenancyController,
             rbac_controller_1.RbacController,
             identity_controller_1.IdentityController,
+            identity_admin_controller_1.IdentityAdminController,
             users_controller_1.UsersController,
         ],
         providers: [

@@ -73,6 +73,7 @@ import { UsersService } from './modules/users/users.service';
 
     // Identity
     IdentityController,
+    IdentityAdminController,
 
     // Users
     UsersController,
@@ -101,7 +102,6 @@ import { UsersService } from './modules/users/users.service';
     // Identity
     IdentityService,
     IdentitySecurityCacheService,
-    IdentityAdminController,
 
     // Users
     UsersService,

@@ -8,6 +8,8 @@ export declare class IdentityProviderConfig {
     config: Record<string, unknown>;
     attributeMapping: Record<string, string>;
     isEnabled: boolean;
+    createdAt: Date;
+    updatedAt: Date;
 }
 export declare const IdentityProviderConfigSchema: import("mongoose").Schema<IdentityProviderConfig, import("mongoose").Model<IdentityProviderConfig, any, any, any, import("mongoose").Document<unknown, any, IdentityProviderConfig, any, {}> & IdentityProviderConfig & {
     _id: import("mongoose").Types.ObjectId;
@@ -26,6 +28,8 @@ export declare class ScimToken {
     label?: string;
     deprovisionPolicy: string;
     revokedAt?: Date;
+    createdAt: Date;
+    updatedAt: Date;
 }
 export declare const ScimTokenSchema: import("mongoose").Schema<ScimToken, import("mongoose").Model<ScimToken, any, any, any, import("mongoose").Document<unknown, any, ScimToken, any, {}> & ScimToken & {
     _id: import("mongoose").Types.ObjectId;

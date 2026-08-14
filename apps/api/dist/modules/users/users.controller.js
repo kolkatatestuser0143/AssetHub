@@ -70,6 +70,12 @@ let UsersController = class UsersController {
     get(userId, req) {
         return this.users.get(req.authContext, userId);
     }
+    sessions(userId, req) {
+        return this.users.sessions(req.authContext, userId);
+    }
+    loginHistory(userId, req) {
+        return this.users.loginHistory(req.authContext, userId);
+    }
     create(dto, req) {
         return this.users.create(req.authContext, dto);
     }
@@ -78,6 +84,9 @@ let UsersController = class UsersController {
     }
     deactivate(userId, req) {
         return this.users.setActive(req.authContext, userId, false);
+    }
+    revokeSession(userId, sessionId, req) {
+        return this.users.revokeSession(req.authContext, userId, sessionId, req.authContext.userId);
     }
 };
 exports.UsersController = UsersController;
@@ -98,6 +107,24 @@ __decorate([
     __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", void 0)
 ], UsersController.prototype, "get", null);
+__decorate([
+    (0, common_1.Get)(':userId/sessions'),
+    (0, require_permission_decorator_1.RequirePermission)('user:read'),
+    __param(0, (0, common_1.Param)('userId')),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", void 0)
+], UsersController.prototype, "sessions", null);
+__decorate([
+    (0, common_1.Get)(':userId/login-history'),
+    (0, require_permission_decorator_1.RequirePermission)('audit:read'),
+    __param(0, (0, common_1.Param)('userId')),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", void 0)
+], UsersController.prototype, "loginHistory", null);
 __decorate([
     (0, common_1.Post)(),
     (0, require_permission_decorator_1.RequirePermission)('user:write'),
@@ -125,6 +152,16 @@ __decorate([
     __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", void 0)
 ], UsersController.prototype, "deactivate", null);
+__decorate([
+    (0, common_1.Patch)(':userId/sessions/:sessionId/revoke'),
+    (0, require_permission_decorator_1.RequirePermission)('user:write'),
+    __param(0, (0, common_1.Param)('userId')),
+    __param(1, (0, common_1.Param)('sessionId')),
+    __param(2, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, Object]),
+    __metadata("design:returntype", void 0)
+], UsersController.prototype, "revokeSession", null);
 exports.UsersController = UsersController = __decorate([
     (0, common_1.Controller)('users'),
     (0, common_1.UseGuards)(tenant_context_guard_1.TenantContextGuard, rbac_guard_1.RbacGuard),

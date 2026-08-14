@@ -13,6 +13,36 @@ export declare class AssetsService extends TenantScopedRepository {
         padding?: number;
     }): Promise<any>;
     createAsset(auth: AuthContext, assetTypeId: string, fields: Record<string, unknown>): Promise<any>;
+    listAssignments(auth: AuthContext): Promise<any[]>;
+    getReportSummary(auth: AuthContext): Promise<{
+        generatedAt: string;
+        totals: {
+            assets: number;
+            assignedAssets: number;
+            assignmentRecords: number;
+            vendors: number;
+            warranties: number;
+            expiredWarranties: number;
+            expiringWarranties: number;
+        };
+        statusCounts: Record<string, number>;
+        assets: {
+            id: string;
+            assetNumber: any;
+            status: any;
+            assetTypeId: string;
+            vendorId: string | null;
+            warranty: any;
+        }[];
+    }>;
+    getAssetReportCsv(auth: AuthContext): Promise<string>;
+    listVendors(auth: AuthContext): Promise<any[]>;
+    createVendor(auth: AuthContext, name: string, contact?: string): Promise<any>;
+    updateVendor(auth: AuthContext, vendorId: string, name: string, contact?: string): Promise<any>;
+    deleteVendor(auth: AuthContext, vendorId: string): Promise<{
+        ok: boolean;
+    }>;
+    listWarranties(auth: AuthContext): Promise<any[]>;
     assignAsset(auth: AuthContext, assetId: string, userId: string, notes?: string): Promise<any>;
     getCurrentAssignment(auth: AuthContext, assetId: string): Promise<any>;
     unassignAsset(auth: AuthContext, assetId: string, notes?: string): Promise<any>;

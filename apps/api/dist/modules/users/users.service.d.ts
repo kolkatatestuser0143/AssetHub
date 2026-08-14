@@ -18,4 +18,10 @@ export declare class UsersService extends TenantScopedRepository {
         locationId?: string;
     }): Promise<any>;
     setActive(auth: AuthContext, userId: string, active: boolean): Promise<any>;
+    sessions(auth: AuthContext, userId: string): Promise<any[]>;
+    loginHistory(auth: AuthContext, userId: string): Promise<any[]>;
+    revokeSession(auth: AuthContext, userId: string, sessionId: string, actorUserId: string): Promise<{
+        ok: boolean;
+        sessionId: string;
+    }>;
 }

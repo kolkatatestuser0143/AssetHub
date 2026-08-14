@@ -13,6 +13,8 @@ export class IdentityProviderConfig {
   @Prop({ type: Object, required: true }) config!: Record<string, unknown>;
   @Prop({ type: Object, required: true }) attributeMapping!: Record<string, string>;
   @Prop({ default: true }) isEnabled!: boolean;
+  createdAt!: Date;
+  updatedAt!: Date;
 }
 
 export const IdentityProviderConfigSchema = SchemaFactory.createForClass(IdentityProviderConfig);
@@ -29,6 +31,8 @@ export class ScimToken {
   @Prop({ enum: ScimDeprovisionPolicy, default: ScimDeprovisionPolicy.DISABLE_LOGIN })
   deprovisionPolicy!: string;
   @Prop() revokedAt?: Date;
+  createdAt!: Date;
+  updatedAt!: Date;
 }
 
 export const ScimTokenSchema = SchemaFactory.createForClass(ScimToken);
