@@ -46,9 +46,9 @@ export class AuthService {
     }
 
     const permissions = await this.resolveSystemPermissions(user.roleIds ?? []);
-    if (!permissions.includes('platform:manage_tenants')) {
-      await this.recordLoginAttempt(user.id, false, ip, userAgent, 'missing_platform_permission');
-      throw new UnauthorizedException('Account is not a system administrator');
+    if (!permissions.includes('platform:console:access')) {
+      await this.recordLoginAttempt(user.id, false, ip, userAgent, 'missing_console_permission');
+      throw new UnauthorizedException('Account is not permitted to access the system console');
     }
 
     await this.recordLoginAttempt(user.id, true, ip, userAgent, null);
