@@ -3,6 +3,12 @@ export const TENANT_REFRESH_COOKIE = 'assethub_tenant_refresh';
 export const SYSTEM_ACCESS_COOKIE = 'assethub_system_access';
 export const SYSTEM_REFRESH_COOKIE = 'assethub_system_refresh';
 
+// Legacy cookie names from the pre-split cookie implementation.
+// These are accepted only during migration, then immediately replaced
+// with the scoped cookies above and cleared from the browser.
+export const LEGACY_ACCESS_COOKIE = 'assethub_access';
+export const LEGACY_REFRESH_COOKIE = 'assethub_refresh';
+
 function parseCookies(header?: string): Record<string, string> {
   if (!header) return {};
   return header.split(';').reduce<Record<string, string>>((acc, chunk) => {
@@ -44,6 +50,8 @@ export function clearAuthCookies(res: any) {
     cookie(TENANT_REFRESH_COOKIE, '', 0, '/api/v1/auth'),
     cookie(SYSTEM_ACCESS_COOKIE, '', 0, '/api/v1'),
     cookie(SYSTEM_REFRESH_COOKIE, '', 0, '/api/v1/auth'),
+    cookie(LEGACY_ACCESS_COOKIE, '', 0, '/api/v1'),
+    cookie(LEGACY_REFRESH_COOKIE, '', 0, '/api/v1/auth'),
   ]);
 }
 
@@ -51,6 +59,8 @@ export function clearTenantAuthCookies(res: any) {
   res.setHeader('Set-Cookie', [
     cookie(TENANT_ACCESS_COOKIE, '', 0, '/api/v1'),
     cookie(TENANT_REFRESH_COOKIE, '', 0, '/api/v1/auth'),
+    cookie(LEGACY_ACCESS_COOKIE, '', 0, '/api/v1'),
+    cookie(LEGACY_REFRESH_COOKIE, '', 0, '/api/v1/auth'),
   ]);
 }
 
@@ -58,5 +68,7 @@ export function clearSystemAuthCookies(res: any) {
   res.setHeader('Set-Cookie', [
     cookie(SYSTEM_ACCESS_COOKIE, '', 0, '/api/v1'),
     cookie(SYSTEM_REFRESH_COOKIE, '', 0, '/api/v1/auth'),
+    cookie(LEGACY_ACCESS_COOKIE, '', 0, '/api/v1'),
+    cookie(LEGACY_REFRESH_COOKIE, '', 0, '/api/v1/auth'),
   ]);
 }
