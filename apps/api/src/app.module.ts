@@ -37,6 +37,10 @@ import { IdentityController } from './modules/identity/identity.controller';
 import { IdentityService } from './modules/identity/identity.service';
 import { IdentityAdminController } from './modules/identity/identity-admin.controller';
 
+// Billing
+import { TenantLicenseController } from './modules/billing/tenant-license.controller';
+import { TenantLicenseService } from './modules/billing/tenant-license.service';
+
 // Audit
 import { AuditController } from './modules/audit/audit.controller';
 import { AuditService } from './modules/audit/audit.service';
@@ -65,55 +69,39 @@ import { UsersService } from './modules/users/users.service';
   ],
 
   controllers: [
-    // Auth
     AuthController,
-
-    // Assets
     AssetsController,
     AssetDocumentsController,
     WarrantyController,
     CustomFieldsController,
-
-    // Tenancy
     TenancyController,
-
-    // RBAC
     RbacController,
-
-    // Identity
     IdentityController,
-
-    // Users
+    IdentityAdminController,
+    TenantLicenseController,
+    AuditController,
     UsersController,
   ],
 
   providers: [
-    // Database
     MongooseDatabaseService,
-
-    // Auth
     AuthService,
     ProvisioningService,
     SessionService,
-
-    // Assets
     AssetsService,
     AssetDocumentsService,
     WarrantyService,
     CustomFieldsService,
-
-    // Tenancy
     TenancyService,
-
-    // RBAC
     RbacService,
-
-    // Identity
     IdentityService,
     IdentitySecurityCacheService,
-    IdentityAdminController,
-
-    // Users
+    TenantLicenseService,
+    AuditService,
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: AuditInterceptor,
+    },
     UsersService,
   ],
 })
