@@ -12,8 +12,6 @@ export class RbacService extends TenantScopedRepository {
   }
 
   async listPermissions() {
-    // Static catalog — not tenant-scoped, every tenant sees the same
-    // available permission set (architecture doc §6).
     const docs = await this.db.permission.find().sort({ key: 1 }).lean();
     return toDtoArray(docs);
   }
@@ -24,9 +22,6 @@ export class RbacService extends TenantScopedRepository {
   }
 
   async createRole(auth: AuthContext, name: string, permissionKeys: string[]) {
-    // Custom, tenant-defined roles (master prompt §4/§67 — "not
-    // hardcoded"). System roles are seeded separately with isSystem=true
-    // and are not editable through this path.
     const perms = await this.db.permission
       .find({ key: { $in: permissionKeys } })
       .lean();
@@ -36,7 +31,6 @@ export class RbacService extends TenantScopedRepository {
       companyId: auth.crossCompany ? null : auth.companyId,
       name,
       isSystem: false,
-      // Denormalized role->permission refs (MongoDB has no join tables)
       permissions: perms.map((p) => ({
         permissionId: String(p._id),
         permissionKey: p.key,
@@ -53,9 +47,6 @@ export class RbacService extends TenantScopedRepository {
     const role = await this.db.role.findOne({ _id: roleId, ...this.scope(auth) }).lean();
     if (!role) throw new NotFoundException('Role not found in your scope');
 
-    // Global/static system roles may be assigned across companies within
-    // the tenant, but never across tenants. Tenant/company roles must
-    // match the caller's company when the caller is company-scoped.
     const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth) }).lean();
     if (!user) throw new NotFoundException('User not found in your scope');
 
@@ -69,6 +60,31 @@ export class RbacService extends TenantScopedRepository {
       { new: true },
     ).lean();
     if (!doc) throw new Error('Role already assigned');
+    return toDto(doc);
+  }
+
+  async unassignRole(auth: AuthContext, userId: string, roleId: string) {
+    if (!Types.ObjectId.isValid(roleId) || !Types.ObjectId.isValid(userId)) {
+      throw new NotFoundException('User or role not found');
+    }
+
+    const role = await this.db.role.findOne({ _id: roleId, ...this.scope(auth) }).lean();
+    if (!role) throw new NotFoundException('Role not found in your scope');
+
+    const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
+    if (!user) throw new NotFoundException('User not found in your scope');
+
+    if (!auth.crossCompany && role.companyId !== auth.companyId) {
+      throw new ForbiddenException('Role out of scope for this user');
+    }
+
+    const doc = await this.db.user.findOneAndUpdate(
+      { _id: userId, ...this.scope(auth), roleIds: roleId },
+      { $pull: { roleIds: roleId } },
+      { new: true },
+    ).lean();
+
+    if (!doc) throw new NotFoundException('Role is not assigned to this user');
     return toDto(doc);
   }
 }
