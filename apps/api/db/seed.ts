@@ -93,6 +93,19 @@ async function main() {
     const companyId = companyDoc ? companyDoc._id as mongoose.Types.ObjectId : new mongoose.Types.ObjectId();
     if (!companyDoc) await companies.insertOne({ _id: companyId, tenantId, name: 'Demo Company', code: 'DEMO', createdAt: now, updatedAt: now });
 
+    // Repair legacy demo roles that were created with an ObjectId tenantId or no tenantId.
+    await roles.updateMany(
+      {
+        name: { $in: Object.keys(SYSTEM_ROLES) },
+        $or: [
+          { tenantId: tenantId },
+          { tenantId: { $exists: false } },
+          { tenantId: null },
+        ],
+      },
+      { $set: { tenantId: String(tenantId), updatedAt: now } },
+    );
+
     const roleRefs: Record<string, string> = {};
     for (const [roleName, perms] of Object.entries(SYSTEM_ROLES)) {
       const permRefs = perms.map((key) => {
