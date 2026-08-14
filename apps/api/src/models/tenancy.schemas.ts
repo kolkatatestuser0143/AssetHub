@@ -4,10 +4,20 @@ import { HydratedDocument } from 'mongoose';
 export const TenantModelName = 'Tenant';
 export type TenantDocument = HydratedDocument<Tenant>;
 
+export enum TenantStatus {
+  ACTIVE = 'active',
+  SUSPENDED = 'suspended',
+  ARCHIVED = 'archived',
+}
+
 @Schema({ collection: 'tenants', timestamps: true, versionKey: false })
 export class Tenant {
   @Prop({ required: true }) name!: string;
   @Prop({ required: true, unique: true }) slug!: string;
+  @Prop({ enum: TenantStatus, default: TenantStatus.ACTIVE, index: true }) status!: TenantStatus;
+  @Prop() suspendedAt?: Date;
+  @Prop() suspendedBy?: string;
+  @Prop() suspensionReason?: string;
 }
 
 export const TenantSchema = SchemaFactory.createForClass(Tenant);
