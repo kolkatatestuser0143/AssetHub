@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
-import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsIn, IsOptional, IsString, MinLength } from 'class-validator';
 import { UsersService } from './users.service';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 import { RbacGuard } from '../../common/guards/rbac.guard';
@@ -14,6 +14,10 @@ class CreateUserDto {
   @IsOptional() @IsString() phone?: string;
   @IsOptional() @IsString() departmentId?: string;
   @IsOptional() @IsString() locationId?: string;
+}
+
+class AccessEmailDto {
+  @IsString() @IsIn(['invite', 'reset']) action!: 'invite' | 'reset';
 }
 
 @Controller('users')
@@ -55,6 +59,12 @@ export class UsersController {
   @RequirePermission('user:write')
   create(@Body() dto: CreateUserDto, @Req() req: any) {
     return this.users.create(req.authContext, dto);
+  }
+
+  @Post(':userId/access-email')
+  @RequirePermission('user:write')
+  sendAccessEmail(@Param('userId') userId: string, @Body() dto: AccessEmailDto, @Req() req: any) {
+    return this.users.sendAccessEmail(req.authContext, userId, dto.action);
   }
 
   @Patch(':userId/activate')
