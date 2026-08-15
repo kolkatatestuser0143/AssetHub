@@ -2,10 +2,14 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Types } from 'mongoose';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 import { TenantStatus } from '../../models/tenancy.schemas';
+import { EntitlementService } from '../billing/entitlement.service';
 
 @Injectable()
 export class SystemAdminService {
-  constructor(private readonly db: MongooseDatabaseService) {}
+  constructor(
+    private readonly db: MongooseDatabaseService,
+    private readonly entitlements: EntitlementService,
+  ) {}
 
   async overview() {
     const [tenants, users, assets, subscriptions] = await Promise.all([
@@ -99,20 +103,81 @@ export class SystemAdminService {
 
   private async tenantUsage(tenantId: string) {
     if (!Types.ObjectId.isValid(tenantId)) throw new BadRequestException('Invalid tenant id');
-    const filter = { tenantId: new Types.ObjectId(tenantId) };
-    const [users, assets, companies, businessUnits, plants, locations, departments, vendors, assetDocuments, subscription] = await Promise.all([
-      this.db.user.countDocuments({ tenantId: new Types.ObjectId(tenantId), accountType: 'TENANT' }),
-      this.db.asset.countDocuments(filter),
-      this.db.company.countDocuments(filter),
-      this.db.businessUnit.countDocuments(filter),
-      this.db.plant.countDocuments(filter),
-      this.db.location.countDocuments(filter),
-      this.db.department.countDocuments(filter),
-      this.db.vendor.countDocuments(filter),
-      this.db.assetDocument.countDocuments(filter),
-      this.db.subscription.findOne({ tenantId: new Types.ObjectId(tenantId) }).lean(),
+
+    const tenantObjectId = new Types.ObjectId(tenantId);
+    const [companyDocs, directAssets, users, assetDocuments, subscription] = await Promise.all([
+      this.db.company.find({ tenantId }).select({ _id: 1 }).lean(),
+      this.db.asset.countDocuments({ tenantId }),
+      this.db.user.countDocuments({ tenantId, accountType: 'TENANT' }),
+      this.db.assetDocument.countDocuments({ tenantId }),
+      this.db.subscription.findOne({ tenantId }).sort({ createdAt: -1 }).lean(),
     ]);
-    return { tenantId, subscription: subscription ? { id: String(subscription._id), planId: subscription.planId ?? null, status: subscription.status, startedAt: subscription.startedAt ?? null, endsAt: subscription.endsAt ?? null, graceUntil: subscription.graceUntil ?? null } : null, usage: { users, assets, companies, businessUnits, plants, locations, departments, vendors, assetDocuments } };
+
+    const companyIds = companyDocs.map((company: any) => String(company._id));
+    const [businessUnits, vendors, assets, businessUnitDocs] = await Promise.all([
+      companyIds.length ? this.db.businessUnit.countDocuments({ companyId: { $in: companyIds } }) : 0,
+      companyIds.length ? this.db.vendor.countDocuments({ companyId: { $in: companyIds } }) : 0,
+      directAssets,
+      companyIds.length ? this.db.businessUnit.find({ companyId: { $in: companyIds } }).select({ _id: 1 }).lean() : [],
+    ]);
+
+    const businessUnitIds = (businessUnitDocs as any[]).map((bu: any) => String(bu._id));
+    const plantDocs = businessUnitIds.length
+      ? await this.db.plant.find({ businessUnitId: { $in: businessUnitIds } }).select({ _id: 1 }).lean()
+      : [];
+    const plantIds = plantDocs.map((plant: any) => String(plant._id));
+
+    const locationDocs = plantIds.length
+      ? await this.db.location.find({ plantId: { $in: plantIds } }).select({ _id: 1 }).lean()
+      : [];
+    const locationIds = locationDocs.map((location: any) => String(location._id));
+
+    const [plants, locations, departments, storage] = await Promise.all([
+      plantIds.length ? this.db.plant.countDocuments({ _id: { $in: plantIds } }) : 0,
+      locationIds.length ? this.db.location.countDocuments({ _id: { $in: locationIds } }) : 0,
+      locationIds.length ? this.db.department.countDocuments({ locationId: { $in: locationIds } }) : 0,
+      this.db.assetDocument.aggregate([
+        { $match: { tenantId } },
+        { $group: { _id: null, bytes: { $sum: { $ifNull: ['$sizeBytes', 0] } } } },
+      ]),
+    ]);
+
+    const storageBytes = Number(storage[0]?.bytes ?? 0);
+    const usage = { users, assets, companies: companyIds.length, businessUnits, plants, locations, departments, vendors, assetDocuments, storageBytes };
+
+    const quotaKeys: Record<string, keyof typeof usage> = {
+      max_users: 'users',
+      max_assets: 'assets',
+      max_companies: 'companies',
+      max_business_units: 'businessUnits',
+      max_plants: 'plants',
+      max_locations: 'locations',
+      max_departments: 'departments',
+      max_vendors: 'vendors',
+      max_asset_documents: 'assetDocuments',
+      max_storage_gb: 'storageBytes',
+    };
+
+    const effective = subscription ? await Promise.all(Object.entries(quotaKeys).map(async ([key, usageKey]) => {
+      try {
+        const limit = await this.entitlements.getNumber(tenantId, key);
+        const rawUsage = usage[usageKey];
+        const comparableUsage = key === 'max_storage_gb' ? Number(rawUsage) / (1024 ** 3) : Number(rawUsage);
+        const percent = limit === null ? null : limit === 0 ? (comparableUsage > 0 ? 100 : 0) : Math.round((comparableUsage / limit) * 10000) / 100;
+        const severity = percent === null ? 'unlimited' : percent >= 100 ? 'limit_reached' : percent >= 90 ? 'critical' : percent >= 80 ? 'warning' : 'normal';
+        return [key, { usage: comparableUsage, limit, percent, severity }];
+      } catch {
+        return [key, { usage: Number(usage[usageKey]), limit: null, percent: null, severity: 'unavailable' }];
+      }
+    })) : [];
+
+    const quota = Object.fromEntries(effective);
+    return {
+      tenantId,
+      subscription: subscription ? { id: String(subscription._id), planId: subscription.planId ?? null, status: subscription.status, startedAt: subscription.startedAt ?? null, endsAt: subscription.endsAt ?? null, graceUntil: subscription.graceUntil ?? null } : null,
+      usage,
+      quota,
+    };
   }
 
   async usage(tenantId?: string) {
