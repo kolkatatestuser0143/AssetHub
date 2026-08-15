@@ -12,13 +12,17 @@ function getMongodbUri(): string {
   return uri;
 }
 
-const PERMISSIONS = ['asset:read','asset:write','asset:bulk_update','asset:delete','company:read','company:write','user:read','user:write','role:read','role:write','identity_provider:read','identity_provider:write','scim:manage','integration:read','integration:write','billing:read','billing:manage','audit:read','platform:manage_tenants'];
+const PERMISSIONS = ['asset:read','asset:write','asset:bulk_update','asset:delete','company:read','company:write','user:read','user:write','role:read','role:write','identity_provider:read','identity_provider:write','scim:manage','integration:read','integration:write','billing:read','billing:manage','audit:read','platform:console:access','platform:manage_tenants'];
 const SYSTEM_ROLES: Record<string, string[]> = {
   'Tenant Admin': PERMISSIONS.filter((p) => !p.startsWith('platform:')),
   'Company Admin': ['asset:read','asset:write','asset:bulk_update','company:read','user:read','user:write','role:read','identity_provider:read','audit:read'],
   'IT Manager': ['asset:read','asset:write','asset:bulk_update','user:read'],
   'Read-Only Auditor': ['asset:read','company:read','user:read','audit:read'],
-  'Platform Admin': ['platform:manage_tenants'],
+  'Platform Admin': [
+    'platform:console:access','platform:overview:read','platform:tenants:read','platform:tenants:manage','platform:users:read','platform:users:manage',
+    'platform:roles:read','platform:roles:manage','platform:billing:read','platform:billing:manage','platform:audit:read','platform:health:read',
+    'platform:analytics:read','platform:settings:read','platform:settings:manage','platform:support:read','platform:support:manage',
+  ],
 };
 
 const DEFAULT_TENANT_EMAIL = 'admin@demo.local';
@@ -93,7 +97,6 @@ async function main() {
     const companyId = companyDoc ? companyDoc._id as mongoose.Types.ObjectId : new mongoose.Types.ObjectId();
     if (!companyDoc) await companies.insertOne({ _id: companyId, tenantId, name: 'Demo Company', code: 'DEMO', createdAt: now, updatedAt: now });
 
-    // Repair legacy demo roles that were created with an ObjectId tenantId or no tenantId.
     await roles.updateMany(
       {
         name: { $in: Object.keys(SYSTEM_ROLES) },
