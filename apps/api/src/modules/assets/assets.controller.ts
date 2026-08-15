@@ -4,6 +4,7 @@ import { AssetLifecycleState } from '../../common/enums';
 import { AssetsService } from './assets.service';
 import { AssetImportService } from './asset-import.service';
 import { AssetExcelReportService } from './asset-excel-report.service';
+import { AssetPdfReportService } from './asset-pdf-report.service';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 import { RbacGuard } from '../../common/guards/rbac.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
@@ -30,6 +31,7 @@ export class AssetsController {
     private readonly assets: AssetsService,
     private readonly imports: AssetImportService,
     private readonly excelReports: AssetExcelReportService,
+    private readonly pdfReports: AssetPdfReportService,
   ) {}
 
   @Get() @RequirePermission('asset:read') list(@Req() req: any) { return this.assets.listAssets(req.authContext); }
@@ -40,6 +42,11 @@ export class AssetsController {
   @Header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
   @Header('Content-Disposition', 'attachment; filename="assethub-asset-report.xlsx"')
   reportExcel(@Query() query: ExcelReportQueryDto, @Req() req: any) { return this.excelReports.generate(req.authContext, query); }
+  @Get('reports/pdf')
+  @RequirePermission('asset:read')
+  @Header('Content-Type', 'application/pdf')
+  @Header('Content-Disposition', 'attachment; filename="assethub-asset-report.pdf"')
+  reportPdf(@Query() query: ExcelReportQueryDto, @Req() req: any) { return this.pdfReports.generate(req.authContext, query); }
   @Get('vendors') @RequirePermission('asset:read') listVendors(@Req() req: any) { return this.assets.listVendors(req.authContext); }
   @Post('vendors') @RequirePermission('asset:write') createVendor(@Body() dto: VendorDto, @Req() req: any) { return this.assets.createVendor(req.authContext, dto.name, dto.contact); }
   @Patch('vendors/:vendorId') @RequirePermission('asset:write') updateVendor(@Param('vendorId') vendorId: string, @Body() dto: VendorDto, @Req() req: any) { return this.assets.updateVendor(req.authContext, vendorId, dto.name, dto.contact); }
