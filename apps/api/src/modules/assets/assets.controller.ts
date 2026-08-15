@@ -10,6 +10,7 @@ import { AssetAssignmentTransactionService } from './asset-assignment-transactio
 import { AssetTimelineService } from './asset-timeline.service';
 import { AssetSearchService } from './asset-search.service';
 import { AssetListService } from './asset-list.service';
+import { AssetDetailService } from './asset-detail.service';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 import { RbacGuard } from '../../common/guards/rbac.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
@@ -28,7 +29,7 @@ class TransferStatusDto { @IsIn(['PENDING', 'APPROVED', 'COMPLETED', 'REJECTED',
 @Controller('assets')
 @UseGuards(TenantContextGuard, RbacGuard)
 export class AssetsController {
-  constructor(private readonly assets: AssetsService, private readonly imports: AssetImportService, private readonly excelReports: AssetExcelReportService, private readonly pdfReports: AssetPdfReportService, private readonly transfers: AssetTransferService, private readonly assignmentTransactions: AssetAssignmentTransactionService, private readonly timeline: AssetTimelineService, private readonly searchService: AssetSearchService, private readonly listService: AssetListService) {}
+  constructor(private readonly assets: AssetsService, private readonly imports: AssetImportService, private readonly excelReports: AssetExcelReportService, private readonly pdfReports: AssetPdfReportService, private readonly transfers: AssetTransferService, private readonly assignmentTransactions: AssetAssignmentTransactionService, private readonly timeline: AssetTimelineService, private readonly searchService: AssetSearchService, private readonly listService: AssetListService, private readonly detail: AssetDetailService) {}
 
   @Get('search') @RequirePermission('asset:read') search(@Query('q') query: string, @Req() req: any) { return this.searchService.search(req.authContext, query ?? ''); }
   @Get() @RequirePermission('asset:read') list(@Query() query: AssetListQueryDto, @Req() req: any) { return this.listService.list(req.authContext, query); }
@@ -53,7 +54,7 @@ export class AssetsController {
   @Post('transfers/:transferId/complete') @RequirePermission('asset:write') completeTransfer(@Param('transferId') transferId: string, @Body() dto: TransferDto, @Req() req: any) { return this.transfers.complete(req.authContext, transferId, dto.note); }
   @Post('transfers/:transferId/cancel') @RequirePermission('asset:write') cancelTransfer(@Param('transferId') transferId: string, @Body() dto: TransferDto, @Req() req: any) { return this.transfers.cancel(req.authContext, transferId, dto.note); }
   @Post() @RequirePermission('asset:write') create(@Body() dto: CreateAssetDto, @Req() req: any) { return this.assets.createAsset(req.authContext, dto.assetTypeId, { ...(dto.fields ?? {}), locationId: dto.locationId, departmentId: dto.departmentId, vendorId: dto.vendorId }); }
-  @Get(':assetId') @RequirePermission('asset:read') get(@Param('assetId') assetId: string, @Req() req: any) { return this.assets.getAsset(req.authContext, assetId); }
+  @Get(':assetId') @RequirePermission('asset:read') get(@Param('assetId') assetId: string, @Req() req: any) { return this.detail.get(req.authContext, assetId); }
   @Post(':assetId/assign') @RequirePermission('asset:write') assign(@Param('assetId') assetId: string, @Body() dto: AssignAssetDto, @Req() req: any) { return this.assignmentTransactions.assign(req.authContext, assetId, dto.userId, dto.notes); }
   @Get(':assetId/assignment') @RequirePermission('asset:read') currentAssignment(@Param('assetId') assetId: string, @Req() req: any) { return this.assets.getCurrentAssignment(req.authContext, assetId); }
   @Post(':assetId/unassign') @RequirePermission('asset:write') unassign(@Param('assetId') assetId: string, @Body() dto: AssignAssetDto, @Req() req: any) { return this.assignmentTransactions.unassign(req.authContext, assetId, dto.notes); }
