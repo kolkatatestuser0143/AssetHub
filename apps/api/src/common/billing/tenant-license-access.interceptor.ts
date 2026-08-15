@@ -4,20 +4,17 @@ import { EntitlementService } from '../../modules/billing/entitlement.service';
 
 /**
  * Defense-in-depth license enforcement.
- *
  * TenantContextGuard authenticates the caller and RbacGuard authorizes the
- * requested permission. This interceptor adds the third server-side gate:
- * a tenant session cannot use normal application APIs without a valid
- * subscription. Public authentication endpoints and the tenant license
- * management endpoints are intentionally excluded so an expired tenant can
- * still inspect/renew its license.
+ * permission; this interceptor adds the subscription-state gate for normal
+ * tenant application APIs. License status itself remains readable after
+ * expiry so an administrator can inspect the license and recover it.
  */
 @Injectable()
 export class TenantLicenseAccessInterceptor implements NestInterceptor {
   private readonly licenseExemptPaths = [
-    '/auth/',
-    '/tenant-license',
-    '/health',
+    '/api/v1/auth/',
+    '/api/v1/billing/license',
+    '/api/v1/health',
   ];
 
   constructor(private readonly entitlement: EntitlementService) {}
@@ -31,7 +28,7 @@ export class TenantLicenseAccessInterceptor implements NestInterceptor {
     if (!auth?.tenantId) return next.handle();
 
     const path = String(req.originalUrl ?? req.url ?? '').split('?')[0];
-    if (this.licenseExemptPaths.some((prefix) => path.includes(prefix))) {
+    if (this.licenseExemptPaths.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))) {
       return next.handle();
     }
 
