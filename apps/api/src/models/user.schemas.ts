@@ -17,6 +17,7 @@ export class User {
 
   @Prop({ required: true, index: true }) tenantId!: string;
   @Prop({ required: true, index: true }) companyId!: string;
+  @Prop({ index: true, sparse: true }) employeeId?: string;
 
   @Prop({ required: true, unique: true }) email!: string;
   @Prop() passwordHash?: string;
@@ -42,6 +43,7 @@ export class User {
 
 export const UserSchema = SchemaFactory.createForClass(User);
 UserSchema.index({ companyId: 1, externalScimId: 1 }, { unique: true, sparse: true });
+UserSchema.index({ tenantId: 1, companyId: 1, employeeId: 1 }, { unique: true, sparse: true });
 UserSchema.index({ accountType: 1, accessTokenHash: 1 }, { sparse: true });
 UserSchema.index({ accessTokenExpiresAt: 1 }, { expireAfterSeconds: 0, sparse: true });
 
