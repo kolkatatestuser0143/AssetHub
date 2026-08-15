@@ -7,10 +7,7 @@ import { SystemPermission } from '../../common/guards/system-permission.decorato
 @Controller('system/subscriptions')
 @UseGuards(SystemAdminGuard)
 export class SystemSubscriptionController {
-  constructor(
-    private readonly subscriptions: SystemSubscriptionService,
-    private readonly entitlementSync: PlanEntitlementSyncService,
-  ) {}
+  constructor(private readonly subscriptions: SystemSubscriptionService, private readonly entitlementSync: PlanEntitlementSyncService) {}
 
   @Get()
   @SystemPermission('platform:billing:read')
@@ -26,9 +23,7 @@ export class SystemSubscriptionController {
 
   @Post('../plans')
   @SystemPermission('platform:billing:manage')
-  createPlan(@Body() body: { name: string; features?: Record<string, unknown> }) {
-    return this.subscriptions.createPlan(body.name, body.features ?? {});
-  }
+  createPlan(@Body() body: { name: string; features?: Record<string, unknown> }) { return this.subscriptions.createPlan(body.name, body.features ?? {}); }
 
   @Patch('../plans/:planId')
   @SystemPermission('platform:billing:manage')
@@ -40,17 +35,11 @@ export class SystemSubscriptionController {
 
   @Patch('../plans/:planId/status')
   @SystemPermission('platform:billing:manage')
-  planStatus(@Param('planId') planId: string, @Body() body: { isActive: boolean }) {
-    return this.subscriptions.setPlanActive(planId, body.isActive);
-  }
+  planStatus(@Param('planId') planId: string, @Body() body: { isActive: boolean }) { return this.subscriptions.setPlanActive(planId, body.isActive); }
 
   @Patch(':tenantId')
   @SystemPermission('platform:billing:manage')
-  async assign(
-    @Param('tenantId') tenantId: string,
-    @Body() body: { planId: string; status?: 'active' | 'trialing' | 'past_due' | 'canceled'; endsAt?: string },
-    @Req() req: any,
-  ) {
+  async assign(@Param('tenantId') tenantId: string, @Body() body: { planId: string; status?: 'active' | 'trialing' | 'past_due' | 'canceled' | 'expired'; endsAt?: string }, @Req() req: any) {
     const subscription = await this.subscriptions.assign(tenantId, body.planId, body.status ?? 'active', body.endsAt, req.systemAuth?.sub);
     const plan = await this.subscriptions.listPlans(true);
     const selected = plan.find((item: any) => item.id === subscription.planId);
@@ -64,7 +53,7 @@ export class SystemSubscriptionController {
 
   @Patch(':tenantId/status')
   @SystemPermission('platform:billing:manage')
-  status(@Param('tenantId') tenantId: string, @Body() body: { status: 'active' | 'trialing' | 'past_due' | 'canceled' }, @Req() req: any) { return this.subscriptions.setStatus(tenantId, body.status, req.systemAuth?.sub); }
+  status(@Param('tenantId') tenantId: string, @Body() body: { status: 'active' | 'trialing' | 'past_due' | 'canceled' | 'expired' }, @Req() req: any) { return this.subscriptions.setStatus(tenantId, body.status, req.systemAuth?.sub); }
 
   @Delete(':tenantId')
   @SystemPermission('platform:billing:manage')
