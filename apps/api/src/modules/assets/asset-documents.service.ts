@@ -70,6 +70,45 @@ export class AssetDocumentsService extends TenantScopedRepository {
     }
   }
 
+  async storeGeneratedPdf(auth: AuthContext, assetId: string, fileName: string, buffer: Buffer, documentType = 'ACKNOWLEDGEMENT') {
+    await this.requireAsset(auth, assetId);
+    if (!buffer.length) throw new BadRequestException('Generated document is empty');
+
+    const maxFileMb = await this.entitlements.getNumber(auth.tenantId, 'max_asset_document_size_mb');
+    const maxFileBytes = Math.min(PLATFORM_MAX_FILE_BYTES, maxFileMb === null ? PLATFORM_MAX_FILE_BYTES : maxFileMb * 1024 * 1024);
+    if (buffer.length > maxFileBytes) throw new BadRequestException(`Document exceeds the ${Math.floor(maxFileBytes / (1024 * 1024))} MB size limit`);
+
+    const currentDocumentCount = await this.db.assetDocument.countDocuments({ tenantId: auth.tenantId });
+    await this.entitlements.requireWithinLimit(auth.tenantId, 'max_asset_documents', currentDocumentCount, 1);
+
+    const storageRows = await this.db.assetDocument.aggregate([
+      { $match: { tenantId: auth.tenantId } },
+      { $group: { _id: null, bytes: { $sum: '$sizeBytes' } } },
+    ]);
+    const currentBytes = Number(storageRows[0]?.bytes ?? 0);
+    const maxStorageGb = await this.entitlements.getNumber(auth.tenantId, 'max_storage_gb');
+    if (maxStorageGb !== null && currentBytes + buffer.length > maxStorageGb * 1024 * 1024 * 1024) {
+      throw new ConflictException(`Tenant storage limit reached: max_storage_gb (${maxStorageGb})`);
+    }
+
+    const safeName = basename(fileName).replace(/[^a-zA-Z0-9._-]/g, '_');
+    const key = join(auth.tenantId, auth.companyId, assetId, `${randomUUID()}-${safeName}`);
+    const absolutePath = join(this.root, key);
+    mkdirSync(join(this.root, auth.tenantId, auth.companyId, assetId), { recursive: true });
+    writeFileSync(absolutePath, buffer, { flag: 'wx' });
+
+    try {
+      const doc = await this.db.assetDocument.create({
+        tenantId: auth.tenantId, companyId: auth.companyId, assetId, s3Key: key,
+        fileName: safeName, contentType: 'application/pdf', sizeBytes: buffer.length, documentType,
+      });
+      return toDto(doc.toObject());
+    } catch (error) {
+      if (existsSync(absolutePath)) unlinkSync(absolutePath);
+      throw error;
+    }
+  }
+
   async download(auth: AuthContext, assetId: string, documentId: string) {
     await this.requireAsset(auth, assetId);
     const doc = await this.db.assetDocument.findOne({ _id: documentId, tenantId: auth.tenantId, companyId: auth.companyId, assetId }).lean();
