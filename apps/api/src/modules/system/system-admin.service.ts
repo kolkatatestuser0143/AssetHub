@@ -109,7 +109,7 @@ export class SystemAdminService {
       this.db.asset.countDocuments({ tenantId }),
       this.db.user.countDocuments({ tenantId, accountType: 'TENANT' }),
       this.db.assetDocument.countDocuments({ tenantId }),
-      this.db.subscription.findOne({ tenantId }).sort({ createdAt: -1 }).lean(),
+      this.db.subscription.findOne({ tenantId }).sort({ createdAt: -1 }).lean() as any,
     ]);
 
     const companyIds = companyDocs.map((company: any) => String(company._id));
