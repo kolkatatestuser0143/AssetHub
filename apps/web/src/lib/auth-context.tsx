@@ -4,9 +4,13 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { useRouter } from 'next/navigation';
 import { apiFetch, login as apiLogin, logout as apiLogout } from './api-client';
 
+export type TenantFeatures = Record<string, boolean | number | string | null | undefined>;
+
 interface AuthState {
   status: 'loading' | 'authenticated' | 'unauthenticated';
   themePreset: string;
+  features: TenantFeatures;
+  hasFeature: (key: string) => boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -29,19 +33,28 @@ function applyTheme(preset: string) {
   for (const [key, value] of Object.entries(values)) root.style.setProperty(`--theme-${key}`, value);
 }
 
+function isFeatureEnabled(features: TenantFeatures, key: string) {
+  const value = features[key];
+  return value === true || (typeof value === 'string' && value.toLowerCase() === 'true');
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthState['status']>('loading');
   const [themePreset, setThemePreset] = useState('starter');
+  const [features, setFeatures] = useState<TenantFeatures>({});
   const router = useRouter();
 
   async function loadTheme() {
     try {
       const license = await apiFetch('/tenant/license');
       const preset = typeof license?.themePreset === 'string' ? license.themePreset : 'starter';
+      const nextFeatures = license?.features && typeof license.features === 'object' ? license.features as TenantFeatures : {};
       setThemePreset(preset);
+      setFeatures(nextFeatures);
       applyTheme(preset);
     } catch {
       setThemePreset('starter');
+      setFeatures({});
       applyTheme('starter');
     }
   }
@@ -74,11 +87,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await apiLogout();
     setStatus('unauthenticated');
     setThemePreset('starter');
+    setFeatures({});
     applyTheme('starter');
     router.replace('/login');
   }
 
-  return <AuthContext.Provider value={{ status, themePreset, login, logout }}>{children}</AuthContext.Provider>;
+  const hasFeature = (key: string) => isFeatureEnabled(features, key);
+
+  return <AuthContext.Provider value={{ status, themePreset, features, hasFeature, login, logout }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
