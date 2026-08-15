@@ -23,6 +23,7 @@ export class Subscription {
   @Prop({ required: true }) status!: string; // "active" | "trialing" | "past_due" | "canceled" | "revoked"
   @Prop({ default: Date.now }) startedAt!: Date;
   @Prop() endsAt?: Date;
+  @Prop() graceUntil?: Date;
 }
 
 export const SubscriptionSchema = SchemaFactory.createForClass(Subscription);
@@ -35,6 +36,7 @@ export class Entitlement {
   @Prop({ required: true, index: true }) subscriptionId!: string;
   @Prop({ required: true }) key!: string; // "sso_enabled" | "max_assets" ...
   @Prop({ type: Object, required: true }) value!: unknown;
+  @Prop({ enum: ['plan', 'override'], default: 'plan', index: true }) source!: 'plan' | 'override';
 }
 
 export const EntitlementSchema = SchemaFactory.createForClass(Entitlement);
