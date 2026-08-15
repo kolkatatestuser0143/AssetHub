@@ -43,10 +43,7 @@ export default function AssetDocumentsPanel({ assetId }: { assetId: string }) {
     const fileName = String(entry.name ?? entry.fileName ?? file.name ?? file.filename ?? '').trim();
     const contentType = String(entry.mimeType ?? entry.contentType ?? file.mimeType ?? file.mime_type ?? 'application/octet-stream');
     const sizeBytes = Number(entry.size ?? file.size ?? 0);
-    if (!uuid || !fileName) {
-      setError('Uploadcare completed the upload but did not return the required file information.');
-      return;
-    }
+    if (!uuid || !fileName) { setError('Uploadcare completed the upload but did not return the required file information.'); return; }
     setRegistering(true); setError(null); setMessage(null);
     try {
       const data = await apiFetch(`/assets/${assetId}/documents/uploadcare`, { method: 'POST', body: JSON.stringify({ uuid, fileName, contentType, sizeBytes, documentType }) });
@@ -59,8 +56,7 @@ export default function AssetDocumentsPanel({ assetId }: { assetId: string }) {
     try {
       const response = await fetch(`${API_BASE}/assets/${assetId}/documents/${document.id}/download`, { credentials: 'include' });
       if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.message ?? 'Unable to download document.'); }
-      const blob = await response.blob(); const url = URL.createObjectURL(blob); const anchor = window.document.createElement('a');
-      anchor.href = url; anchor.download = document.fileName; anchor.click(); URL.revokeObjectURL(url);
+      const blob = await response.blob(); const url = URL.createObjectURL(blob); const anchor = window.document.createElement('a'); anchor.href = url; anchor.download = document.fileName; anchor.click(); URL.revokeObjectURL(url);
     } catch (err: any) { setError(err?.message ?? 'Unable to download document.'); }
   }
 
@@ -79,7 +75,7 @@ export default function AssetDocumentsPanel({ assetId }: { assetId: string }) {
       <div className="mt-5 grid gap-4 lg:grid-cols-[180px_1fr]">
         <select value={documentType} onChange={(event) => setDocumentType(event.target.value)} className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm">{DOCUMENT_TYPES.map((type) => <option key={type} value={type}>{type.replaceAll('_', ' ')}</option>)}</select>
         <div className="overflow-hidden rounded-2xl border border-[var(--theme-primary)]/15 bg-[var(--theme-primary-soft)]/40 p-2">
-          {UPLOADCARE_PUBLIC_KEY ? <FileUploaderRegular pubkey={UPLOADCARE_PUBLIC_KEY} cdnCname={UPLOADCARE_CDN_CNAME} sourceList="local, camera, dropbox, gdrive" dynamicButtonViewMode="plain" className="assethub-uploadcare" multiple={false} maxLocalFileSizeBytes={25 * 1024 * 1024} onChange={(event: any) => { const successEntries = Array.isArray(event?.allEntries) ? event.allEntries.filter((entry: any) => entry.status === 'success') : []; const latest = successEntries.at(-1); if (latest) void registerUpload(latest); }} onFileUploadFailed={(event: any) => setError(event?.errors?.[0]?.message ?? 'Upload failed. Please check the file type and size.')} /> : <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Uploadcare is not configured. Set <code>NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY</code> in the web environment.</div>}
+          {UPLOADCARE_PUBLIC_KEY ? <FileUploaderRegular pubkey={UPLOADCARE_PUBLIC_KEY} cdnCname={UPLOADCARE_CDN_CNAME} sourceList="local, camera, dropbox, gdrive" dynamicButton dynamicButtonViewMode="plain" className="assethub-uploadcare" multiple={false} maxLocalFileSizeBytes={25 * 1024 * 1024} onChange={(event: any) => { const successEntries = Array.isArray(event?.allEntries) ? event.allEntries.filter((entry: any) => entry.status === 'success') : []; const latest = successEntries.at(-1); if (latest) void registerUpload(latest); }} onFileUploadFailed={(event: any) => setError(event?.errors?.[0]?.message ?? 'Upload failed. Please check the file type and size.')} /> : <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Uploadcare is not configured. Set <code>NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY</code> in the web environment.</div>}
         </div>
       </div>
       {registering ? <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">Finalizing document attachment…</div> : null}
