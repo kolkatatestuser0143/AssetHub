@@ -1,4 +1,6 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectConnection } from '@nestjs/mongoose';
+import { Connection } from 'mongoose';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 import { AuthContext } from '../../common/guards/tenant-context.guard';
 import { TenantScopedRepository } from '../../common/tenant-scoped.repository';
@@ -8,7 +10,10 @@ type TransferStatus = 'PENDING' | 'APPROVED' | 'COMPLETED' | 'REJECTED' | 'CANCE
 
 @Injectable()
 export class AssetTransferService extends TenantScopedRepository {
-  constructor(private readonly db: MongooseDatabaseService) { super(); }
+  constructor(
+    private readonly db: MongooseDatabaseService,
+    @InjectConnection() private readonly connection: Connection,
+  ) { super(); }
 
   async list(auth: AuthContext, status?: TransferStatus) {
     const filter: Record<string, unknown> = { tenantId: auth.tenantId };
@@ -61,22 +66,74 @@ export class AssetTransferService extends TenantScopedRepository {
   async complete(auth: AuthContext, transferId: string, note?: string) {
     const transfer = await this.requireTransfer(auth, transferId);
     if (transfer.status !== 'APPROVED') throw new ConflictException('Only approved transfers can be completed');
-    const asset = await this.db.asset.findOne({ _id: transfer.assetId, ...this.scope(auth) }).lean();
-    if (!asset) throw new NotFoundException('Asset no longer exists in your scope');
-    if (transfer.toUserId) {
-      const user = await this.db.user.findOne({ _id: transfer.toUserId, tenantId: auth.tenantId, ...(auth.crossCompany ? {} : { companyId: auth.companyId }) }).lean();
-      if (!user || !user.isActive) throw new ForbiddenException('Destination user is no longer valid');
+
+    const session = await this.connection.startSession();
+    try {
+      let completed: any;
+      await session.withTransaction(async () => {
+        // Lock the asset for the duration of the transaction so a competing
+        // assignment/transfer cannot observe an intermediate state.
+        const asset = await this.db.asset.findOneAndUpdate(
+          { _id: transfer.assetId, ...this.scope(auth) },
+          { $set: { updatedAt: new Date() } },
+          { new: true, session },
+        ).lean();
+        if (!asset) throw new NotFoundException('Asset no longer exists in your scope');
+
+        if (transfer.toUserId) {
+          const user = await this.db.user.findOne({ _id: transfer.toUserId, tenantId: auth.tenantId, ...(auth.crossCompany ? {} : { companyId: auth.companyId }) }).session(session).lean();
+          if (!user || !user.isActive) throw new ForbiddenException('Destination user is no longer valid');
+        }
+        if (transfer.toLocationId || transfer.toDepartmentId) await this.validateDestination(auth, transfer.toLocationId, transfer.toDepartmentId, session);
+
+        const existingAssignment = await this.db.assetAssignment.findOne({ assetId: transfer.assetId, returnedAt: { $exists: false } }).session(session).lean();
+        if (existingAssignment) {
+          await this.db.assetAssignment.findOneAndUpdate(
+            { _id: existingAssignment._id, returnedAt: { $exists: false } },
+            { $set: { returnedAt: new Date(), notes: `Transferred via request ${transferId}` } },
+            { session },
+          );
+        }
+
+        const updatedAsset = await this.db.asset.findOneAndUpdate(
+          { _id: transfer.assetId, ...this.scope(auth) },
+          { $set: { locationId: transfer.toLocationId, departmentId: transfer.toDepartmentId, updatedAt: new Date() } },
+          { new: true, session },
+        ).lean();
+        if (!updatedAsset) throw new ConflictException('Asset changed before transfer completion');
+
+        if (transfer.toUserId) {
+          try {
+            await this.db.assetAssignment.create(
+              [{ assetId: transfer.assetId, userId: transfer.toUserId, assignedAt: new Date(), notes: `Transferred via request ${transferId}` }],
+              { session },
+            );
+          } catch (error: any) {
+            if (error?.code === 11000) throw new ConflictException('Asset is already assigned; transfer cannot be completed');
+            throw error;
+          }
+        }
+
+        completed = await this.db.assetTransfer.findOneAndUpdate(
+          { _id: transferId, tenantId: auth.tenantId, status: 'APPROVED' },
+          { $set: { status: 'COMPLETED', completedByUserId: auth.userId, completedAt: new Date(), completionNote: note?.trim() || undefined } },
+          { new: true, session },
+        ).lean();
+        if (!completed) throw new ConflictException('Transfer changed before completion');
+      });
+
+      if (!completed) throw new ConflictException('Transfer transaction produced no result');
+      await this.audit(auth, 'asset.transfer.completed', transferId, {
+        assetId: transfer.assetId,
+        status: 'COMPLETED',
+        toUserId: transfer.toUserId ?? null,
+        toLocationId: transfer.toLocationId ?? null,
+        toDepartmentId: transfer.toDepartmentId ?? null,
+      });
+      return toDto(completed);
+    } finally {
+      await session.endSession();
     }
-    if (transfer.toLocationId || transfer.toDepartmentId) await this.validateDestination(auth, transfer.toLocationId, transfer.toDepartmentId);
-    const existingAssignment = await this.db.assetAssignment.findOne({ assetId: transfer.assetId, returnedAt: { $exists: false } }).lean();
-    if (existingAssignment) await this.db.assetAssignment.findOneAndUpdate({ _id: existingAssignment._id, returnedAt: { $exists: false } }, { $set: { returnedAt: new Date(), notes: `Transferred via request ${transferId}` } });
-    const updatedAsset = await this.db.asset.findOneAndUpdate({ _id: transfer.assetId, ...this.scope(auth) }, { $set: { locationId: transfer.toLocationId, departmentId: transfer.toDepartmentId } }, { new: true }).lean();
-    if (!updatedAsset) throw new ConflictException('Asset changed before transfer completion');
-    if (transfer.toUserId) await this.db.assetAssignment.create({ assetId: transfer.assetId, userId: transfer.toUserId, assignedAt: new Date(), notes: `Transferred via request ${transferId}` });
-    const result = await this.db.assetTransfer.findOneAndUpdate({ _id: transferId, tenantId: auth.tenantId, status: 'APPROVED' }, { $set: { status: 'COMPLETED', completedByUserId: auth.userId, completedAt: new Date(), completionNote: note?.trim() || undefined } }, { new: true }).lean();
-    if (!result) throw new ConflictException('Transfer changed before completion');
-    await this.audit(auth, 'asset.transfer.completed', transferId, { assetId: transfer.assetId, status: 'COMPLETED', toUserId: transfer.toUserId ?? null, toLocationId: transfer.toLocationId ?? null, toDepartmentId: transfer.toDepartmentId ?? null });
-    return toDto(result);
   }
 
   async cancel(auth: AuthContext, transferId: string, note?: string) {
@@ -103,26 +160,26 @@ export class AssetTransferService extends TenantScopedRepository {
     await this.db.auditEvent.create({ tenantId: auth.tenantId, companyId: auth.companyId, actorUserId: auth.userId, action, targetType: 'asset_transfer', targetId, metadata, result: 'success', occurredAt: new Date() });
   }
 
-  private async validateDestination(auth: AuthContext, locationId?: string, departmentId?: string) {
+  private async validateDestination(auth: AuthContext, locationId?: string, departmentId?: string, session?: import('mongoose').ClientSession) {
     if (locationId) {
-      const location = await this.db.location.findById(locationId).lean();
+      const location = await this.db.location.findById(locationId).session(session ?? null).lean();
       if (!location) throw new NotFoundException('Destination location not found');
-      const plant = await this.db.plant.findById(location.plantId).lean();
-      const bu = plant ? await this.db.businessUnit.findById(plant.businessUnitId).lean() : null;
-      if (!plant || !bu || (auth.crossCompany ? !((await this.db.company.exists({ _id: bu.companyId, tenantId: auth.tenantId }))) : String(bu.companyId) !== auth.companyId)) throw new ForbiddenException('Destination location is outside your scope');
+      const plant = await this.db.plant.findById(location.plantId).session(session ?? null).lean();
+      const bu = plant ? await this.db.businessUnit.findById(plant.businessUnitId).session(session ?? null).lean() : null;
+      if (!plant || !bu || (auth.crossCompany ? !((await this.db.company.exists({ _id: bu.companyId, tenantId: auth.tenantId }).session(session ?? null)))) : String(bu.companyId) !== auth.companyId)) throw new ForbiddenException('Destination location is outside your scope');
       if (departmentId) {
-        const department = await this.db.department.findOne({ _id: departmentId, locationId }).lean();
+        const department = await this.db.department.findOne({ _id: departmentId, locationId }).session(session ?? null).lean();
         if (!department) throw new ForbiddenException('Destination department does not belong to the selected location');
       }
       return;
     }
     if (departmentId) {
-      const department = await this.db.department.findById(departmentId).lean();
+      const department = await this.db.department.findById(departmentId).session(session ?? null).lean();
       if (!department) throw new NotFoundException('Destination department not found');
-      const location = await this.db.location.findById(department.locationId).lean();
-      const plant = location ? await this.db.plant.findById(location.plantId).lean() : null;
-      const bu = plant ? await this.db.businessUnit.findById(plant.businessUnitId).lean() : null;
-      if (!location || !plant || !bu || (auth.crossCompany ? !(await this.db.company.exists({ _id: bu.companyId, tenantId: auth.tenantId })) : String(bu.companyId) !== auth.companyId)) throw new ForbiddenException('Destination department is outside your scope');
+      const location = await this.db.location.findById(department.locationId).session(session ?? null).lean();
+      const plant = location ? await this.db.plant.findById(location.plantId).session(session ?? null).lean() : null;
+      const bu = plant ? await this.db.businessUnit.findById(plant.businessUnitId).session(session ?? null).lean() : null;
+      if (!location || !plant || !bu || (auth.crossCompany ? !(await this.db.company.exists({ _id: bu.companyId, tenantId: auth.tenantId }).session(session ?? null)) : String(bu.companyId) !== auth.companyId)) throw new ForbiddenException('Destination department is outside your scope');
     }
   }
 }
