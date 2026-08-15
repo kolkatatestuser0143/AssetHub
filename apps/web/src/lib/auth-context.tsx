@@ -46,16 +46,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function loadTheme() {
     try {
-      const license = await apiFetch('/tenant/license');
+      // TenantLicenseController exposes this as GET /billing/license.
+      const license = await apiFetch('/billing/license');
       const preset = typeof license?.themePreset === 'string' ? license.themePreset : 'starter';
       const nextFeatures = license?.features && typeof license.features === 'object' ? license.features as TenantFeatures : {};
       setThemePreset(preset);
       setFeatures(nextFeatures);
       applyTheme(preset);
+      return license;
     } catch {
       setThemePreset('starter');
       setFeatures({});
       applyTheme('starter');
+      return null;
     }
   }
 
