@@ -34,7 +34,7 @@ export class User {
   @Prop({ default: false }) forcePasswordReset!: boolean;
   @Prop({ index: true }) accessTokenHash?: string;
   @Prop() accessTokenIssuedAt?: Date;
-  @Prop({ index: true }) accessTokenExpiresAt?: Date;
+  @Prop() accessTokenExpiresAt?: Date;
   @Prop() externalScimId?: string;
   @Prop({ type: [String], default: [] }) roleIds!: string[];
   @Prop() departmentId?: string;
