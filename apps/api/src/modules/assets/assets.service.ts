@@ -5,6 +5,7 @@ import { TenantScopedRepository } from '../../common/tenant-scoped.repository';
 import { AssetLifecycleState } from '../../common/enums';
 import { toDto, toDtoArray } from '../../common/mongoose.utils';
 import { EntitlementService } from '../billing/entitlement.service';
+import { allowedLifecycleTransitions, assertLifecycleTransition } from './asset-lifecycle';
 
 @Injectable()
 export class AssetsService extends TenantScopedRepository {
@@ -77,5 +78,21 @@ export class AssetsService extends TenantScopedRepository {
   async listAssignmentHistory(auth: AuthContext, assetId: string) { const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).lean(); if (!asset) throw new NotFoundException('Asset not found in your scope'); return toDtoArray(await this.db.assetAssignment.find({ assetId }).sort({ assignedAt: -1 }).lean()); }
   private readOptionalId(value: unknown): string | undefined { if (value === undefined || value === null || value === '') return undefined; if (typeof value !== 'string') throw new ForbiddenException('Relationship IDs must be strings'); return value; }
   private async generateAssetNumber(assetTypeId: string): Promise<string> { const assetType = await this.db.assetType.findOneAndUpdate({ _id: assetTypeId, 'numberingRule.nextSequence': { $exists: true } }, { $inc: { 'numberingRule.nextSequence': 1 } }, { new: true }).lean(); if (!assetType?.numberingRule) throw new NotFoundException('No numbering rule configured for this asset type'); const sequence = assetType.numberingRule.nextSequence - 1; const rule = assetType.numberingRule; const company = await this.db.company.findById(assetType.companyId).lean(); if (!company) throw new NotFoundException('Company not found'); return `${rule.prefix}${rule.separator}${company.code}${rule.separator}${String(sequence).padStart(rule.padding, '0')}`; }
-  async transitionState(auth: AuthContext, assetId: string, toState: AssetLifecycleState, actorUserId: string, reason?: string) { const filter = this.scope(auth); const before = await this.db.asset.findOne({ _id: assetId, ...filter }).lean(); if (!before) throw new NotFoundException('Asset not found in your scope'); const updated = await this.db.asset.findOneAndUpdate({ _id: assetId, ...filter }, { $set: { status: toState } }, { new: true }).lean(); if (!updated) throw new NotFoundException('Asset not found in your scope'); await this.db.assetAuditEvent.create({ tenantId: auth.tenantId, companyId: auth.companyId, assetId, fromState: before.status as AssetLifecycleState, toState, actorUserId, reason, occurredAt: new Date() }); return { ok: true }; }
+
+  async allowedLifecycleTransitions(auth: AuthContext, assetId: string) {
+    const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).select({ status: 1 }).lean();
+    if (!asset) throw new NotFoundException('Asset not found in your scope');
+    return { currentState: asset.status, allowedStates: allowedLifecycleTransitions(asset.status as AssetLifecycleState) };
+  }
+
+  async transitionState(auth: AuthContext, assetId: string, toState: AssetLifecycleState, actorUserId: string, reason?: string) {
+    const filter = this.scope(auth);
+    const before = await this.db.asset.findOne({ _id: assetId, ...filter }).lean();
+    if (!before) throw new NotFoundException('Asset not found in your scope');
+    assertLifecycleTransition(before.status as AssetLifecycleState, toState, reason);
+    const updated = await this.db.asset.findOneAndUpdate({ _id: assetId, ...filter, status: before.status }, { $set: { status: toState } }, { new: true }).lean();
+    if (!updated) throw new ConflictException('Asset changed before lifecycle transition; retry');
+    await this.db.assetAuditEvent.create({ tenantId: auth.tenantId, companyId: auth.companyId, assetId, fromState: before.status as AssetLifecycleState, toState, actorUserId, reason: reason?.trim() || undefined, occurredAt: new Date() });
+    return { ok: true, fromState: before.status, toState, allowedStates: allowedLifecycleTransitions(toState) };
+  }
 }
