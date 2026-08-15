@@ -2,7 +2,9 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } fro
 import { IsISO8601, IsOptional, IsString } from 'class-validator';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 import { RbacGuard } from '../../common/guards/rbac.guard';
+import { FeatureGuard } from '../../common/guards/feature.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
+import { RequireFeature } from '../../common/decorators/require-feature.decorator';
 import { AssetExcelReportFilters } from './asset-excel-report.service';
 import { AssetReportTemplateService } from './asset-report-template.service';
 
@@ -21,7 +23,8 @@ class SaveTemplateDto extends FiltersDto {
 }
 
 @Controller('assets/report-templates')
-@UseGuards(TenantContextGuard, RbacGuard)
+@UseGuards(TenantContextGuard, RbacGuard, FeatureGuard)
+@RequireFeature('advanced_reports_enabled')
 export class AssetReportTemplateController {
   constructor(private readonly templates: AssetReportTemplateService) {}
 
