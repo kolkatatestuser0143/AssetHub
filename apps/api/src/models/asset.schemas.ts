@@ -52,6 +52,12 @@ export const AssetSchema = SchemaFactory.createForClass(Asset);
 AssetSchema.index({ companyId: 1, assetNumber: 1 }, { unique: true });
 AssetSchema.index({ companyId: 1, status: 1 });
 
+// Query support for the tenant-scoped asset list/search endpoint. These indexes
+// cover the common newest-first browse, status filter, and asset-type filter paths.
+AssetSchema.index({ tenantId: 1, companyId: 1, createdAt: -1, _id: -1 });
+AssetSchema.index({ tenantId: 1, companyId: 1, status: 1, createdAt: -1, _id: -1 });
+AssetSchema.index({ tenantId: 1, companyId: 1, assetTypeId: 1, createdAt: -1, _id: -1 });
+
 export const AssetAuditEventModelName = 'AssetAuditEvent';
 export type AssetAuditEventDocument = HydratedDocument<AssetAuditEvent>;
 
