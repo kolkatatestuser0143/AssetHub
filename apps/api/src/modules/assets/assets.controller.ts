@@ -7,6 +7,7 @@ import { AssetExcelReportService } from './asset-excel-report.service';
 import { AssetPdfReportService } from './asset-pdf-report.service';
 import { AssetTransferService } from './asset-transfer.service';
 import { AssetAssignmentTransactionService } from './asset-assignment-transaction.service';
+import { AssetTimelineService } from './asset-timeline.service';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 import { RbacGuard } from '../../common/guards/rbac.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
@@ -31,6 +32,7 @@ export class AssetsController {
     private readonly pdfReports: AssetPdfReportService,
     private readonly transfers: AssetTransferService,
     private readonly assignmentTransactions: AssetAssignmentTransactionService,
+    private readonly timeline: AssetTimelineService,
   ) {}
 
   @Get() @RequirePermission('asset:read') list(@Req() req: any) { return this.assets.listAssets(req.authContext); }
@@ -61,5 +63,6 @@ export class AssetsController {
   @Post(':assetId/unassign') @RequirePermission('asset:write') unassign(@Param('assetId') assetId: string, @Body() dto: AssignAssetDto, @Req() req: any) { return this.assignmentTransactions.unassign(req.authContext, assetId, dto.notes); }
   @Get(':assetId/assignment/history') @RequirePermission('asset:read') history(@Param('assetId') assetId: string, @Req() req: any) { return this.assets.listAssignmentHistory(req.authContext, assetId); }
   @Get(':assetId/lifecycle') @RequirePermission('asset:read') lifecycle(@Param('assetId') assetId: string, @Req() req: any) { return this.assets.allowedLifecycleTransitions(req.authContext, assetId); }
+  @Get(':assetId/timeline') @RequirePermission('asset:read') timelineView(@Param('assetId') assetId: string, @Req() req: any) { return this.timeline.get(req.authContext, assetId); }
   @Post(':assetId/transition') @RequirePermission('asset:write') transition(@Param('assetId') assetId: string, @Body() dto: TransitionDto, @Req() req: any) { return this.assets.transitionState(req.authContext, assetId, dto.toState, req.authContext.userId, dto.reason); }
 }
