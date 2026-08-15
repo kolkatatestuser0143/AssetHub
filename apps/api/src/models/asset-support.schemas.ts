@@ -65,7 +65,9 @@ export class AssetDocumentMeta {
   @Prop({ required: true, index: true }) tenantId!: string;
   @Prop({ required: true, index: true }) companyId!: string;
   @Prop({ required: true, index: true }) assetId!: string;
+  /** Storage provider key. Historically named s3Key; now provider-agnostic. */
   @Prop({ required: true }) s3Key!: string;
+  @Prop({ required: true, default: 'uploadcare' }) storageProvider!: string;
   @Prop({ required: true }) fileName!: string;
   @Prop() contentType?: string;
   @Prop() sizeBytes?: number;
