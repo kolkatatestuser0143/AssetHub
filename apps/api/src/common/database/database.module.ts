@@ -10,7 +10,7 @@ import { IdentityProviderConfigModelName, IdentityProviderConfigSchema, ScimToke
 import { IntegrationInstanceModelName, IntegrationInstanceSchema } from '../../models/integration.schemas';
 import { PlanModelName, PlanSchema, SubscriptionModelName, SubscriptionSchema, EntitlementModelName, EntitlementSchema } from '../../models/billing.schemas';
 import { AuditEventModelName, AuditEventSchema, PlatformAdminNoteModelName, PlatformAdminNoteSchema } from '../../models/audit.schemas';
-import { AssetReportTemplateModelName, AssetReportTemplateSchema, AssetAcknowledgementTemplateModelName, AssetAcknowledgementTemplateSchema } from '../../models/report.schemas';
+import { AssetReportTemplateModelName, AssetReportTemplateSchema, AssetAcknowledgementTemplateModelName, AssetAcknowledgementTemplateSchema, AssetAcknowledgementModelName, AssetAcknowledgementSchema } from '../../models/report.schemas';
 
 const MODEL_PROVIDERS = [
   { name: TenantModelName, schema: TenantSchema }, { name: CompanyModelName, schema: CompanySchema }, { name: BusinessUnitModelName, schema: BusinessUnitSchema }, { name: PlantModelName, schema: PlantSchema }, { name: LocationModelName, schema: LocationSchema }, { name: DepartmentModelName, schema: DepartmentSchema },
@@ -18,7 +18,7 @@ const MODEL_PROVIDERS = [
   { name: AssetTypeModelName, schema: AssetTypeSchema }, { name: AssetModelName, schema: AssetSchema }, { name: AssetAuditEventModelName, schema: AssetAuditEventSchema }, { name: AssetAssignmentModelName, schema: AssetAssignmentSchema }, { name: AssetTransferModelName, schema: AssetTransferSchema }, { name: AssetMaintenanceModelName, schema: AssetMaintenanceSchema },
   { name: VendorModelName, schema: VendorSchema }, { name: WarrantyModelName, schema: WarrantySchema }, { name: CustomFieldDefModelName, schema: CustomFieldDefSchema }, { name: AssetCustomFieldValueModelName, schema: AssetCustomFieldValueSchema }, { name: AssetDocumentModelName, schema: AssetDocumentSchema },
   { name: IdentityProviderConfigModelName, schema: IdentityProviderConfigSchema }, { name: ScimTokenModelName, schema: ScimTokenSchema }, { name: ScimSyncLogModelName, schema: ScimSyncLogSchema }, { name: IntegrationInstanceModelName, schema: IntegrationInstanceSchema }, { name: PlanModelName, schema: PlanSchema }, { name: SubscriptionModelName, schema: SubscriptionSchema }, { name: EntitlementModelName, schema: EntitlementSchema },
-  { name: AuditEventModelName, schema: AuditEventSchema }, { name: PlatformAdminNoteModelName, schema: PlatformAdminNoteSchema }, { name: AssetReportTemplateModelName, schema: AssetReportTemplateSchema }, { name: AssetAcknowledgementTemplateModelName, schema: AssetAcknowledgementTemplateSchema },
+  { name: AuditEventModelName, schema: AuditEventSchema }, { name: PlatformAdminNoteModelName, schema: PlatformAdminNoteSchema }, { name: AssetReportTemplateModelName, schema: AssetReportTemplateSchema }, { name: AssetAcknowledgementTemplateModelName, schema: AssetAcknowledgementTemplateSchema }, { name: AssetAcknowledgementModelName, schema: AssetAcknowledgementSchema },
 ];
 
 @Global()
