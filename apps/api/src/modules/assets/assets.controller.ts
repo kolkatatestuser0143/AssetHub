@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsISO8601, IsObject, IsOptional, IsString, Min } from 'class-validator';
 import { AssetCondition, AssetLifecycleState } from '../../common/enums';
 import { AssetsService } from './assets.service'; import { AssetImportService } from './asset-import.service'; import { AssetExcelReportService } from './asset-excel-report.service'; import { AssetPdfReportService } from './asset-pdf-report.service'; import { AssetTransferService } from './asset-transfer.service'; import { AssetAssignmentTransactionService } from './asset-assignment-transaction.service'; import { AssetTimelineService } from './asset-timeline.service'; import { AssetSearchService } from './asset-search.service'; import { AssetListService } from './asset-list.service'; import { AssetDetailService } from './asset-detail.service';
@@ -12,7 +13,15 @@ class CreateAssetTypeDto { @IsString() name: string; @IsString() prefix: string;
 class VendorDto { @IsString() name: string; @IsOptional() @IsString() contact?: string; }
 class ImportCsvDto { @IsString() csv: string; }
 class ExcelReportQueryDto { @IsOptional() @IsString() status?: string; @IsOptional() @IsString() companyId?: string; @IsOptional() @IsString() assetTypeId?: string; @IsOptional() @IsString() locationId?: string; @IsOptional() @IsISO8601() fromDate?: string; @IsOptional() @IsISO8601() toDate?: string; }
-class AssetListQueryDto { @IsOptional() @IsString() q?: string; @IsOptional() @IsString() status?: string; @IsOptional() @IsString() assetTypeId?: string; @IsOptional() @IsInt() @Min(1) page?: number; @IsOptional() @IsInt() @Min(1) pageSize?: number; @IsOptional() @IsString() sortBy?: string; @IsOptional() @IsIn(['asc', 'desc']) sortDir?: 'asc' | 'desc'; }
+class AssetListQueryDto {
+  @IsOptional() @IsString() q?: string;
+  @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsString() assetTypeId?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) pageSize?: number;
+  @IsOptional() @IsString() sortBy?: string;
+  @IsOptional() @IsIn(['asc', 'desc']) sortDir?: 'asc' | 'desc';
+}
 class TransferDto { @IsOptional() @IsString() toUserId?: string; @IsOptional() @IsString() toLocationId?: string; @IsOptional() @IsString() toDepartmentId?: string; @IsOptional() @IsString() reason?: string; @IsOptional() @IsString() note?: string; }
 class TransferStatusDto { @IsIn(['PENDING', 'APPROVED', 'COMPLETED', 'REJECTED', 'CANCELLED']) status!: 'PENDING' | 'APPROVED' | 'COMPLETED' | 'REJECTED' | 'CANCELLED'; }
 
@@ -40,7 +49,7 @@ export class AssetsController {
   @Post('import') @RequirePermission('asset:write') commitImport(@Body() dto: ImportCsvDto, @Req() req: any) { return this.imports.commit(req.authContext, dto.csv); }
   @Post(':assetId/transfer') @RequirePermission('asset:write') requestTransfer(@Param('assetId') assetId: string, @Body() dto: TransferDto, @Req() req: any) { return this.transfers.request(req.authContext, assetId, dto); }
   @Post('transfers/:transferId/approve') @RequirePermission('asset:write') approveTransfer(@Param('transferId') transferId: string, @Body() dto: TransferDto, @Req() req: any) { return this.transfers.approve(req.authContext, transferId, dto.note); }
-  @Post('transfers/:transferId/reject') @RequirePermission('asset:write') rejectTransfer(@Param('transferId') transferId: string, @Body() dto: TransferDto, @Req() req: any) { return this.transfers.reject(req.authContext, transferId, dto.note); }
+  @Post('transfers/:transferId/reject') @RequirePermission('asset:write') rejectTransfer(@Param('transferId') transferId: string, @Body() dto: TransferStatusDto, @Req() req: any) { return this.transfers.reject(req.authContext, transferId, dto.status); }
   @Post('transfers/:transferId/complete') @RequirePermission('asset:write') completeTransfer(@Param('transferId') transferId: string, @Body() dto: TransferDto, @Req() req: any) { return this.transfers.complete(req.authContext, transferId, dto.note); }
   @Post('transfers/:transferId/cancel') @RequirePermission('asset:write') cancelTransfer(@Param('transferId') transferId: string, @Body() dto: TransferDto, @Req() req: any) { return this.transfers.cancel(req.authContext, transferId, dto.note); }
   @Post() @RequirePermission('asset:write') create(@Body() dto: CreateAssetDto, @Req() req: any) { return this.assets.createAsset(req.authContext, dto.assetTypeId, { ...(dto.fields ?? {}), locationId: dto.locationId, departmentId: dto.departmentId, vendorId: dto.vendorId, condition: dto.condition, serialNumber: dto.serialNumber, model: dto.model }); }
