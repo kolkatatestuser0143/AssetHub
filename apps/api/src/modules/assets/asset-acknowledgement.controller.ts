@@ -1,6 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Res, UseGuards, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { IsOptional, IsString, MinLength } from 'class-validator';
 import { Response } from 'express';
+import { createReadStream } from 'fs';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 import { RbacGuard } from '../../common/guards/rbac.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
@@ -29,6 +30,13 @@ export class AssetAcknowledgementController {
     res.setHeader('Content-Disposition', `attachment; filename="asset-acknowledgement-${assetId}.pdf"`);
     res.setHeader('X-Acknowledgement-Id', result.acknowledgementId);
     return res.send(result.buffer);
+  }
+
+  @Get(':acknowledgementId/pdf') @RequirePermission('asset:read') async download(@Param('acknowledgementId') acknowledgementId: string, @Req() req: any, @Res() res: Response) {
+    const file = await this.acknowledgements.download(req.authContext, acknowledgementId);
+    res.setHeader('Content-Type', file.contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${file.fileName.replace(/"/g, '')}"`);
+    return createReadStream(file.path).pipe(res);
   }
 
   @Post(':acknowledgementId/acknowledge') @RequirePermission('asset:read') acknowledge(@Param('acknowledgementId') acknowledgementId: string, @Body() dto: AcknowledgeDto, @Req() req: any) { return this.acknowledgements.acknowledge(req.authContext, acknowledgementId, dto.note); }
