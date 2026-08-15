@@ -11,54 +11,19 @@ import { IdentityProviderConfig, IdentityProviderConfigModelName, ScimToken, Sci
 import { IntegrationInstance, IntegrationInstanceModelName } from '../models/integration.schemas';
 import { Plan, PlanModelName, Subscription, SubscriptionModelName, Entitlement, EntitlementModelName } from '../models/billing.schemas';
 import { AuditEvent, AuditEventModelName, PlatformAdminNote, PlatformAdminNoteModelName } from '../models/audit.schemas';
-import { AssetReportTemplate, AssetReportTemplateModelName } from '../models/report.schemas';
+import { AssetReportTemplate, AssetReportTemplateModelName, AssetAcknowledgementTemplate, AssetAcknowledgementTemplateModelName } from '../models/report.schemas';
 
 @Injectable()
 export class MongooseDatabaseService {
   constructor(
-    @InjectModel(TenantModelName) readonly tenant: Model<Tenant>,
-    @InjectModel(CompanyModelName) readonly company: Model<Company>,
-    @InjectModel(BusinessUnitModelName) readonly businessUnit: Model<BusinessUnit>,
-    @InjectModel(PlantModelName) readonly plant: Model<Plant>,
-    @InjectModel(LocationModelName) readonly location: Model<Location>,
-    @InjectModel(DepartmentModelName) readonly department: Model<Department>,
-    @InjectModel(UserModelName) readonly user: Model<User>,
-    @InjectModel(SessionModelName) readonly session: Model<Session>,
-    @InjectModel(LoginHistoryModelName) readonly loginHistory: Model<LoginHistory>,
-    @InjectModel(PermissionModelName) readonly permission: Model<Permission>,
-    @InjectModel(RoleModelName) readonly role: Model<Role>,
-    @InjectModel(AssetTypeModelName) readonly assetType: Model<AssetType>,
-    @InjectModel(AssetModelName) readonly asset: Model<Asset>,
-    @InjectModel(AssetAuditEventModelName) readonly assetAuditEvent: Model<AssetAuditEvent>,
-    @InjectModel(AssetAssignmentModelName) readonly assetAssignment: Model<AssetAssignment>,
-    @InjectModel(AssetTransferModelName) readonly assetTransfer: Model<AssetTransfer>,
-    @InjectModel(AssetMaintenanceModelName) readonly assetMaintenance: Model<AssetMaintenance>,
-    @InjectModel(VendorModelName) readonly vendor: Model<Vendor>,
-    @InjectModel(WarrantyModelName) readonly warranty: Model<Warranty>,
-    @InjectModel(CustomFieldDefModelName) readonly customFieldDefinition: Model<CustomFieldDefinition>,
-    @InjectModel(AssetCustomFieldValueModelName) readonly assetCustomFieldValue: Model<AssetCustomFieldValue>,
-    @InjectModel(AssetDocumentModelName) readonly assetDocument: Model<AssetDocumentMeta>,
-    @InjectModel(IdentityProviderConfigModelName) readonly identityProviderConfig: Model<IdentityProviderConfig>,
-    @InjectModel(ScimTokenModelName) readonly scimToken: Model<ScimToken>,
-    @InjectModel(ScimSyncLogModelName) readonly scimSyncLog: Model<ScimSyncLog>,
-    @InjectModel(IntegrationInstanceModelName) readonly integrationInstance: Model<IntegrationInstance>,
-    @InjectModel(PlanModelName) readonly plan: Model<Plan>,
-    @InjectModel(SubscriptionModelName) readonly subscription: Model<Subscription>,
-    @InjectModel(EntitlementModelName) readonly entitlement: Model<Entitlement>,
-    @InjectModel(AuditEventModelName) readonly auditEvent: Model<AuditEvent>,
-    @InjectModel(PlatformAdminNoteModelName) readonly platformAdminNote: Model<PlatformAdminNote>,
-    @InjectModel(AssetReportTemplateModelName) readonly assetReportTemplate: Model<AssetReportTemplate>,
+    @InjectModel(TenantModelName) readonly tenant: Model<Tenant>, @InjectModel(CompanyModelName) readonly company: Model<Company>, @InjectModel(BusinessUnitModelName) readonly businessUnit: Model<BusinessUnit>, @InjectModel(PlantModelName) readonly plant: Model<Plant>, @InjectModel(LocationModelName) readonly location: Model<Location>, @InjectModel(DepartmentModelName) readonly department: Model<Department>,
+    @InjectModel(UserModelName) readonly user: Model<User>, @InjectModel(SessionModelName) readonly session: Model<Session>, @InjectModel(LoginHistoryModelName) readonly loginHistory: Model<LoginHistory>, @InjectModel(PermissionModelName) readonly permission: Model<Permission>, @InjectModel(RoleModelName) readonly role: Model<Role>,
+    @InjectModel(AssetTypeModelName) readonly assetType: Model<AssetType>, @InjectModel(AssetModelName) readonly asset: Model<Asset>, @InjectModel(AssetAuditEventModelName) readonly assetAuditEvent: Model<AssetAuditEvent>, @InjectModel(AssetAssignmentModelName) readonly assetAssignment: Model<AssetAssignment>, @InjectModel(AssetTransferModelName) readonly assetTransfer: Model<AssetTransfer>,
+    @InjectModel(AssetMaintenanceModelName) readonly assetMaintenance: Model<AssetMaintenance>, @InjectModel(VendorModelName) readonly vendor: Model<Vendor>, @InjectModel(WarrantyModelName) readonly warranty: Model<Warranty>, @InjectModel(CustomFieldDefModelName) readonly customFieldDefinition: Model<CustomFieldDefinition>, @InjectModel(AssetCustomFieldValueModelName) readonly assetCustomFieldValue: Model<AssetCustomFieldValue>, @InjectModel(AssetDocumentModelName) readonly assetDocument: Model<AssetDocumentMeta>,
+    @InjectModel(IdentityProviderConfigModelName) readonly identityProviderConfig: Model<IdentityProviderConfig>, @InjectModel(ScimTokenModelName) readonly scimToken: Model<ScimToken>, @InjectModel(ScimSyncLogModelName) readonly scimSyncLog: Model<ScimSyncLog>, @InjectModel(IntegrationInstanceModelName) readonly integrationInstance: Model<IntegrationInstance>, @InjectModel(PlanModelName) readonly plan: Model<Plan>, @InjectModel(SubscriptionModelName) readonly subscription: Model<Subscription>, @InjectModel(EntitlementModelName) readonly entitlement: Model<Entitlement>,
+    @InjectModel(AuditEventModelName) readonly auditEvent: Model<AuditEvent>, @InjectModel(PlatformAdminNoteModelName) readonly platformAdminNote: Model<PlatformAdminNote>, @InjectModel(AssetReportTemplateModelName) readonly assetReportTemplate: Model<AssetReportTemplate>, @InjectModel(AssetAcknowledgementTemplateModelName) readonly assetAcknowledgementTemplate: Model<AssetAcknowledgementTemplate>,
   ) {}
 
-  async findByIdOrThrow<T>(model: Model<any>, id: string, label: string): Promise<T> {
-    const doc = await model.findById(id).lean();
-    if (!doc) throw new NotFoundException(`${label} not found`);
-    return doc as T;
-  }
-
-  async findOneOrThrow<T>(model: Model<any>, filter: Record<string, unknown>, label: string): Promise<T> {
-    const doc = await model.findOne(filter).lean();
-    if (!doc) throw new NotFoundException(`${label} not found`);
-    return doc as T;
-  }
+  async findByIdOrThrow<T>(model: Model<any>, id: string, label: string): Promise<T> { const doc = await model.findById(id).lean(); if (!doc) throw new NotFoundException(`${label} not found`); return doc as T; }
+  async findOneOrThrow<T>(model: Model<any>, filter: Record<string, unknown>, label: string): Promise<T> { const doc = await model.findOne(filter).lean(); if (!doc) throw new NotFoundException(`${label} not found`); return doc as T; }
 }
