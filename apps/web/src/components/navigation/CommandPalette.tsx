@@ -3,15 +3,19 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { Boxes, Command, FileText, LayoutDashboard, Loader2, Search, Settings, ShieldCheck, Users, X } from 'lucide-react';
+import { Boxes, Command, FileText, LayoutDashboard, Loader2, Search, Settings, ShieldCheck, Users, X, SlidersHorizontal, FileKey2, ClipboardList } from 'lucide-react';
 import { apiFetch } from '../../lib/api-client';
+import { useAuth } from '../../lib/auth-context';
 
 const NAV_ITEMS = [
   ['/dashboard', 'Dashboard', LayoutDashboard],
   ['/assets', 'Assets', Boxes],
   ['/users', 'Users', Users],
-  ['/roles', 'Roles & permissions', ShieldCheck],
+  ['/roles', 'Roles & permissions', ShieldCheck, 'custom_roles_enabled'],
   ['/reports', 'Reports', FileText],
+  ['/custom-fields', 'Custom fields', SlidersHorizontal, 'custom_fields_enabled'],
+  ['/identity', 'Identity & SSO', FileKey2, 'sso_enabled'],
+  ['/audit', 'Audit log', ClipboardList, 'audit_enabled'],
   ['/settings', 'Settings', Settings],
 ] as const;
 
@@ -20,6 +24,7 @@ type AssetRow = { id: string; assetNumber: string; status: string; assetType?: {
 export default function CommandPalette() {
   const router = useRouter();
   const pathname = usePathname();
+  const { hasFeature } = useAuth();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [assets, setAssets] = useState<AssetRow[]>([]);
@@ -65,10 +70,11 @@ export default function CommandPalette() {
     };
   }, [open, query]);
 
+  const visibleNav = useMemo(() => NAV_ITEMS.filter(([, , , feature]) => !feature || hasFeature(feature)), [hasFeature]);
   const matchingNav = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return needle ? NAV_ITEMS.filter(([, label]) => label.toLowerCase().includes(needle)) : NAV_ITEMS.slice(0, 5);
-  }, [query]);
+    return needle ? visibleNav.filter(([, label]) => label.toLowerCase().includes(needle)) : visibleNav.slice(0, 5);
+  }, [query, visibleNav]);
 
   const go = (href: string) => { setOpen(false); setQuery(''); setAssets([]); router.push(href); };
   const close = () => { setOpen(false); setQuery(''); setAssets([]); };
