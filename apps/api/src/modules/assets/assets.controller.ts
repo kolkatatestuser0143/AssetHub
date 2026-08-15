@@ -20,25 +20,17 @@ class CreateAssetTypeDto { @IsString() name: string; @IsString() prefix: string;
 class VendorDto { @IsString() name: string; @IsOptional() @IsString() contact?: string; }
 class ImportCsvDto { @IsString() csv: string; }
 class ExcelReportQueryDto { @IsOptional() @IsString() status?: string; @IsOptional() @IsString() companyId?: string; @IsOptional() @IsString() assetTypeId?: string; @IsOptional() @IsString() locationId?: string; @IsOptional() @IsISO8601() fromDate?: string; @IsOptional() @IsISO8601() toDate?: string; }
+class AssetListQueryDto { @IsOptional() @IsString() q?: string; @IsOptional() @IsString() status?: string; @IsOptional() @IsString() assetTypeId?: string; @IsOptional() @IsInt() @Min(1) page?: number; @IsOptional() @IsInt() @Min(1) pageSize?: number; }
 class TransferDto { @IsOptional() @IsString() toUserId?: string; @IsOptional() @IsString() toLocationId?: string; @IsOptional() @IsString() toDepartmentId?: string; @IsOptional() @IsString() reason?: string; @IsOptional() @IsString() note?: string; }
 class TransferStatusDto { @IsIn(['PENDING', 'APPROVED', 'COMPLETED', 'REJECTED', 'CANCELLED']) status!: 'PENDING' | 'APPROVED' | 'COMPLETED' | 'REJECTED' | 'CANCELLED'; }
 
 @Controller('assets')
 @UseGuards(TenantContextGuard, RbacGuard)
 export class AssetsController {
-  constructor(
-    private readonly assets: AssetsService,
-    private readonly imports: AssetImportService,
-    private readonly excelReports: AssetExcelReportService,
-    private readonly pdfReports: AssetPdfReportService,
-    private readonly transfers: AssetTransferService,
-    private readonly assignmentTransactions: AssetAssignmentTransactionService,
-    private readonly timeline: AssetTimelineService,
-    private readonly searchService: AssetSearchService,
-  ) {}
+  constructor(private readonly assets: AssetsService, private readonly imports: AssetImportService, private readonly excelReports: AssetExcelReportService, private readonly pdfReports: AssetPdfReportService, private readonly transfers: AssetTransferService, private readonly assignmentTransactions: AssetAssignmentTransactionService, private readonly timeline: AssetTimelineService, private readonly searchService: AssetSearchService) {}
 
   @Get('search') @RequirePermission('asset:read') search(@Query('q') query: string, @Req() req: any) { return this.searchService.search(req.authContext, query ?? ''); }
-  @Get() @RequirePermission('asset:read') list(@Req() req: any) { return this.assets.listAssets(req.authContext); }
+  @Get() @RequirePermission('asset:read') list(@Query() query: AssetListQueryDto, @Req() req: any) { return this.searchService.list(req.authContext, query); }
   @Get('assignments') @RequirePermission('asset:read') listAssignments(@Req() req: any) { return this.assets.listAssignments(req.authContext); }
   @Get('transfers') @RequirePermission('asset:read') listTransfers(@Query() query: TransferStatusDto, @Req() req: any) { return this.transfers.list(req.authContext, query.status); }
   @Get('transfers/:transferId') @RequirePermission('asset:read') getTransfer(@Param('transferId') transferId: string, @Req() req: any) { return this.transfers.get(req.authContext, transferId); }
