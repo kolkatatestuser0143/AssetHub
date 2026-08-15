@@ -1,12 +1,10 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { randomUUID } from 'crypto';
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'fs';
-import { basename, join } from 'path';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 import { AuthContext } from '../../common/guards/tenant-context.guard';
 import { TenantScopedRepository } from '../../common/tenant-scoped.repository';
 import { toDto, toDtoArray } from '../../common/mongoose.utils';
 import { EntitlementService } from '../billing/entitlement.service';
+import { DOCUMENT_STORAGE, DocumentStorage } from './document-storage';
 
 const ALLOWED_TYPES = new Set([
   'application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'text/plain',
@@ -17,12 +15,11 @@ const PLATFORM_MAX_FILE_BYTES = 25 * 1024 * 1024;
 
 @Injectable()
 export class AssetDocumentsService extends TenantScopedRepository {
-  private readonly root = process.env.ASSET_DOCUMENTS_DIR || join(process.cwd(), 'storage', 'asset-documents');
-
-  constructor(private readonly db: MongooseDatabaseService, private readonly entitlements: EntitlementService) {
-    super();
-    mkdirSync(this.root, { recursive: true });
-  }
+  constructor(
+    private readonly db: MongooseDatabaseService,
+    private readonly entitlements: EntitlementService,
+    @Inject(DOCUMENT_STORAGE) private readonly storage: DocumentStorage,
+  ) { super(); }
 
   async list(auth: AuthContext, assetId: string) {
     await this.requireAsset(auth, assetId);
@@ -33,39 +30,22 @@ export class AssetDocumentsService extends TenantScopedRepository {
     await this.requireAsset(auth, assetId);
     if (!file?.buffer?.length) throw new BadRequestException('Document file is required');
     if (!ALLOWED_TYPES.has(file.mimetype)) throw new BadRequestException('Unsupported document type');
-
     const maxFileMb = await this.entitlements.getNumber(auth.tenantId, 'max_asset_document_size_mb');
     const maxFileBytes = Math.min(PLATFORM_MAX_FILE_BYTES, maxFileMb === null ? PLATFORM_MAX_FILE_BYTES : maxFileMb * 1024 * 1024);
     if (Number(file.size) > maxFileBytes) throw new BadRequestException(`Document exceeds the ${Math.floor(maxFileBytes / (1024 * 1024))} MB size limit`);
+    await this.assertStorageLimits(auth.tenantId, Number(file.size));
 
-    const currentDocumentCount = await this.db.assetDocument.countDocuments({ tenantId: auth.tenantId });
-    await this.entitlements.requireWithinLimit(auth.tenantId, 'max_asset_documents', currentDocumentCount, 1);
-
-    const storageRows = await this.db.assetDocument.aggregate([
-      { $match: { tenantId: auth.tenantId } },
-      { $group: { _id: null, bytes: { $sum: '$sizeBytes' } } },
-    ]);
-    const currentBytes = Number(storageRows[0]?.bytes ?? 0);
-    const maxStorageGb = await this.entitlements.getNumber(auth.tenantId, 'max_storage_gb');
-    if (maxStorageGb !== null && currentBytes + Number(file.size) > maxStorageGb * 1024 * 1024 * 1024) {
-      throw new ConflictException(`Tenant storage limit reached: max_storage_gb (${maxStorageGb})`);
-    }
-
-    const safeName = basename(String(file.originalname ?? 'document')).replace(/[^a-zA-Z0-9._-]/g, '_');
-    const key = join(auth.tenantId, auth.companyId, assetId, `${randomUUID()}-${safeName}`);
-    const absolutePath = join(this.root, key);
-    mkdirSync(join(this.root, auth.tenantId, auth.companyId, assetId), { recursive: true });
-    writeFileSync(absolutePath, file.buffer, { flag: 'wx' });
-
+    const fileName = String(file.originalname ?? 'document');
+    const stored = await this.storage.upload({ buffer: file.buffer, fileName, contentType: String(file.mimetype ?? 'application/octet-stream') });
     try {
       const doc = await this.db.assetDocument.create({
-        tenantId: auth.tenantId, companyId: auth.companyId, assetId, s3Key: key,
-        fileName: String(file.originalname ?? safeName), contentType: String(file.mimetype ?? 'application/octet-stream'),
-        sizeBytes: Number(file.size ?? file.buffer.length), ...(documentType ? { documentType: documentType.trim() } : {}),
+        tenantId: auth.tenantId, companyId: auth.companyId, assetId,
+        s3Key: stored.key, fileName, contentType: String(file.mimetype ?? 'application/octet-stream'), sizeBytes: Number(file.size ?? file.buffer.length),
+        ...(documentType ? { documentType: documentType.trim() } : {}),
       });
       return toDto(doc.toObject());
     } catch (error) {
-      if (existsSync(absolutePath)) unlinkSync(absolutePath);
+      await this.storage.remove(stored.key).catch(() => undefined);
       throw error;
     }
   }
@@ -73,38 +53,17 @@ export class AssetDocumentsService extends TenantScopedRepository {
   async storeGeneratedPdf(auth: AuthContext, assetId: string, fileName: string, buffer: Buffer, documentType = 'ACKNOWLEDGEMENT') {
     await this.requireAsset(auth, assetId);
     if (!buffer.length) throw new BadRequestException('Generated document is empty');
-
     const maxFileMb = await this.entitlements.getNumber(auth.tenantId, 'max_asset_document_size_mb');
     const maxFileBytes = Math.min(PLATFORM_MAX_FILE_BYTES, maxFileMb === null ? PLATFORM_MAX_FILE_BYTES : maxFileMb * 1024 * 1024);
     if (buffer.length > maxFileBytes) throw new BadRequestException(`Document exceeds the ${Math.floor(maxFileBytes / (1024 * 1024))} MB size limit`);
+    await this.assertStorageLimits(auth.tenantId, buffer.length);
 
-    const currentDocumentCount = await this.db.assetDocument.countDocuments({ tenantId: auth.tenantId });
-    await this.entitlements.requireWithinLimit(auth.tenantId, 'max_asset_documents', currentDocumentCount, 1);
-
-    const storageRows = await this.db.assetDocument.aggregate([
-      { $match: { tenantId: auth.tenantId } },
-      { $group: { _id: null, bytes: { $sum: '$sizeBytes' } } },
-    ]);
-    const currentBytes = Number(storageRows[0]?.bytes ?? 0);
-    const maxStorageGb = await this.entitlements.getNumber(auth.tenantId, 'max_storage_gb');
-    if (maxStorageGb !== null && currentBytes + buffer.length > maxStorageGb * 1024 * 1024 * 1024) {
-      throw new ConflictException(`Tenant storage limit reached: max_storage_gb (${maxStorageGb})`);
-    }
-
-    const safeName = basename(fileName).replace(/[^a-zA-Z0-9._-]/g, '_');
-    const key = join(auth.tenantId, auth.companyId, assetId, `${randomUUID()}-${safeName}`);
-    const absolutePath = join(this.root, key);
-    mkdirSync(join(this.root, auth.tenantId, auth.companyId, assetId), { recursive: true });
-    writeFileSync(absolutePath, buffer, { flag: 'wx' });
-
+    const stored = await this.storage.upload({ buffer, fileName, contentType: 'application/pdf' });
     try {
-      const doc = await this.db.assetDocument.create({
-        tenantId: auth.tenantId, companyId: auth.companyId, assetId, s3Key: key,
-        fileName: safeName, contentType: 'application/pdf', sizeBytes: buffer.length, documentType,
-      });
+      const doc = await this.db.assetDocument.create({ tenantId: auth.tenantId, companyId: auth.companyId, assetId, s3Key: stored.key, fileName, contentType: 'application/pdf', sizeBytes: buffer.length, documentType });
       return toDto(doc.toObject());
     } catch (error) {
-      if (existsSync(absolutePath)) unlinkSync(absolutePath);
+      await this.storage.remove(stored.key).catch(() => undefined);
       throw error;
     }
   }
@@ -113,19 +72,28 @@ export class AssetDocumentsService extends TenantScopedRepository {
     await this.requireAsset(auth, assetId);
     const doc = await this.db.assetDocument.findOne({ _id: documentId, tenantId: auth.tenantId, companyId: auth.companyId, assetId }).lean();
     if (!doc) throw new NotFoundException('Document not found');
-    const path = join(this.root, doc.s3Key);
-    if (!existsSync(path)) throw new NotFoundException('Document content not found');
-    return { path, fileName: doc.fileName, contentType: doc.contentType || 'application/octet-stream' };
+    const stored = await this.storage.download(doc.s3Key);
+    return { buffer: stored.buffer, fileName: doc.fileName, contentType: doc.contentType || stored.contentType || 'application/octet-stream' };
   }
 
   async remove(auth: AuthContext, assetId: string, documentId: string) {
     await this.requireAsset(auth, assetId);
     const doc = await this.db.assetDocument.findOne({ _id: documentId, tenantId: auth.tenantId, companyId: auth.companyId, assetId }).lean();
     if (!doc) throw new NotFoundException('Document not found');
-    const path = join(this.root, doc.s3Key);
-    if (existsSync(path)) unlinkSync(path);
+    await this.storage.remove(doc.s3Key);
     await this.db.assetDocument.deleteOne({ _id: documentId, tenantId: auth.tenantId, companyId: auth.companyId, assetId });
     return { ok: true };
+  }
+
+  private async assertStorageLimits(tenantId: string, incomingBytes: number) {
+    const currentDocumentCount = await this.db.assetDocument.countDocuments({ tenantId });
+    await this.entitlements.requireWithinLimit(tenantId, 'max_asset_documents', currentDocumentCount, 1);
+    const storageRows = await this.db.assetDocument.aggregate([{ $match: { tenantId } }, { $group: { _id: null, bytes: { $sum: '$sizeBytes' } } }]);
+    const currentBytes = Number(storageRows[0]?.bytes ?? 0);
+    const maxStorageGb = await this.entitlements.getNumber(tenantId, 'max_storage_gb');
+    if (maxStorageGb !== null && currentBytes + incomingBytes > maxStorageGb * 1024 * 1024 * 1024) {
+      throw new ConflictException(`Tenant storage limit reached: max_storage_gb (${maxStorageGb})`);
+    }
   }
 
   private async requireAsset(auth: AuthContext, assetId: string) {
