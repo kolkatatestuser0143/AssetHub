@@ -37,6 +37,7 @@ import { EntitlementModelName, EntitlementSchema } from '../../models/billing.sc
 
 import { AuditEventModelName, AuditEventSchema } from '../../models/audit.schemas';
 import { PlatformAdminNoteModelName, PlatformAdminNoteSchema } from '../../models/audit.schemas';
+import { AssetReportTemplateModelName, AssetReportTemplateSchema } from '../../models/report.schemas';
 
 /**
  * Global module: connects to MongoDB (Atlas) and registers every
@@ -78,6 +79,7 @@ const MODEL_PROVIDERS = [
   { name: EntitlementModelName, schema: EntitlementSchema },
   { name: AuditEventModelName, schema: AuditEventSchema },
   { name: PlatformAdminNoteModelName, schema: PlatformAdminNoteSchema },
+  { name: AssetReportTemplateModelName, schema: AssetReportTemplateSchema },
 ];
 
 @Global()
@@ -85,9 +87,6 @@ const MODEL_PROVIDERS = [
   imports: [
     MongooseModule.forRootAsync({
       useFactory: () => ({
-        // The MongoDB URI is the single source of truth for the cluster
-        // and database name. Do not override it with MONGODB_DB here;
-        // seed/migration/test utilities intentionally use the same URI.
         uri: process.env.MONGODB_URI,
       }),
     }),
