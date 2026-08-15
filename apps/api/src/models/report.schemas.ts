@@ -32,3 +32,26 @@ export class AssetAcknowledgementTemplate {
 export const AssetAcknowledgementTemplateSchema = SchemaFactory.createForClass(AssetAcknowledgementTemplate);
 AssetAcknowledgementTemplateSchema.index({ tenantId: 1, name: 1 }, { unique: true });
 AssetAcknowledgementTemplateSchema.index({ tenantId: 1, isDefault: 1 });
+
+export const AssetAcknowledgementModelName = 'AssetAcknowledgement';
+export type AssetAcknowledgementDocument = HydratedDocument<AssetAcknowledgement>;
+
+@Schema({ collection: 'asset_acknowledgements', timestamps: true, versionKey: false })
+export class AssetAcknowledgement {
+  @Prop({ required: true, index: true }) tenantId!: string;
+  @Prop({ required: true, index: true }) companyId!: string;
+  @Prop({ required: true, index: true }) assetId!: string;
+  @Prop({ required: true, index: true }) employeeId!: string;
+  @Prop({ required: true }) templateId?: string;
+  @Prop({ required: true }) templateName!: string;
+  @Prop({ required: true }) generatedAt!: Date;
+  @Prop({ required: true }) generatedByUserId!: string;
+  @Prop({ default: 'PENDING', enum: ['PENDING', 'ACKNOWLEDGED'] }) status!: 'PENDING' | 'ACKNOWLEDGED';
+  @Prop() acknowledgedAt?: Date;
+  @Prop() acknowledgedByUserId?: string;
+  @Prop() acknowledgementNote?: string;
+}
+
+export const AssetAcknowledgementSchema = SchemaFactory.createForClass(AssetAcknowledgement);
+AssetAcknowledgementSchema.index({ tenantId: 1, companyId: 1, assetId: 1, generatedAt: -1 });
+AssetAcknowledgementSchema.index({ tenantId: 1, companyId: 1, employeeId: 1, generatedAt: -1 });
