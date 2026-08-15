@@ -2,6 +2,18 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 import { AuthContext } from '../../common/guards/tenant-context.guard';
 
+const THEME_PRESETS = ['trial', 'starter', 'professional', 'enterprise', 'restricted'] as const;
+type ThemePreset = typeof THEME_PRESETS[number];
+
+function resolveThemePreset(planName: string, status: string): ThemePreset {
+  if (['expired', 'revoked'].includes(status)) return 'restricted';
+  const normalized = planName.trim().toLowerCase();
+  if (normalized.includes('enterprise')) return 'enterprise';
+  if (normalized.includes('professional') || normalized.includes('pro')) return 'professional';
+  if (normalized.includes('trial')) return 'trial';
+  return 'starter';
+}
+
 @Injectable()
 export class TenantLicenseService {
   constructor(private readonly db: MongooseDatabaseService) {}
@@ -18,6 +30,7 @@ export class TenantLicenseService {
         status: 'unassigned',
         message: 'No subscription or license has been assigned to this tenant.',
         plan: null,
+        themePreset: 'restricted' as ThemePreset,
         limits: {},
         features: {},
         usage: await this.usage(auth),
@@ -48,6 +61,7 @@ export class TenantLicenseService {
         id: String(plan._id),
         name: plan.name,
       },
+      themePreset: resolveThemePreset(plan.name, status),
       limits: this.pickLimits(plan.features ?? {}, values),
       features: this.pickFeatures(plan.features ?? {}, values),
       entitlements: values,
