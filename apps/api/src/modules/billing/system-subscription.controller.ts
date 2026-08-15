@@ -40,11 +40,7 @@ export class SystemSubscriptionController {
   @Patch(':tenantId')
   @SystemPermission('platform:billing:manage')
   async assign(@Param('tenantId') tenantId: string, @Body() body: { planId: string; status?: 'active' | 'trialing' | 'past_due' | 'canceled' | 'expired'; endsAt?: string }, @Req() req: any) {
-    const subscription = await this.subscriptions.assign(tenantId, body.planId, body.status ?? 'active', body.endsAt, req.systemAuth?.sub);
-    const plan = await this.subscriptions.listPlans(true);
-    const selected = plan.find((item: any) => item.id === subscription.planId);
-    if (selected) await this.entitlementSync.materializeSubscription(subscription.id, selected.features ?? {});
-    return subscription;
+    return this.subscriptions.assign(tenantId, body.planId, body.status ?? 'active', body.endsAt, req.systemAuth?.sub);
   }
 
   @Post(':tenantId/renew')
@@ -62,8 +58,6 @@ export class SystemSubscriptionController {
   @Patch(':tenantId/entitlement/:subscriptionId')
   @SystemPermission('platform:billing:manage')
   async entitlement(@Param('subscriptionId') subscriptionId: string, @Body() body: { key: string; value: unknown }, @Req() req: any) {
-    const result = await this.subscriptions.setEntitlement(subscriptionId, body.key, body.value, req.systemAuth?.sub);
-    await this.entitlementSync.markOverride(subscriptionId, body.key.trim());
-    return result;
+    return this.subscriptions.setEntitlement(subscriptionId, body.key, body.value, req.systemAuth?.sub);
   }
 }
