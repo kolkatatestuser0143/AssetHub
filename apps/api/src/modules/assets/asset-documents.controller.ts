@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Delete, Get, Param, Post, Query, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Controller, Delete, Get, Param, Post, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AssetDocumentsService } from './asset-documents.service';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
@@ -25,7 +25,7 @@ export class AssetDocumentsController {
 
   @Get()
   @RequirePermission('asset:read')
-  list(@Param('assetId') assetId: string, req: any) {
+  list(@Param('assetId') assetId: string, @Req() req: any) {
     return this.documents.list(req.authContext, assetId);
   }
 
@@ -41,14 +41,14 @@ export class AssetDocumentsController {
       callback(null, true);
     },
   }))
-  upload(@Param('assetId') assetId: string, @UploadedFile() file: any, @Query('documentType') documentType: string | undefined, req: any) {
+  upload(@Param('assetId') assetId: string, @UploadedFile() file: any, @Query('documentType') documentType: string | undefined, @Req() req: any) {
     if (!file) throw new BadRequestException('Multipart field "file" is required');
     return this.documents.upload(req.authContext, assetId, file, documentType);
   }
 
   @Get(':documentId/download')
   @RequirePermission('asset:read')
-  async download(@Param('assetId') assetId: string, @Param('documentId') documentId: string, @Res() res: any, req: any) {
+  async download(@Param('assetId') assetId: string, @Param('documentId') documentId: string, @Res() res: any, @Req() req: any) {
     const result = await this.documents.download(req.authContext, assetId, documentId);
     res.setHeader('Content-Type', result.contentType);
     const safeFileName = result.fileName.replace(/[\r\n"]/g, '');
@@ -58,7 +58,7 @@ export class AssetDocumentsController {
 
   @Delete(':documentId')
   @RequirePermission('asset:write')
-  remove(@Param('assetId') assetId: string, @Param('documentId') documentId: string, req: any) {
+  remove(@Param('assetId') assetId: string, @Param('documentId') documentId: string, @Req() req: any) {
     return this.documents.remove(req.authContext, assetId, documentId);
   }
 }
