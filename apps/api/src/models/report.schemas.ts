@@ -20,7 +20,7 @@ export type AssetAcknowledgementDocument = HydratedDocument<AssetAcknowledgement
 @Schema({ collection: 'asset_acknowledgements', timestamps: true, versionKey: false })
 export class AssetAcknowledgement {
   @Prop({ required: true, index: true }) tenantId!: string; @Prop({ required: true, index: true }) companyId!: string; @Prop({ required: true, index: true }) assetId!: string; @Prop({ required: true, index: true }) employeeId!: string;
-  @Prop({ required: true }) templateId!: string; @Prop({ required: true }) templateName!: string; @Prop({ required: true }) contentSnapshot!: string;
+  @Prop({ required: true }) templateId!: string; @Prop({ required: true }) templateName!: string; @Prop({ required: true }) contentSnapshot!: string; @Prop() documentId?: string;
   @Prop({ required: true }) generatedAt!: Date; @Prop({ required: true }) generatedByUserId!: string; @Prop({ default: 'PENDING', enum: ['PENDING', 'ACKNOWLEDGED'] }) status!: 'PENDING' | 'ACKNOWLEDGED';
   @Prop() acknowledgedAt?: Date; @Prop() acknowledgedByUserId?: string; @Prop() acknowledgementNote?: string;
 }
