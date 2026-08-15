@@ -2,11 +2,15 @@ import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/co
 import { SystemAdminGuard } from '../../common/guards/system-admin.guard';
 import { SystemPermission } from '../../common/guards/system-permission.decorator';
 import { SystemSubscriptionService } from './system-subscription.service';
+import { PlanEntitlementSyncService } from './plan-entitlement-sync.service';
 
 @Controller('system/plans')
 @UseGuards(SystemAdminGuard)
 export class SystemPlanController {
-  constructor(private readonly subscriptions: SystemSubscriptionService) {}
+  constructor(
+    private readonly subscriptions: SystemSubscriptionService,
+    private readonly entitlementSync: PlanEntitlementSyncService,
+  ) {}
 
   @Get()
   @SystemPermission('platform:billing:read')
@@ -20,8 +24,10 @@ export class SystemPlanController {
 
   @Patch(':planId')
   @SystemPermission('platform:billing:manage')
-  update(@Param('planId') planId: string, @Body() body: { name: string; features?: Record<string, unknown> }) {
-    return this.subscriptions.updatePlan(planId, body.name, body.features ?? {});
+  async update(@Param('planId') planId: string, @Body() body: { name: string; features?: Record<string, unknown> }) {
+    const plan = await this.subscriptions.updatePlan(planId, body.name, body.features ?? {});
+    const entitlementSync = await this.entitlementSync.syncPlan(plan.id, plan.features ?? {});
+    return { ...plan, entitlementSync };
   }
 
   @Patch(':planId/status')
