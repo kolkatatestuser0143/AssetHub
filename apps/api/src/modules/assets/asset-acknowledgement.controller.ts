@@ -1,5 +1,5 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UseGuards, Req } from '@nestjs/common';
-import { IsString, MinLength } from 'class-validator';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Res, UseGuards, Req } from '@nestjs/common';
+import { IsOptional, IsString, MinLength } from 'class-validator';
 import { Response } from 'express';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 import { RbacGuard } from '../../common/guards/rbac.guard';
@@ -7,6 +7,7 @@ import { RequirePermission } from '../../common/decorators/require-permission.de
 import { AssetAcknowledgementService } from './asset-acknowledgement.service';
 
 class TemplateDto { @IsString() @MinLength(1) name!: string; @IsString() @MinLength(1) content!: string; }
+class AcknowledgeDto { @IsOptional() @IsString() note?: string; }
 
 @Controller('asset-acknowledgements')
 @UseGuards(TenantContextGuard, RbacGuard)
@@ -19,13 +20,16 @@ export class AssetAcknowledgementController {
   @Post('templates/:templateId/default') @RequirePermission('asset:write') setDefault(@Param('templateId') templateId: string, @Req() req: any) { return this.acknowledgements.setDefault(req.authContext, templateId); }
   @Delete('templates/:templateId') @RequirePermission('asset:write') remove(@Param('templateId') templateId: string, @Req() req: any) { return this.acknowledgements.deleteTemplate(req.authContext, templateId); }
 
-  @Post('assets/:assetId/pdf') @RequirePermission('asset:read') async generatePost(@Param('assetId') assetId: string, @Body() body: { templateId?: string }, @Req() req: any, @Res() res: Response) { return this.sendPdf(req, res, assetId, body?.templateId); }
-  @Get('assets/:assetId/pdf') @RequirePermission('asset:read') async generateGet(@Param('assetId') assetId: string, @Query('templateId') templateId: string | undefined, @Req() req: any, @Res() res: Response) { return this.sendPdf(req, res, assetId, templateId); }
+  @Get('assets/:assetId') @RequirePermission('asset:read') latest(@Param('assetId') assetId: string, @Req() req: any) { return this.acknowledgements.latest(req.authContext, assetId); }
+  @Get('assets/:assetId/history') @RequirePermission('asset:read') history(@Param('assetId') assetId: string, @Req() req: any) { return this.acknowledgements.listAcknowledgements(req.authContext, assetId); }
 
-  private async sendPdf(req: any, res: Response, assetId: string, templateId?: string) {
-    const buffer = await this.acknowledgements.generate(req.authContext, assetId, templateId);
+  @Post('assets/:assetId/pdf') @RequirePermission('asset:read') async generate(@Param('assetId') assetId: string, @Body() body: { templateId?: string }, @Req() req: any, @Res() res: Response) {
+    const result = await this.acknowledgements.generate(req.authContext, assetId, body?.templateId);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="asset-acknowledgement-${assetId}.pdf"`);
-    return res.send(buffer);
+    res.setHeader('X-Acknowledgement-Id', result.acknowledgementId);
+    return res.send(result.buffer);
   }
+
+  @Post(':acknowledgementId/acknowledge') @RequirePermission('asset:read') acknowledge(@Param('acknowledgementId') acknowledgementId: string, @Body() dto: AcknowledgeDto, @Req() req: any) { return this.acknowledgements.acknowledge(req.authContext, acknowledgementId, dto.note); }
 }
