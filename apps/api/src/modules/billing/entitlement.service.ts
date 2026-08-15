@@ -6,9 +6,22 @@ export class EntitlementService {
   constructor(private readonly db: MongooseDatabaseService) {}
 
   async getActiveSubscription(tenantId: string) {
-    const subscription = await this.db.subscription.findOne({ tenantId, status: { $in: ['active', 'trialing', 'past_due'] } }).sort({ createdAt: -1 }).lean();
+    const subscription = await this.db.subscription.findOne({
+      tenantId,
+      status: { $in: ['active', 'trialing', 'past_due'] },
+    }).sort({ createdAt: -1 }).lean();
+
     if (!subscription) throw new ForbiddenException('Tenant has no active license');
-    if (subscription.endsAt && new Date(subscription.endsAt).getTime() < Date.now()) throw new ForbiddenException('Tenant license has expired');
+
+    const now = Date.now();
+    const endsAt = subscription.endsAt ? new Date(subscription.endsAt).getTime() : null;
+    const graceUntil = (subscription as any).graceUntil ? new Date((subscription as any).graceUntil).getTime() : null;
+
+    if (endsAt && endsAt < now) {
+      if (subscription.status === 'past_due' && graceUntil && graceUntil > now) return subscription;
+      throw new ForbiddenException('Tenant license has expired');
+    }
+
     return subscription;
   }
 
