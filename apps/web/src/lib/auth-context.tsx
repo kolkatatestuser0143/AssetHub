@@ -36,8 +36,7 @@ function themeVars(preset: string): ThemeVars {
 }
 
 function isFeatureEnabled(features: TenantFeatures, key: string) {
-  const value = features[key];
-  return value === true || (typeof value === 'string' && value.toLowerCase() === 'true');
+  return features[key] === true;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
