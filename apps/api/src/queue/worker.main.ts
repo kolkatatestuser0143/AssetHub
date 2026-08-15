@@ -29,6 +29,7 @@ async function main() {
     let graceStarted = 0;
     let expired = 0;
     let auditEventsDeleted = 0;
+    let auditTenantsSkipped = 0;
 
     const trialing = await db.subscription.find({ status: 'trialing', endsAt: { $lte: now } }).lean();
     for (const subscription of trialing) {
@@ -56,10 +57,17 @@ async function main() {
 
     const tenants = await db.tenant.find({ status: { $ne: 'archived' } }).select({ _id: 1 }).lean();
     for (const tenant of tenants) {
-      const result = await audit.purgeExpired(String(tenant._id));
-      auditEventsDeleted += result.deleted;
+      try {
+        const result = await audit.purgeExpired(String(tenant._id));
+        auditEventsDeleted += result.deleted;
+      } catch (error) {
+        // A tenant without an active license must not fail the entire maintenance job.
+        // Leave the tenant's audit retention untouched until a valid entitlement exists.
+        auditTenantsSkipped++;
+        console.warn(`[maintenance] audit purge skipped for tenant ${String(tenant._id)}:`, error instanceof Error ? error.message : error);
+      }
     }
-    return { tenants: tenants.length, trialExpired, graceStarted, expired, auditEventsDeleted };
+    return { tenants: tenants.length, trialExpired, graceStarted, expired, auditEventsDeleted, auditTenantsSkipped };
   }, { connection, concurrency: 1 });
 
   worker.on('completed', (job, result) => console.log(`[maintenance] ${job.name} completed`, result));
