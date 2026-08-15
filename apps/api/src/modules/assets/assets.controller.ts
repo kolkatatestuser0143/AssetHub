@@ -1,8 +1,9 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { IsIn, IsInt, IsObject, IsOptional, IsString, Min } from 'class-validator';
 import { AssetLifecycleState } from '../../common/enums';
 import { AssetsService } from './assets.service';
 import { AssetImportService } from './asset-import.service';
+import { AssetExcelReportService } from './asset-excel-report.service';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 import { RbacGuard } from '../../common/guards/rbac.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
@@ -17,10 +18,20 @@ class ImportCsvDto { @IsString() csv: string; }
 @Controller('assets')
 @UseGuards(TenantContextGuard, RbacGuard)
 export class AssetsController {
-  constructor(private readonly assets: AssetsService, private readonly imports: AssetImportService) {}
+  constructor(
+    private readonly assets: AssetsService,
+    private readonly imports: AssetImportService,
+    private readonly excelReports: AssetExcelReportService,
+  ) {}
+
   @Get() @RequirePermission('asset:read') list(@Req() req: any) { return this.assets.listAssets(req.authContext); }
   @Get('assignments') @RequirePermission('asset:read') listAssignments(@Req() req: any) { return this.assets.listAssignments(req.authContext); }
   @Get('reports/summary') @RequirePermission('asset:read') reportSummary(@Req() req: any) { return this.assets.getReportSummary(req.authContext); }
+  @Get('reports/excel')
+  @RequirePermission('asset:read')
+  @Header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  @Header('Content-Disposition', 'attachment; filename="assethub-asset-report.xlsx"')
+  reportExcel(@Req() req: any) { return this.excelReports.generate(req.authContext); }
   @Get('vendors') @RequirePermission('asset:read') listVendors(@Req() req: any) { return this.assets.listVendors(req.authContext); }
   @Post('vendors') @RequirePermission('asset:write') createVendor(@Body() dto: VendorDto, @Req() req: any) { return this.assets.createVendor(req.authContext, dto.name, dto.contact); }
   @Patch('vendors/:vendorId') @RequirePermission('asset:write') updateVendor(@Param('vendorId') vendorId: string, @Body() dto: VendorDto, @Req() req: any) { return this.assets.updateVendor(req.authContext, vendorId, dto.name, dto.contact); }
