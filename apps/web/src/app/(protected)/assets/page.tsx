@@ -47,17 +47,8 @@ export default function AssetsPage() {
   }
   async function exportExcel() {
     setExporting(true); setError(null);
-    try {
-      const { blob, filename } = await downloadFile('/assets/reports/excel');
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = filename;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      URL.revokeObjectURL(url);
-    } catch (err: any) { setError(err.message ?? 'Unable to generate Excel report.'); }
+    try { const { blob, filename } = await downloadFile('/assets/reports/excel'); const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = filename; document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url); }
+    catch (err: any) { setError(err.message ?? 'Unable to generate Excel report.'); }
     finally { setExporting(false); }
   }
   async function transition(assetId: string, toState: string) {
@@ -78,6 +69,7 @@ export default function AssetsPage() {
         <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Inventory</p><h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">Assets</h1><p className="mt-2 max-w-2xl text-sm text-slate-500">Manage the tenant inventory lifecycle, identifiers, and operational state from one workspace.</p></div>
         <div className="flex flex-wrap gap-2">
           <button onClick={load} disabled={busy} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60"><RefreshCw size={16} className={busy ? 'animate-spin' : ''}/>Refresh</button>
+          <Link href="/assets/transfers" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">Transfers</Link>
           <Link href="/assets/reports" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"><Download size={16}/>Reports</Link>
           <button onClick={exportExcel} disabled={exporting} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-60"><Download size={16}/>{exporting ? 'Generating…' : 'Quick Excel'}</button>
           <Link href="/assets/import" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"><Upload size={16}/>Import</Link>
