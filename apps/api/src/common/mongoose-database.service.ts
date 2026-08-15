@@ -1,19 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { Tenant, TenantModelName } from '../models/tenancy.schemas';
-import { Company, CompanyModelName } from '../models/tenancy.schemas';
-import { BusinessUnit, BusinessUnitModelName } from '../models/tenancy.schemas';
-import { Plant, PlantModelName } from '../models/tenancy.schemas';
-import { Location, LocationModelName } from '../models/tenancy.schemas';
-import { Department, DepartmentModelName } from '../models/tenancy.schemas';
-import { User, UserModelName } from '../models/user.schemas';
-import { Session, SessionModelName } from '../models/user.schemas';
-import { LoginHistory, LoginHistoryModelName } from '../models/user.schemas';
-import { Permission, PermissionModelName } from '../models/rbac.schemas';
-import { Role, RoleModelName } from '../models/rbac.schemas';
+import { Tenant, TenantModelName, Company, CompanyModelName, BusinessUnit, BusinessUnitModelName, Plant, PlantModelName, Location, LocationModelName, Department, DepartmentModelName } from '../models/tenancy.schemas';
+import { User, UserModelName, Session, SessionModelName, LoginHistory, LoginHistoryModelName } from '../models/user.schemas';
+import { Permission, PermissionModelName, Role, RoleModelName } from '../models/rbac.schemas';
 import { AssetType, AssetTypeModelName, Asset, AssetModelName, AssetAuditEvent, AssetAuditEventModelName, AssetAssignment, AssetAssignmentModelName, AssetTransfer, AssetTransferModelName } from '../models/asset.schemas';
 import { Vendor, VendorModelName, Warranty, WarrantyModelName, CustomFieldDefinition, CustomFieldDefModelName, AssetCustomFieldValue, AssetCustomFieldValueModelName, AssetDocumentMeta, AssetDocumentModelName } from '../models/asset-support.schemas';
+import { AssetMaintenance, AssetMaintenanceModelName } from '../models/maintenance.schemas';
 import { IdentityProviderConfig, IdentityProviderConfigModelName, ScimToken, ScimTokenModelName, ScimSyncLog, ScimSyncLogModelName } from '../models/identity.schemas';
 import { IntegrationInstance, IntegrationInstanceModelName } from '../models/integration.schemas';
 import { Plan, PlanModelName, Subscription, SubscriptionModelName, Entitlement, EntitlementModelName } from '../models/billing.schemas';
@@ -39,6 +32,7 @@ export class MongooseDatabaseService {
     @InjectModel(AssetAuditEventModelName) readonly assetAuditEvent: Model<AssetAuditEvent>,
     @InjectModel(AssetAssignmentModelName) readonly assetAssignment: Model<AssetAssignment>,
     @InjectModel(AssetTransferModelName) readonly assetTransfer: Model<AssetTransfer>,
+    @InjectModel(AssetMaintenanceModelName) readonly assetMaintenance: Model<AssetMaintenance>,
     @InjectModel(VendorModelName) readonly vendor: Model<Vendor>,
     @InjectModel(WarrantyModelName) readonly warranty: Model<Warranty>,
     @InjectModel(CustomFieldDefModelName) readonly customFieldDefinition: Model<CustomFieldDefinition>,
