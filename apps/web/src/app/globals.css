@@ -23,7 +23,6 @@ input[type='checkbox'],input[type='radio'],input[type='range'],progress { accent
 
 .page-transition { opacity:0; transform:translateY(4px); transition:opacity 160ms ease-out, transform 160ms ease-out; }
 .page-transition-visible { opacity:1; transform:translateY(0); }
-
 :where(a,button,input,select,textarea):focus-visible { outline:2px solid var(--theme-focus); outline-offset:2px; }
 :where(button,a) { -webkit-tap-highlight-color:transparent; }
 :where(button,a):active:not(:disabled) { transform:translateY(1px) scale(.99); }
@@ -42,6 +41,17 @@ input[type='checkbox'],input[type='radio'],input[type='range'],progress { accent
 @keyframes ui-toast-in { from { opacity:0; transform:translate3d(8px,-4px,0); } to { opacity:1; transform:translate3d(0,0,0); } }
 @keyframes ui-toast-out { from { opacity:1; transform:translate3d(0,0,0); } to { opacity:0; transform:translate3d(8px,-4px,0); } }
 @keyframes ui-command-in { from { opacity:0; transform:translateY(-4px) scale(.99); } to { opacity:1; transform:translateY(0) scale(1); } }
+
+@media (max-width: 767px) {
+  button, a, input, select, textarea { min-height:44px; }
+  .field { min-height:44px; }
+}
+
+@media print {
+  body { background:#fff; }
+  .no-print, nav, aside, header { display:none !important; }
+  .print\:shadow-none { box-shadow:none !important; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior:auto; }
