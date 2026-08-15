@@ -26,6 +26,29 @@ export class AssetDocumentsService extends TenantScopedRepository {
     return toDtoArray(await this.db.assetDocument.find({ tenantId: auth.tenantId, companyId: auth.companyId, assetId }).select({ s3Key: 0 }).sort({ createdAt: -1 }).lean());
   }
 
+  async registerUpload(auth: AuthContext, assetId: string, input: { uuid: string; fileName: string; contentType: string; sizeBytes: number; documentType?: string }) {
+    await this.requireAsset(auth, assetId);
+    const fileName = String(input.fileName ?? '').trim();
+    const contentType = String(input.contentType ?? 'application/octet-stream').trim().toLowerCase();
+    const sizeBytes = Number(input.sizeBytes);
+    if (!input.uuid || !fileName || !Number.isFinite(sizeBytes) || sizeBytes <= 0) throw new BadRequestException('Valid uploaded file metadata is required');
+    if (!ALLOWED_TYPES.has(contentType)) throw new BadRequestException('Unsupported document type');
+    if (sizeBytes > PLATFORM_MAX_FILE_BYTES) throw new BadRequestException('Document exceeds the 25 MB platform limit');
+    const maxFileMb = await this.entitlements.getNumber(auth.tenantId, 'max_asset_document_size_mb');
+    const maxFileBytes = Math.min(PLATFORM_MAX_FILE_BYTES, maxFileMb === null ? PLATFORM_MAX_FILE_BYTES : maxFileMb * 1024 * 1024);
+    if (sizeBytes > maxFileBytes) throw new BadRequestException(`Document exceeds the ${Math.floor(maxFileBytes / (1024 * 1024))} MB size limit`);
+    await this.assertStorageLimits(auth.tenantId, sizeBytes);
+
+    const stored = await this.storage.register(input.uuid);
+    try {
+      const doc = await this.db.assetDocument.create({ tenantId: auth.tenantId, companyId: auth.companyId, assetId, s3Key: stored.key, storageProvider: stored.provider, fileName, contentType, sizeBytes, ...(input.documentType ? { documentType: input.documentType.trim() } : {}) });
+      return toDto(doc.toObject());
+    } catch (error) {
+      await this.storage.remove(stored.key).catch(() => undefined);
+      throw error;
+    }
+  }
+
   async upload(auth: AuthContext, assetId: string, file: any, documentType?: string) {
     await this.requireAsset(auth, assetId);
     if (!file?.buffer?.length) throw new BadRequestException('Document file is required');
@@ -38,11 +61,7 @@ export class AssetDocumentsService extends TenantScopedRepository {
     const fileName = String(file.originalname ?? 'document');
     const stored = await this.storage.upload({ buffer: file.buffer, fileName, contentType: String(file.mimetype ?? 'application/octet-stream') });
     try {
-      const doc = await this.db.assetDocument.create({
-        tenantId: auth.tenantId, companyId: auth.companyId, assetId,
-        s3Key: stored.key, storageProvider: stored.provider, fileName, contentType: String(file.mimetype ?? 'application/octet-stream'), sizeBytes: Number(file.size ?? file.buffer.length),
-        ...(documentType ? { documentType: documentType.trim() } : {}),
-      });
+      const doc = await this.db.assetDocument.create({ tenantId: auth.tenantId, companyId: auth.companyId, assetId, s3Key: stored.key, storageProvider: stored.provider, fileName, contentType: String(file.mimetype ?? 'application/octet-stream'), sizeBytes: Number(file.size ?? file.buffer.length), ...(documentType ? { documentType: documentType.trim() } : {}) });
       return toDto(doc.toObject());
     } catch (error) {
       await this.storage.remove(stored.key).catch(() => undefined);
@@ -57,7 +76,6 @@ export class AssetDocumentsService extends TenantScopedRepository {
     const maxFileBytes = Math.min(PLATFORM_MAX_FILE_BYTES, maxFileMb === null ? PLATFORM_MAX_FILE_BYTES : maxFileMb * 1024 * 1024);
     if (buffer.length > maxFileBytes) throw new BadRequestException(`Document exceeds the ${Math.floor(maxFileBytes / (1024 * 1024))} MB size limit`);
     await this.assertStorageLimits(auth.tenantId, buffer.length);
-
     const stored = await this.storage.upload({ buffer, fileName, contentType: 'application/pdf' });
     try {
       const doc = await this.db.assetDocument.create({ tenantId: auth.tenantId, companyId: auth.companyId, assetId, s3Key: stored.key, storageProvider: stored.provider, fileName, contentType: 'application/pdf', sizeBytes: buffer.length, documentType });
@@ -91,9 +109,7 @@ export class AssetDocumentsService extends TenantScopedRepository {
     const storageRows = await this.db.assetDocument.aggregate([{ $match: { tenantId } }, { $group: { _id: null, bytes: { $sum: '$sizeBytes' } } }]);
     const currentBytes = Number(storageRows[0]?.bytes ?? 0);
     const maxStorageGb = await this.entitlements.getNumber(tenantId, 'max_storage_gb');
-    if (maxStorageGb !== null && currentBytes + incomingBytes > maxStorageGb * 1024 * 1024 * 1024) {
-      throw new ConflictException(`Tenant storage limit reached: max_storage_gb (${maxStorageGb})`);
-    }
+    if (maxStorageGb !== null && currentBytes + incomingBytes > maxStorageGb * 1024 * 1024 * 1024) throw new ConflictException(`Tenant storage limit reached: max_storage_gb (${maxStorageGb})`);
   }
 
   private async requireAsset(auth: AuthContext, assetId: string) {
