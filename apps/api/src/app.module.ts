@@ -23,6 +23,7 @@ import { AssetReportTemplateService } from './modules/assets/asset-report-templa
 import { AssetTransferService } from './modules/assets/asset-transfer.service';
 import { AssetAssignmentTransactionService } from './modules/assets/asset-assignment-transaction.service';
 import { AssetTimelineService } from './modules/assets/asset-timeline.service';
+import { AssetMaintenanceService } from './modules/assets/asset-maintenance.service';
 import { AssetDocumentsController } from './modules/assets/asset-documents.controller';
 import { AssetDocumentsService } from './modules/assets/asset-documents.service';
 import { CustomFieldsController } from './modules/assets/custom-fields.controller';
@@ -56,6 +57,6 @@ import { UsersService } from './modules/users/users.service';
 @Module({
  imports:[DatabaseModule,JwtModule.register({secret:process.env.JWT_ACCESS_SECRET,signOptions:{algorithm:'HS256'}}),ThrottlerModule.forRoot([{ttl:60000,limit:100}])],
  controllers:[AuthController,InviteController,AssetsController,AssetReportTemplateController,AssetDocumentsController,WarrantyController,CustomFieldsController,TenancyController,RbacController,IdentityController,IdentityAdminController,TenantLicenseController,SystemSubscriptionController,SystemPlanController,SystemEntitlementController,SystemAdminController,AuditController,UsersController],
- providers:[MongooseDatabaseService,MailService,AuthService,ProvisioningService,SessionService,InviteService,AssetsService,AssetImportService,AssetExcelReportService,AssetPdfReportService,AssetReportTemplateService,AssetTransferService,AssetAssignmentTransactionService,AssetTimelineService,AssetDocumentsService,WarrantyService,CustomFieldsService,TenancyService,RbacService,IdentityService,IdentitySecurityCacheService,TenantLicenseService,EntitlementService,SystemSubscriptionService,PlanEntitlementSyncService,SystemEntitlementAuditService,SystemAdminService,AuditService,{provide:APP_INTERCEPTOR,useClass:AuditInterceptor},{provide:APP_INTERCEPTOR,useClass:TenantLicenseAccessInterceptor},UsersService],
+ providers:[MongooseDatabaseService,MailService,AuthService,ProvisioningService,SessionService,InviteService,AssetsService,AssetImportService,AssetExcelReportService,AssetPdfReportService,AssetReportTemplateService,AssetTransferService,AssetAssignmentTransactionService,AssetTimelineService,AssetMaintenanceService,AssetDocumentsService,WarrantyService,CustomFieldsService,TenancyService,RbacService,IdentityService,IdentitySecurityCacheService,TenantLicenseService,EntitlementService,SystemSubscriptionService,PlanEntitlementSyncService,SystemEntitlementAuditService,SystemAdminService,AuditService,{provide:APP_INTERCEPTOR,useClass:AuditInterceptor},{provide:APP_INTERCEPTOR,useClass:TenantLicenseAccessInterceptor},UsersService],
 })
 export class AppModule {}
