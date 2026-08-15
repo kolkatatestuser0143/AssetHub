@@ -1,11 +1,94 @@
 'use client';
 
-import { Printer, ScanLine } from 'lucide-react';
+import { Printer, ScanLine, Settings2 } from 'lucide-react';
 import QRCode from 'qrcode';
-import { useEffect, useState } from 'react';
-const CODE39: Record<string, string> = { '0':'101001101101','1':'110100101011','2':'101100101011','3':'110110010101','4':'101001101011','5':'110100110101','6':'101100110101','7':'101001011011','8':'110100101101','9':'101100101101','A':'110101001011','B':'101101001011','C':'110110100101','D':'101011001011','E':'110101100101','F':'101101100101','G':'101010011011','H':'110101001101','I':'101101001101','J':'101011001101','K':'110101010011','L':'101101010011','M':'110110101001','N':'101011010011','O':'110101101001','P':'101101101001','Q':'101010110011','R':'110101011001','S':'101101011001','T':'101011011001','U':'110010101011','V':'100110101011','W':'110011010101','X':'100101101011','Y':'110010110101','Z':'100110110101','-':'100101011011','.':'110010101101',' ':'100110101101','*':'100101101101' };
-function barcodePattern(value: string) { const clean = `*${value.toUpperCase().replace(/[^0-9A-Z.\- ]/g, '')}*`; return clean.split('').map((c) => CODE39[c] ?? CODE39[' ']).join('0'); }
-export default function AssetLabel({ assetNumber, assetId }: { assetNumber: string; assetId: string }) { const [qr, setQr] = useState(''); const pattern = barcodePattern(assetNumber); useEffect(() => { QRCode.toDataURL(`${window.location.origin}/assets/${assetId}`, { margin:1, width:180, errorCorrectionLevel:'M' }).then(setQr).catch(() => setQr('')); }, [assetId]); return <section id='asset-label' className='rounded-2xl border border-slate-200 bg-white p-6 shadow-sm print:border print:shadow-none'>
-  <div className='flex items-center justify-between gap-3'><div><h2 className='font-semibold text-slate-950'>Asset label</h2><p className='mt-1 text-sm text-slate-500'>Printable QR + barcode label for inventory handling.</p></div><button onClick={() => window.print()} className='ui-interactive inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold'><Printer size={15}/>Print label</button></div>
-  <div className='mt-5 grid gap-6 md:grid-cols-[180px_1fr] md:items-center'><div className='rounded-xl border border-slate-200 bg-white p-3 text-center'>{qr ? <img src={qr} alt={`QR code for asset ${assetNumber}`} className='mx-auto h-[180px] w-[180px]'/> : <div className='grid h-[180px] place-items-center text-xs text-slate-400'>Generating QR…</div>}<p className='mt-2 text-xs text-slate-500'>Scan to open Asset 360</p></div><div className='min-w-0 rounded-xl border border-slate-200 bg-white p-4'><div className='mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500'><ScanLine size={14}/>Barcode</div><svg viewBox={`0 0 ${pattern.length} 64`} className='h-16 w-full' preserveAspectRatio='none' role='img' aria-label={`Barcode for ${assetNumber}`}>{pattern.split('').map((bit, i) => bit === '1' ? <rect key={i} x={i} y='0' width='1' height='45' fill='currentColor'/> : null)}</svg><p className='mt-2 text-center text-lg font-bold tracking-[0.24em] text-slate-900'>{assetNumber}</p></div></div>
-</section>; }
+import { useEffect, useMemo, useState } from 'react';
+
+type LabelSize = 'compact' | 'standard' | 'large';
+type LabelTemplate = 'standard' | 'compact';
+
+type AssetLabelProps = {
+  assetNumber: string;
+  assetId: string;
+  assetType?: string;
+  model?: string;
+  serialNumber?: string;
+  location?: string;
+  showControls?: boolean;
+  printable?: boolean;
+  initialSize?: LabelSize;
+  initialTemplate?: LabelTemplate;
+};
+
+const CODE128_PATTERNS = [
+  '212222','222122','222221','121223','121322','131222','122213','122312','132212','221213','221312','231212','112232','122132','122231','113222','123122','123221','223211','221132','221231','213212','223112','312131','311222','321122','321221','312212','322112','322211','212123','212321','232121','111323','131123','131321','112313','132113','132311','211313','231113','231311','112133','112331','132131','113123','113321','133121','313121','211331','231131','213113','213311','213131','311123','311321','331121','312113','312311','332111','314111','221411','431111','111224','111422','121124','121421','141122','141221','112214','112412','122114','122411','142112','142211','241211','221114','413111','241112','134111','111242','121142','121241','114212','124112','124211','411212','421112','421211','212141','214121','412121','111143','111341','131141','114113','114311','411113','411311','113141','114131','311141','411131','211412','211214','211232','2331112',
+];
+
+function encodeCode128B(value: string) {
+  const safe = Array.from(value).filter((char) => char.charCodeAt(0) >= 32 && char.charCodeAt(0) <= 126).join('') || 'ASSET';
+  const codes = Array.from(safe).map((char) => char.charCodeAt(0) - 32);
+  const checksum = (104 + codes.reduce((sum, code, index) => sum + code * (index + 1), 0)) % 103;
+  return [104, ...codes, checksum, 106].map((code) => CODE128_PATTERNS[code]).join('');
+}
+
+function Code128Barcode({ value }: { value: string }) {
+  const pattern = useMemo(() => encodeCode128B(value), [value]);
+  let offset = 10;
+  const bars: JSX.Element[] = [];
+  for (let i = 0; i < pattern.length; i += 1) {
+    const width = Number(pattern[i]);
+    const isBar = i % 2 === 0;
+    if (isBar) bars.push(<rect key={i} x={offset} y="0" width={width} height="48" fill="currentColor" />);
+    offset += width;
+  }
+  return <svg viewBox={`0 0 ${offset + 10} 48`} className="h-12 w-full" preserveAspectRatio="none" role="img" aria-label={`Code 128 barcode for ${value}`}>{bars}</svg>;
+}
+
+export default function AssetLabel({ assetNumber, assetId, assetType, model, serialNumber, location, showControls = true, printable = false, initialSize = 'standard', initialTemplate = 'standard' }: AssetLabelProps) {
+  const [qr, setQr] = useState('');
+  const [size, setSize] = useState<LabelSize>(initialSize);
+  const [template, setTemplate] = useState<LabelTemplate>(initialTemplate);
+  const stableUrl = typeof window === 'undefined' ? `/assets/${assetId}` : `${window.location.origin}/assets/${assetId}`;
+
+  useEffect(() => {
+    QRCode.toDataURL(stableUrl, { margin: 2, width: 320, errorCorrectionLevel: 'H', color: { dark: '#000000', light: '#ffffff' } })
+      .then(setQr)
+      .catch(() => setQr(''));
+  }, [stableUrl]);
+
+  const displayModel = model || '';
+  const displaySerial = serialNumber || '';
+  const displayLocation = location || '';
+  const showDetails = template === 'standard';
+  const labelClass = size === 'compact' ? 'asset-label asset-label-compact' : size === 'large' ? 'asset-label asset-label-large' : 'asset-label asset-label-standard';
+
+  return <section className={`${printable ? '' : 'rounded-2xl border border-slate-200 bg-white p-6 shadow-sm'} space-y-4`}>
+    {showControls && <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between print:hidden">
+      <div><h2 className="font-semibold text-slate-950">Asset label</h2><p className="mt-1 text-sm text-slate-500">Stable QR + Code 128 label for physical inventory handling.</p></div>
+      <div className="flex flex-wrap gap-2">
+        <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600"><Settings2 size={14}/><span>Template</span><select value={template} onChange={(e) => setTemplate(e.target.value as LabelTemplate)} className="border-0 bg-transparent p-0 text-xs font-semibold outline-none"><option value="standard">Standard</option><option value="compact">Compact</option></select></label>
+        <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600"><span>Size</span><select value={size} onChange={(e) => setSize(e.target.value as LabelSize)} className="border-0 bg-transparent p-0 text-xs font-semibold outline-none"><option value="compact">2 × 1 in</option><option value="standard">3 × 2 in</option><option value="large">4 × 2 in</option></select></label>
+        <button onClick={() => window.print()} className="ui-interactive inline-flex items-center gap-2 rounded-xl bg-[var(--theme-primary)] px-3 py-2 text-sm font-semibold text-white"><Printer size={15}/>Print</button>
+      </div>
+    </div>}
+
+    <div className={printable ? '' : 'overflow-x-auto'}>
+      <div className={labelClass} data-label-size={size} data-label-template={template}>
+        <div className="asset-label-brand">AssetHub</div>
+        <div className="asset-label-main">
+          <div className="asset-label-qr-wrap">{qr ? <img src={qr} alt={`QR code for asset ${assetNumber}`} className="asset-label-qr"/> : <div className="asset-label-qr-placeholder">QR</div>}<span>Scan to open Asset 360</span></div>
+          <div className="asset-label-info">
+            <div className="asset-label-number">{assetNumber}</div>
+            {showDetails && <>
+              {assetType && <div className="asset-label-line"><strong>Type</strong><span>{assetType}</span></div>}
+              {displayModel && <div className="asset-label-line"><strong>Model</strong><span>{displayModel}</span></div>}
+              {displaySerial && <div className="asset-label-line"><strong>Serial</strong><span>{displaySerial}</span></div>}
+              {displayLocation && <div className="asset-label-line"><strong>Location</strong><span>{displayLocation}</span></div>}
+            </>}
+            <div className="asset-label-barcode"><Code128Barcode value={assetNumber}/><div className="asset-label-barcode-text">{assetNumber}</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>;
+}
