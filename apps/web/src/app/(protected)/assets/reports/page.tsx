@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Download, FileSpreadsheet, FileText } from 'lucide-react';
+import { ArrowLeft, Download, FileSpreadsheet, FileText, Save } from 'lucide-react';
 import { apiFetch, downloadFile } from '../../../../../lib/api-client';
 
 const STATES = ['REQUESTED', 'IN_STOCK', 'ASSIGNED', 'IN_REPAIR', 'LOST_STOLEN', 'RETIRED', 'DISPOSED'];
@@ -63,9 +63,10 @@ export default function AssetReportsPage() {
     <div className="mx-auto max-w-4xl space-y-6">
       <Link href="/assets" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-950"><ArrowLeft size={16}/>Back to Assets</Link>
       <header>
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-600">Reports</p>
-        <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">Asset Reports</h1>
-        <p className="mt-2 text-sm text-slate-500">Choose filters and export the tenant-scoped inventory as Excel or a printable PDF.</p>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-600">Reports</p><h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">Asset Reports</h1><p className="mt-2 text-sm text-slate-500">Choose filters and export the tenant-scoped inventory as Excel or a printable PDF.</p></div>
+          <Link href="/assets/reports/templates" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Save size={16}/>Saved templates</Link>
+        </div>
       </header>
       {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
       {success && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div>}
