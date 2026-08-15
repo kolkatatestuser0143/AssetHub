@@ -11,7 +11,7 @@ import { IdentityProviderConfig, IdentityProviderConfigModelName, ScimToken, Sci
 import { IntegrationInstance, IntegrationInstanceModelName } from '../models/integration.schemas';
 import { Plan, PlanModelName, Subscription, SubscriptionModelName, Entitlement, EntitlementModelName } from '../models/billing.schemas';
 import { AuditEvent, AuditEventModelName, PlatformAdminNote, PlatformAdminNoteModelName } from '../models/audit.schemas';
-import { AssetReportTemplate, AssetReportTemplateModelName, AssetAcknowledgementTemplate, AssetAcknowledgementTemplateModelName } from '../models/report.schemas';
+import { AssetReportTemplate, AssetReportTemplateModelName, AssetAcknowledgementTemplate, AssetAcknowledgementTemplateModelName, AssetAcknowledgement, AssetAcknowledgementModelName } from '../models/report.schemas';
 
 @Injectable()
 export class MongooseDatabaseService {
@@ -21,7 +21,7 @@ export class MongooseDatabaseService {
     @InjectModel(AssetTypeModelName) readonly assetType: Model<AssetType>, @InjectModel(AssetModelName) readonly asset: Model<Asset>, @InjectModel(AssetAuditEventModelName) readonly assetAuditEvent: Model<AssetAuditEvent>, @InjectModel(AssetAssignmentModelName) readonly assetAssignment: Model<AssetAssignment>, @InjectModel(AssetTransferModelName) readonly assetTransfer: Model<AssetTransfer>,
     @InjectModel(AssetMaintenanceModelName) readonly assetMaintenance: Model<AssetMaintenance>, @InjectModel(VendorModelName) readonly vendor: Model<Vendor>, @InjectModel(WarrantyModelName) readonly warranty: Model<Warranty>, @InjectModel(CustomFieldDefModelName) readonly customFieldDefinition: Model<CustomFieldDefinition>, @InjectModel(AssetCustomFieldValueModelName) readonly assetCustomFieldValue: Model<AssetCustomFieldValue>, @InjectModel(AssetDocumentModelName) readonly assetDocument: Model<AssetDocumentMeta>,
     @InjectModel(IdentityProviderConfigModelName) readonly identityProviderConfig: Model<IdentityProviderConfig>, @InjectModel(ScimTokenModelName) readonly scimToken: Model<ScimToken>, @InjectModel(ScimSyncLogModelName) readonly scimSyncLog: Model<ScimSyncLog>, @InjectModel(IntegrationInstanceModelName) readonly integrationInstance: Model<IntegrationInstance>, @InjectModel(PlanModelName) readonly plan: Model<Plan>, @InjectModel(SubscriptionModelName) readonly subscription: Model<Subscription>, @InjectModel(EntitlementModelName) readonly entitlement: Model<Entitlement>,
-    @InjectModel(AuditEventModelName) readonly auditEvent: Model<AuditEvent>, @InjectModel(PlatformAdminNoteModelName) readonly platformAdminNote: Model<PlatformAdminNote>, @InjectModel(AssetReportTemplateModelName) readonly assetReportTemplate: Model<AssetReportTemplate>, @InjectModel(AssetAcknowledgementTemplateModelName) readonly assetAcknowledgementTemplate: Model<AssetAcknowledgementTemplate>,
+    @InjectModel(AuditEventModelName) readonly auditEvent: Model<AuditEvent>, @InjectModel(PlatformAdminNoteModelName) readonly platformAdminNote: Model<PlatformAdminNote>, @InjectModel(AssetReportTemplateModelName) readonly assetReportTemplate: Model<AssetReportTemplate>, @InjectModel(AssetAcknowledgementTemplateModelName) readonly assetAcknowledgementTemplate: Model<AssetAcknowledgementTemplate>, @InjectModel(AssetAcknowledgementModelName) readonly assetAcknowledgement: Model<AssetAcknowledgement>,
   ) {}
 
   async findByIdOrThrow<T>(model: Model<any>, id: string, label: string): Promise<T> { const doc = await model.findById(id).lean(); if (!doc) throw new NotFoundException(`${label} not found`); return doc as T; }
