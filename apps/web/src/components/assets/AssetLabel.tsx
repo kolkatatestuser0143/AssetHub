@@ -1,0 +1,19 @@
+'use client';
+
+import { Printer, QrCode } from 'lucide-react';
+
+const CODE39: Record<string, string> = { '0':'101001101101', '1':'110100101011', '2':'101100101011', '3':'110110010101', '4':'101001101011', '5':'110100110101', '6':'101100110101', '7':'101001011011', '8':'110100101101', '9':'101100101101', 'A':'110101001011', 'B':'101101001011', 'C':'110110100101', 'D':'101011001011', 'E':'110101100101', 'F':'101101100101', 'G':'101010011011', 'H':'110101001101', 'I':'101101001101', 'J':'101011001101', 'K':'110101010011', 'L':'101101010011', 'M':'110110101001', 'N':'101011010011', 'O':'110101101001', 'P':'101101101001', 'Q':'101010110011', 'R':'110101011001', 'S':'101101011001', 'T':'101011011001', 'U':'110010101011', 'V':'100110101011', 'W':'110011010101', 'X':'100101101011', 'Y':'110010110101', 'Z':'100110110101', '-':'100101011011', '.':'110010101101', ' ':'100110101101', '*':'100101101101' };
+
+function barcodePattern(value: string) { const clean = `*${value.toUpperCase().replace(/[^0-9A-Z.\- ]/g, '')}*`; return clean.split('').map((c) => CODE39[c] ?? CODE39[' ']).join('0'); }
+
+export default function AssetLabel({ assetNumber, assetId }: { assetNumber: string; assetId: string }) {
+  const pattern = barcodePattern(assetNumber);
+  const target = typeof window === 'undefined' ? '' : `${window.location.origin}/assets/${assetId}`;
+  return <section className='rounded-2xl border border-slate-200 bg-white p-6 shadow-sm print:border print:shadow-none'>
+    <div className='flex items-center justify-between gap-3'><div><h2 className='font-semibold text-slate-950'>Asset label</h2><p className='mt-1 text-sm text-slate-500'>Print the asset number and scan target for inventory handling.</p></div><button onClick={() => window.print()} className='ui-interactive inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold'><Printer size={15}/>Print label</button></div>
+    <div className='mt-5 flex flex-col gap-6 md:flex-row md:items-center'>
+      <div className='rounded-xl border border-slate-200 bg-white p-4'><div className='mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500'><QrCode size={14}/>Scan target</div><div className='break-all text-xs text-slate-600'>{target || `/assets/${assetId}`}</div></div>
+      <div className='min-w-0 flex-1 rounded-xl border border-slate-200 bg-white p-4'><svg viewBox={`0 0 ${pattern.length} 64`} className='h-16 w-full' preserveAspectRatio='none' role='img' aria-label={`Barcode for ${assetNumber}`}>{pattern.split('').map((bit, i) => bit === '1' ? <rect key={i} x={i} y='0' width='1' height='45' fill='currentColor'/> : null)}</svg><p className='mt-2 text-center text-lg font-bold tracking-[0.24em] text-slate-900'>{assetNumber}</p></div>
+    </div>
+  </section>;
+}
