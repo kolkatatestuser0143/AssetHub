@@ -5,6 +5,7 @@ import { UserModelName, UserSchema, SessionModelName, SessionSchema, LoginHistor
 import { PermissionModelName, PermissionSchema, RoleModelName, RoleSchema } from '../../models/rbac.schemas';
 import { AssetTypeModelName, AssetTypeSchema, AssetModelName, AssetSchema, AssetAuditEventModelName, AssetAuditEventSchema, AssetAssignmentModelName, AssetAssignmentSchema, AssetTransferModelName, AssetTransferSchema } from '../../models/asset.schemas';
 import { VendorModelName, VendorSchema, WarrantyModelName, WarrantySchema, CustomFieldDefModelName, CustomFieldDefSchema, AssetCustomFieldValueModelName, AssetCustomFieldValueSchema, AssetDocumentModelName, AssetDocumentSchema } from '../../models/asset-support.schemas';
+import { AssetMaintenanceModelName, AssetMaintenanceSchema } from '../../models/maintenance.schemas';
 import { IdentityProviderConfigModelName, IdentityProviderConfigSchema, ScimTokenModelName, ScimTokenSchema, ScimSyncLogModelName, ScimSyncLogSchema } from '../../models/identity.schemas';
 import { IntegrationInstanceModelName, IntegrationInstanceSchema } from '../../models/integration.schemas';
 import { PlanModelName, PlanSchema, SubscriptionModelName, SubscriptionSchema, EntitlementModelName, EntitlementSchema } from '../../models/billing.schemas';
@@ -20,6 +21,7 @@ const MODEL_PROVIDERS = [
   { name: RoleModelName, schema: RoleSchema }, { name: AssetTypeModelName, schema: AssetTypeSchema },
   { name: AssetModelName, schema: AssetSchema }, { name: AssetAuditEventModelName, schema: AssetAuditEventSchema },
   { name: AssetAssignmentModelName, schema: AssetAssignmentSchema }, { name: AssetTransferModelName, schema: AssetTransferSchema },
+  { name: AssetMaintenanceModelName, schema: AssetMaintenanceSchema },
   { name: VendorModelName, schema: VendorSchema }, { name: WarrantyModelName, schema: WarrantySchema },
   { name: CustomFieldDefModelName, schema: CustomFieldDefSchema }, { name: AssetCustomFieldValueModelName, schema: AssetCustomFieldValueSchema },
   { name: AssetDocumentModelName, schema: AssetDocumentSchema }, { name: IdentityProviderConfigModelName, schema: IdentityProviderConfigSchema },
