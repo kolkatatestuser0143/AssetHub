@@ -1,0 +1,107 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { MongooseDatabaseService } from '../../common/mongoose-database.service';
+import { AuthContext } from '../../common/guards/tenant-context.guard';
+import { TenantScopedRepository } from '../../common/tenant-scoped.repository';
+
+const DEFAULT_CONTENT = `ASSET HANDOVER ACKNOWLEDGEMENT\n\nI, {{employee.name}} (Employee ID: {{employee.employeeId}}), acknowledge receipt of the following company asset:\n\nAsset: {{asset.assetNumber}}\nType: {{asset.type}}\nSerial Number: {{asset.serialNumber}}\nAssigned Date: {{assignment.date}}\n\nI confirm that the above asset has been issued to me for business use and I will take reasonable care of it, use it in accordance with company policy, and return it when requested or when my employment/assignment ends.\n\nEmployee Name: {{employee.name}}\nEmployee ID: {{employee.employeeId}}\nSignature: ______________________________\nDate: ____________________\n\nIssued By: {{issuer.name}}\nDate: {{assignment.date}}`;
+
+@Injectable()
+export class AssetAcknowledgementService extends TenantScopedRepository {
+  constructor(private readonly db: MongooseDatabaseService) { super(); }
+
+  async listTemplates(auth: AuthContext) {
+    return this.db.assetAcknowledgementTemplate.find({ tenantId: auth.tenantId }).sort({ isDefault: -1, name: 1 }).lean();
+  }
+
+  async ensureDefault(auth: AuthContext) {
+    const existing = await this.db.assetAcknowledgementTemplate.findOne({ tenantId: auth.tenantId, isDefault: true }).lean();
+    if (existing) return existing;
+    return this.db.assetAcknowledgementTemplate.create({ tenantId: auth.tenantId, name: 'Default asset acknowledgement', content: DEFAULT_CONTENT, createdBy: auth.userId, isDefault: true });
+  }
+
+  async createTemplate(auth: AuthContext, name: string, content: string) {
+    const cleanName = String(name ?? '').trim();
+    const cleanContent = String(content ?? '').trim();
+    if (!cleanName || !cleanContent) throw new NotFoundException('Template name and content are required');
+    return this.db.assetAcknowledgementTemplate.create({ tenantId: auth.tenantId, name: cleanName, content: cleanContent, createdBy: auth.userId, isDefault: false });
+  }
+
+  async updateTemplate(auth: AuthContext, templateId: string, name: string, content: string) {
+    const doc = await this.db.assetAcknowledgementTemplate.findOneAndUpdate({ _id: templateId, tenantId: auth.tenantId }, { $set: { name: String(name ?? '').trim(), content: String(content ?? '').trim() } }, { new: true }).lean();
+    if (!doc) throw new NotFoundException('Acknowledgement template not found');
+    return doc;
+  }
+
+  async setDefault(auth: AuthContext, templateId: string) {
+    const target = await this.db.assetAcknowledgementTemplate.findOne({ _id: templateId, tenantId: auth.tenantId }).lean();
+    if (!target) throw new NotFoundException('Acknowledgement template not found');
+    await this.db.assetAcknowledgementTemplate.updateMany({ tenantId: auth.tenantId }, { $set: { isDefault: false } });
+    return this.db.assetAcknowledgementTemplate.findOneAndUpdate({ _id: templateId, tenantId: auth.tenantId }, { $set: { isDefault: true } }, { new: true }).lean();
+  }
+
+  async deleteTemplate(auth: AuthContext, templateId: string) {
+    const target = await this.db.assetAcknowledgementTemplate.findOne({ _id: templateId, tenantId: auth.tenantId }).lean();
+    if (!target) throw new NotFoundException('Acknowledgement template not found');
+    if (target.isDefault) throw new NotFoundException('Default acknowledgement template cannot be deleted');
+    await this.db.assetAcknowledgementTemplate.deleteOne({ _id: templateId, tenantId: auth.tenantId });
+    return { ok: true };
+  }
+
+  async generate(auth: AuthContext, assetId: string, templateId?: string): Promise<Buffer> {
+    const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).lean();
+    if (!asset) throw new NotFoundException('Asset not found');
+    const assignment = await this.db.assetAssignment.findOne({ assetId, returnedAt: { $exists: false } }).sort({ assignedAt: -1 }).lean();
+    if (!assignment?.userId) throw new NotFoundException('Asset has no active assignment');
+    const employee = await this.db.user.findOne({ _id: assignment.userId, tenantId: auth.tenantId, companyId: auth.companyId, accountType: 'TENANT' }).lean();
+    if (!employee) throw new NotFoundException('Assigned employee not found');
+    const assetType = await this.db.assetType.findOne({ _id: asset.assetTypeId, companyId: auth.companyId }).lean();
+    const issuer = await this.db.user.findOne({ _id: auth.userId, tenantId: auth.tenantId }).lean();
+    const template = templateId
+      ? await this.db.assetAcknowledgementTemplate.findOne({ _id: templateId, tenantId: auth.tenantId }).lean()
+      : await this.db.assetAcknowledgementTemplate.findOne({ tenantId: auth.tenantId, isDefault: true }).lean() ?? await this.ensureDefault(auth);
+    if (!template) throw new NotFoundException('Acknowledgement template not found');
+    const values: Record<string, string> = {
+      '{{employee.name}}': `${employee.firstName} ${employee.lastName}`.trim(),
+      '{{employee.employeeId}}': employee.employeeId ?? '',
+      '{{employee.email}}': employee.email ?? '',
+      '{{employee.jobTitle}}': employee.jobTitle ?? '',
+      '{{asset.assetNumber}}': asset.assetNumber ?? '',
+      '{{asset.type}}': assetType?.name ?? '',
+      '{{asset.serialNumber}}': asset.serialNumber ?? '',
+      '{{asset.model}}': asset.model ?? '',
+      '{{assignment.date}}': assignment.assignedAt ? new Date(assignment.assignedAt).toLocaleDateString() : '',
+      '{{issuer.name}}': issuer ? `${issuer.firstName} ${issuer.lastName}`.trim() : '',
+    };
+    const body = Object.entries(values).reduce((text, [token, value]) => text.split(token).join(value), template.content);
+    return buildPdf(body);
+  }
+}
+
+function buildPdf(content: string): Buffer {
+  const lines = content.split(/\r?\n/).flatMap((line) => wrap(line, 92));
+  const pageHeight = 842; const pageWidth = 595; const margin = 48; const lineHeight = 14; const maxLines = 50;
+  const pages: string[][] = [];
+  for (let i = 0; i < lines.length; i += maxLines) pages.push(lines.slice(i, i + maxLines));
+  if (!pages.length) pages.push(['']);
+  const objects: string[] = [''];
+  objects.push('<< /Type /Catalog /Pages 2 0 R >>');
+  const fontObject = 3 + pages.length * 2;
+  objects.push(`<< /Type /Pages /Kids [${pages.map((_, i) => `${4 + i * 2} 0 R`).join(' ')}] /Count ${pages.length} >>`);
+  for (let i = 0; i < pages.length; i += 1) {
+    const pageObj = 4 + i * 2; const contentObj = pageObj + 1;
+    const commands = ['BT', '/F1 10 Tf', `${margin} ${pageHeight - 56} Td`];
+    pages[i].forEach((line, idx) => { if (idx > 0) commands.push(`0 -${lineHeight} Td`); commands.push(`(${pdfEscape(line)}) Tj`); });
+    commands.push('ET');
+    const stream = commands.join('\n');
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 ${fontObject} 0 R >> >> /Contents ${contentObj} 0 R >>`);
+    objects.push(`<< /Length ${Buffer.byteLength(stream, 'utf8')} >>\nstream\n${stream}\nendstream`);
+  }
+  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  const chunks: Buffer[] = [Buffer.from('%PDF-1.4\n')]; const offsets: number[] = [0]; let offset = chunks[0].length;
+  for (let i = 1; i < objects.length; i += 1) { offsets[i] = offset; const obj = Buffer.from(`${i} 0 obj\n${objects[i]}\nendobj\n`); chunks.push(obj); offset += obj.length; }
+  const xrefOffset = offset; const xref = ['xref', `0 ${objects.length}`, '0000000000 65535 f '];
+  for (let i = 1; i < objects.length; i += 1) xref.push(`${String(offsets[i]).padStart(10, '0')} 00000 n `);
+  xref.push('trailer', `<< /Size ${objects.length} /Root 1 0 R >>`, 'startxref', String(xrefOffset), '%%EOF'); chunks.push(Buffer.from(`${xref.join('\n')}\n`)); return Buffer.concat(chunks);
+}
+function wrap(text: string, width: number) { if (!text) return ['']; const words = text.split(/\s+/); const result: string[] = []; let line = ''; for (const word of words) { const next = line ? `${line} ${word}` : word; if (next.length > width && line) { result.push(line); line = word; } else line = next; } if (line) result.push(line); return result; }
+function pdfEscape(value: string) { return value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)').replace(/\r?\n/g, ' '); }
