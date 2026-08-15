@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { BarChart3, Download, PackageCheck, RefreshCw, Search, ShieldAlert, Users, Wrench } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { apiFetch } from '../../../lib/api-client';
+import { useAuth } from '../../../lib/auth-context';
 
 type Warranty = { provider?: string; expiresAt?: string };
 type ReportAsset = {
@@ -42,13 +44,22 @@ function warrantyState(value?: Warranty | null) {
 }
 
 export default function ReportsPage() {
+  const { status: authStatus, hasFeature } = useAuth();
+  const router = useRouter();
   const [report, setReport] = useState<Report | null>(null);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('ALL');
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const reportsEnabled = hasFeature('advanced_reports_enabled');
+
+  useEffect(() => {
+    if (authStatus === 'authenticated' && !reportsEnabled) router.replace('/dashboard');
+  }, [authStatus, reportsEnabled, router]);
+
   async function load() {
+    if (!reportsEnabled) return;
     setBusy(true);
     setError(null);
     try {
@@ -60,7 +71,7 @@ export default function ReportsPage() {
     }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { if (authStatus === 'authenticated' && reportsEnabled) void load(); }, [authStatus, reportsEnabled]);
 
   const filteredAssets = useMemo(() => {
     const list = report?.assets ?? [];
@@ -87,6 +98,9 @@ export default function ReportsPage() {
     link.click();
     URL.revokeObjectURL(url);
   };
+
+  if (authStatus === 'loading') return <div className="p-8 text-sm text-slate-500">Checking license…</div>;
+  if (!reportsEnabled) return <div className="p-8 text-sm text-slate-500">Reports are not available on the current license.</div>;
 
   const statusEntries = Object.entries(report?.statusCounts ?? {}).sort((a, b) => b[1] - a[1]);
   const maxCount = Math.max(1, ...statusEntries.map(([, count]) => count));
