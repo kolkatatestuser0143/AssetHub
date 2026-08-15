@@ -33,6 +33,23 @@ export class UploadcareDocumentStorage implements DocumentStorage {
     return { key, provider: 'uploadcare', url: `${this.cdnBase}/${key}/` };
   }
 
+  async register(uuid: string): Promise<StoredDocument> {
+    this.assertConfigured();
+    const key = String(uuid ?? '').trim();
+    if (!key) throw new ServiceUnavailableException('Uploadcare file identifier is required');
+
+    const method = 'GET';
+    const date = new Date().toUTCString();
+    const uri = `/files/${encodeURIComponent(key)}/`;
+    const signature = createHmac('sha1', this.secretKey).update([method, '', '', date, uri].join('\n')).digest('hex');
+    const response = await fetch(`${UPLOADCARE_API}${uri}`, {
+      method,
+      headers: { Accept: UPLOADCARE_ACCEPT, Date: date, Authorization: `Uploadcare ${this.publicKey}:${signature}` },
+    });
+    await this.readJson(response, 'Uploadcare file verification failed');
+    return { key, provider: 'uploadcare', url: `${this.cdnBase}/${key}/` };
+  }
+
   async download(key: string) {
     this.assertConfigured();
     const response = await fetch(`${this.cdnBase}/${encodeURIComponent(key)}/`);
