@@ -1,5 +1,5 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
-import { createHash, createHmac } from 'crypto';
+import { createHmac } from 'crypto';
 import { DocumentStorage, StoredDocument } from './document-storage';
 
 const UPLOADCARE_API = 'https://api.uploadcare.com';
@@ -21,31 +21,27 @@ export class UploadcareDocumentStorage implements DocumentStorage {
 
   async upload(input: { buffer: Buffer; fileName: string; contentType: string }): Promise<StoredDocument> {
     this.assertConfigured();
-
     const form = new FormData();
     form.append('UPLOADCARE_PUB_KEY', this.publicKey);
     form.append('UPLOADCARE_STORE', 'auto');
-    form.append('file', new Blob([input.buffer], { type: input.contentType }), input.fileName);
+    form.append('file', new Blob([new Uint8Array(input.buffer)], { type: input.contentType }), input.fileName);
 
     const response = await fetch(UPLOADCARE_UPLOAD, { method: 'POST', body: form });
     const body = await this.readJson(response, 'Uploadcare upload failed');
     const key = String(body?.file ?? '');
     if (!key) throw new ServiceUnavailableException('Uploadcare did not return a file identifier');
-
     return { key, provider: 'uploadcare', url: `${this.cdnBase}/${key}/` };
   }
 
   async download(key: string) {
     this.assertConfigured();
-    const fileKey = encodeURIComponent(key);
-    const response = await fetch(`${this.cdnBase}/${key}/`);
+    const response = await fetch(`${this.cdnBase}/${encodeURIComponent(key)}/`);
     if (!response.ok) {
       throw new ServiceUnavailableException(`Stored document could not be downloaded from Uploadcare (${response.status})`);
     }
     return {
       buffer: Buffer.from(await response.arrayBuffer()),
       contentType: response.headers.get('content-type') ?? undefined,
-      fileName: fileKey,
     };
   }
 
@@ -54,22 +50,12 @@ export class UploadcareDocumentStorage implements DocumentStorage {
     const method = 'DELETE';
     const date = new Date().toUTCString();
     const uri = `/files/${encodeURIComponent(key)}/`;
-    const signature = createHmac('sha1', this.secretKey)
-      .update([method, '', '', date, uri].join('\n'))
-      .digest('hex');
-
+    const signature = createHmac('sha1', this.secretKey).update([method, '', '', date, uri].join('\n')).digest('hex');
     const response = await fetch(`${UPLOADCARE_API}${uri}`, {
       method,
-      headers: {
-        Accept: UPLOADCARE_ACCEPT,
-        Date: date,
-        Authorization: `Uploadcare ${this.publicKey}:${signature}`,
-      },
+      headers: { Accept: UPLOADCARE_ACCEPT, Date: date, Authorization: `Uploadcare ${this.publicKey}:${signature}` },
     });
-
-    if (!response.ok && response.status !== 404) {
-      await this.readJson(response, 'Uploadcare delete failed');
-    }
+    if (!response.ok && response.status !== 404) await this.readJson(response, 'Uploadcare delete failed');
   }
 
   private async readJson(response: Response, fallback: string): Promise<any> {
