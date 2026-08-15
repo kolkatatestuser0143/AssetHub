@@ -13,7 +13,13 @@ export class UserAsset360Service extends TenantScopedRepository {
     if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found');
     const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
     if (!user) throw new NotFoundException('User not found');
-    return user;
+    return {
+      id: String(user._id), employeeId: user.employeeId, email: user.email,
+      firstName: user.firstName, lastName: user.lastName, jobTitle: user.jobTitle,
+      phone: user.phone, companyId: user.companyId, departmentId: user.departmentId,
+      locationId: user.locationId, isActive: user.isActive, forcePasswordReset: user.forcePasswordReset,
+      roleIds: user.roleIds ?? [],
+    };
   }
 
   private async assignedData(auth: AuthContext, userId: string) {
@@ -47,7 +53,7 @@ export class UserAsset360Service extends TenantScopedRepository {
       ...transfers.map((transfer: any) => ({ type: 'TRANSFER', timestamp: transfer.completedAt ?? transfer.requestedAt, assetId: transfer.assetId, title: `Transfer ${String(transfer.status).toLowerCase()}`, status: transfer.status })),
     ].sort((a, b) => new Date(b.timestamp ?? 0).getTime() - new Date(a.timestamp ?? 0).getTime()).slice(0, 100);
     return {
-      user: toDto(user),
+      user,
       assetSummary: { currentCount: currentRows.length, typeCounts: counts },
       currentAssets: currentRows,
       history: assignments.map((assignment: any) => {
