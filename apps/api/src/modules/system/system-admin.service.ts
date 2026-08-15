@@ -38,33 +38,15 @@ export class SystemAdminService {
   async setTenantStatus(tenantId: string, active: boolean, actorUserId?: string, reason?: string) {
     const tenant = await this.db.tenant.findById(tenantId).lean();
     if (!tenant) throw new NotFoundException('Tenant not found');
-
     if (active) {
-      await this.db.tenant.updateOne(
-        { _id: tenantId },
-        { $set: { status: TenantStatus.ACTIVE }, $unset: { suspendedAt: 1, suspendedBy: 1, suspensionReason: 1 } },
-      );
+      await this.db.tenant.updateOne({ _id: tenantId }, { $set: { status: TenantStatus.ACTIVE }, $unset: { suspendedAt: 1, suspendedBy: 1, suspensionReason: 1 } });
     } else {
-      await this.db.tenant.updateOne(
-        { _id: tenantId },
-        { $set: { status: TenantStatus.SUSPENDED, suspendedAt: new Date(), suspendedBy: actorUserId, suspensionReason: reason?.trim() || 'Suspended by platform administrator' } },
-      );
+      await this.db.tenant.updateOne({ _id: tenantId }, { $set: { status: TenantStatus.SUSPENDED, suspendedAt: new Date(), suspendedBy: actorUserId, suspensionReason: reason?.trim() || 'Suspended by platform administrator' } });
       const tenantUsers = await this.db.user.find({ tenantId, accountType: 'TENANT' }).select({ _id: 1 }).lean();
       const userIds = tenantUsers.map((user: any) => String(user._id));
-      if (userIds.length) {
-        await this.db.session.updateMany(
-          { userId: { $in: userIds }, revokedAt: { $exists: false } },
-          { $set: { revokedAt: new Date(), revokedReason: 'tenant_suspended' } },
-        );
-      }
+      if (userIds.length) await this.db.session.updateMany({ userId: { $in: userIds }, revokedAt: { $exists: false } }, { $set: { revokedAt: new Date(), revokedReason: 'tenant_suspended' } });
     }
-
-    return {
-      ok: true,
-      tenantId,
-      status: active ? TenantStatus.ACTIVE : TenantStatus.SUSPENDED,
-      actorUserId: actorUserId ?? null,
-    };
+    return { ok: true, tenantId, status: active ? TenantStatus.ACTIVE : TenantStatus.SUSPENDED, actorUserId: actorUserId ?? null };
   }
 
   async platformUsers() {
@@ -73,11 +55,7 @@ export class SystemAdminService {
       this.db.role.find({ 'permissions.permissionKey': { $regex: '^platform:' } }).sort({ name: 1 }).lean(),
     ]);
     const roleMap = new Map(roles.map((r: any) => [String(r._id), { id: String(r._id), name: r.name, permissions: r.permissions ?? [] }]));
-    return docs.map((u: any) => ({
-      id: String(u._id), email: u.email, firstName: u.firstName, lastName: u.lastName, isActive: u.isActive,
-      roleIds: (u.roleIds ?? []).map(String),
-      roles: (u.roleIds ?? []).map((id: string) => roleMap.get(String(id))).filter(Boolean),
-    }));
+    return docs.map((u: any) => ({ id: String(u._id), email: u.email, firstName: u.firstName, lastName: u.lastName, isActive: u.isActive, roleIds: (u.roleIds ?? []).map(String), roles: (u.roleIds ?? []).map((id: string) => roleMap.get(String(id))).filter(Boolean) }));
   }
 
   async platformRoles() {
@@ -94,21 +72,14 @@ export class SystemAdminService {
     if (normalized.length !== validRoleIds.length) throw new BadRequestException('Invalid role id');
     const roles = await this.db.role.find({ _id: { $in: validRoleIds }, 'permissions.permissionKey': { $regex: '^platform:' } }).lean();
     if (roles.length !== normalized.length) throw new BadRequestException('One or more roles are not platform roles');
-    if (!roles.some((role: any) => (role.permissions ?? []).some((p: any) => p.permissionKey === 'platform:console:access'))) {
-      throw new BadRequestException('At least one selected role must grant platform console access');
-    }
+    if (!roles.some((role: any) => (role.permissions ?? []).some((p: any) => p.permissionKey === 'platform:console:access'))) throw new BadRequestException('At least one selected role must grant platform console access');
     await this.db.user.updateOne({ _id: user._id }, { $set: { roleIds: normalized, updatedAt: new Date() } });
     return { ok: true, userId, roleIds: normalized, actorUserId: actorUserId ?? null };
   }
 
   async audit() {
     const events = await this.db.auditEvent.find({}).sort({ occurredAt: -1, createdAt: -1 }).limit(250).lean();
-    return events.map((e: any) => ({
-      id: String(e._id), tenantId: e.tenantId ?? null, actorUserId: e.actorUserId ?? null,
-      action: e.action, resourceType: e.resourceType, resourceId: e.resourceId ?? null,
-      result: e.result, route: e.route ?? null, method: e.method ?? null, statusCode: e.statusCode ?? null,
-      ipAddress: e.ipAddress ?? null, occurredAt: e.occurredAt ?? e.createdAt,
-    }));
+    return events.map((e: any) => ({ id: String(e._id), tenantId: e.tenantId ?? null, actorUserId: e.actorUserId ?? null, action: e.action, resourceType: e.resourceType, resourceId: e.resourceId ?? null, result: e.result, route: e.route ?? null, method: e.method ?? null, statusCode: e.statusCode ?? null, ipAddress: e.ipAddress ?? null, occurredAt: e.occurredAt ?? e.createdAt }));
   }
 
   async health() {
@@ -124,5 +95,30 @@ export class SystemAdminService {
     ]);
     const assetByTenant = await this.db.asset.aggregate([{ $group: { _id: '$tenantId', count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 20 }]);
     return { totals: { tenants, users, assets, subscriptions, auditEvents }, assetByTenant: assetByTenant.map((x: any) => ({ tenantId: String(x._id), count: x.count })) };
+  }
+
+  private async tenantUsage(tenantId: string) {
+    if (!Types.ObjectId.isValid(tenantId)) throw new BadRequestException('Invalid tenant id');
+    const filter = { tenantId: new Types.ObjectId(tenantId) };
+    const [users, assets, companies, businessUnits, plants, locations, departments, vendors, assetDocuments, subscription] = await Promise.all([
+      this.db.user.countDocuments({ tenantId: new Types.ObjectId(tenantId), accountType: 'TENANT' }),
+      this.db.asset.countDocuments(filter),
+      this.db.company.countDocuments(filter),
+      this.db.businessUnit.countDocuments(filter),
+      this.db.plant.countDocuments(filter),
+      this.db.location.countDocuments(filter),
+      this.db.department.countDocuments(filter),
+      this.db.vendor.countDocuments(filter),
+      this.db.assetDocument.countDocuments(filter),
+      this.db.subscription.findOne({ tenantId: new Types.ObjectId(tenantId) }).lean(),
+    ]);
+    return { tenantId, subscription: subscription ? { id: String(subscription._id), planId: subscription.planId ?? null, status: subscription.status, startedAt: subscription.startedAt ?? null, endsAt: subscription.endsAt ?? null, graceUntil: subscription.graceUntil ?? null } : null, usage: { users, assets, companies, businessUnits, plants, locations, departments, vendors, assetDocuments } };
+  }
+
+  async usage(tenantId?: string) {
+    if (tenantId) return this.tenantUsage(tenantId);
+    const tenants = await this.db.tenant.find({}).select({ _id: 1, name: 1, slug: 1 }).sort({ name: 1 }).lean();
+    const rows = await Promise.all(tenants.map(async (tenant: any) => ({ ...await this.tenantUsage(String(tenant._id)), tenant: { id: String(tenant._id), name: tenant.name, slug: tenant.slug } })));
+    return { tenants: rows };
   }
 }
