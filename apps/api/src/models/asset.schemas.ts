@@ -89,3 +89,36 @@ AssetAssignmentSchema.index(
   { unique: true, partialFilterExpression: { returnedAt: { $exists: false } } },
 );
 AssetAssignmentSchema.index({ assetId: 1, assignedAt: -1 });
+
+export const AssetTransferModelName = 'AssetTransfer';
+export type AssetTransferDocument = HydratedDocument<AssetTransfer>;
+
+@Schema({ collection: 'asset_transfers', timestamps: true, versionKey: false })
+export class AssetTransfer {
+  @Prop({ required: true, index: true }) tenantId!: string;
+  @Prop({ required: true, index: true }) companyId!: string;
+  @Prop({ required: true, index: true }) assetId!: string;
+  @Prop() fromUserId?: string;
+  @Prop() fromLocationId?: string;
+  @Prop() fromDepartmentId?: string;
+  @Prop() toUserId?: string;
+  @Prop() toLocationId?: string;
+  @Prop() toDepartmentId?: string;
+  @Prop({ required: true, index: true }) requestedByUserId!: string;
+  @Prop() approvedByUserId?: string;
+  @Prop() completedByUserId?: string;
+  @Prop() cancelledByUserId?: string;
+  @Prop({ required: true, enum: ['PENDING', 'APPROVED', 'COMPLETED', 'REJECTED', 'CANCELLED'], index: true }) status!: string;
+  @Prop({ default: Date.now }) requestedAt!: Date;
+  @Prop() approvedAt?: Date;
+  @Prop() completedAt?: Date;
+  @Prop() cancelledAt?: Date;
+  @Prop() approvalNote?: string;
+  @Prop() completionNote?: string;
+  @Prop() cancellationNote?: string;
+  @Prop() reason?: string;
+}
+
+export const AssetTransferSchema = SchemaFactory.createForClass(AssetTransfer);
+AssetTransferSchema.index({ tenantId: 1, assetId: 1, status: 1 });
+AssetTransferSchema.index({ tenantId: 1, requestedAt: -1 });
