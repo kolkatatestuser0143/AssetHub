@@ -8,6 +8,7 @@ import { AssetPdfReportService } from './asset-pdf-report.service';
 import { AssetTransferService } from './asset-transfer.service';
 import { AssetAssignmentTransactionService } from './asset-assignment-transaction.service';
 import { AssetTimelineService } from './asset-timeline.service';
+import { AssetSearchService } from './asset-search.service';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 import { RbacGuard } from '../../common/guards/rbac.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
@@ -33,8 +34,10 @@ export class AssetsController {
     private readonly transfers: AssetTransferService,
     private readonly assignmentTransactions: AssetAssignmentTransactionService,
     private readonly timeline: AssetTimelineService,
+    private readonly searchService: AssetSearchService,
   ) {}
 
+  @Get('search') @RequirePermission('asset:read') search(@Query('q') query: string, @Req() req: any) { return this.searchService.search(req.authContext, query ?? ''); }
   @Get() @RequirePermission('asset:read') list(@Req() req: any) { return this.assets.listAssets(req.authContext); }
   @Get('assignments') @RequirePermission('asset:read') listAssignments(@Req() req: any) { return this.assets.listAssignments(req.authContext); }
   @Get('transfers') @RequirePermission('asset:read') listTransfers(@Query() query: TransferStatusDto, @Req() req: any) { return this.transfers.list(req.authContext, query.status); }
