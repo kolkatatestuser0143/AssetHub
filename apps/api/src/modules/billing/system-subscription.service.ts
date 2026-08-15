@@ -93,44 +93,35 @@ export class SystemSubscriptionService {
     await this.db.auditEvent.create({ tenantId, actorUserId, action, targetType: 'subscription', targetId, metadata, occurredAt: new Date() });
   }
 
-  private async syncPlanEntitlements(planId: string, features: Record<string, unknown>) {
-    const subscriptions = await this.db.subscription.find({ planId, status: { $in: ['active', 'trialing', 'past_due'] } }).lean();
-    const keys = Object.keys(features);
-
-    for (const subscription of subscriptions) {
-      const subscriptionId = String(subscription._id);
-      for (const [key, value] of Object.entries(features)) {
-        await this.db.entitlement.updateOne(
-          { subscriptionId, key, $or: [{ source: 'plan' }, { source: { $exists: false } }] },
-          { $set: { value, source: 'plan' }, $setOnInsert: { subscriptionId, key } },
-          { upsert: true },
-        );
-      }
-
-      await this.db.entitlement.deleteMany({
-        subscriptionId,
-        source: { $in: ['plan', null] },
-        key: { $nin: keys },
-      });
-    }
-  }
-
-  private async syncSubscriptionEntitlements(subscriptionId: string, features: Record<string, unknown>) {
+  private async applyPlanEntitlements(subscriptionId: string, features: Record<string, unknown>) {
+    const existing = await this.db.entitlement.find({ subscriptionId }).lean();
+    const existingByKey = new Map(existing.map((item: any) => [item.key, item]));
     const keys = Object.keys(features);
 
     for (const [key, value] of Object.entries(features)) {
-      await this.db.entitlement.updateOne(
-        { subscriptionId, key, $or: [{ source: 'plan' }, { source: { $exists: false } }] },
-        { $set: { value, source: 'plan' }, $setOnInsert: { subscriptionId, key } },
-        { upsert: true },
-      );
+      const current = existingByKey.get(key);
+      if (!current) {
+        await this.db.entitlement.create({ subscriptionId, key, value, source: 'plan' });
+      } else if (current.source !== 'override') {
+        await this.db.entitlement.updateOne(
+          { _id: current._id },
+          { $set: { value, source: 'plan' } },
+        );
+      }
     }
 
     await this.db.entitlement.deleteMany({
       subscriptionId,
-      source: { $in: ['plan', null] },
+      source: 'plan',
       key: { $nin: keys },
     });
+  }
+
+  private async syncPlanEntitlements(planId: string, features: Record<string, unknown>) {
+    const subscriptions = await this.db.subscription.find({ planId, status: { $in: ['active', 'trialing', 'past_due'] } }).lean();
+    for (const subscription of subscriptions) {
+      await this.applyPlanEntitlements(String(subscription._id), features);
+    }
   }
 
   async assign(tenantId: string, planId: string, status = 'active', endsAt?: string, actorUserId?: string) {
@@ -146,7 +137,7 @@ export class SystemSubscriptionService {
       : await this.db.subscription.create({ tenantId, planId: String(plan._id), status, startedAt: new Date(), ...(expiry ? { endsAt: expiry } : {}) });
     if (!subscription) throw new NotFoundException('Subscription could not be saved');
 
-    await this.syncSubscriptionEntitlements(String(subscription._id), (plan.features ?? {}) as Record<string, unknown>);
+    await this.applyPlanEntitlements(String(subscription._id), (plan.features ?? {}) as Record<string, unknown>);
     await this.audit(tenantId, current?.status === 'revoked' ? 'subscription.reactivated' : current ? 'subscription.updated' : 'subscription.created', String(subscription._id), { planId: String(plan._id), status, endsAt: subscription.endsAt ?? null }, actorUserId);
     return this.dto(subscription);
   }
