@@ -13,20 +13,14 @@ export class UserAsset360Service extends TenantScopedRepository {
     if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found');
     const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
     if (!user) throw new NotFoundException('User not found');
-    return {
-      id: String(user._id), employeeId: user.employeeId, email: user.email,
-      firstName: user.firstName, lastName: user.lastName, jobTitle: user.jobTitle,
-      phone: user.phone, companyId: user.companyId, departmentId: user.departmentId,
-      locationId: user.locationId, isActive: user.isActive, forcePasswordReset: user.forcePasswordReset,
-      roleIds: user.roleIds ?? [],
-    };
+    return { id: String(user._id), employeeId: user.employeeId, email: user.email, firstName: user.firstName, lastName: user.lastName, jobTitle: user.jobTitle, phone: user.phone, companyId: user.companyId, departmentId: user.departmentId, locationId: user.locationId, isActive: user.isActive, forcePasswordReset: user.forcePasswordReset, roleIds: user.roleIds ?? [] };
   }
 
   private async assignedData(auth: AuthContext, userId: string) {
-    const assets = await this.db.asset.find(this.scope(auth)).select({ _id: 1, assetNumber: 1, status: 1, assetTypeId: 1, locationId: 1, departmentId: 1 }).lean();
-    if (!assets.length) return { assets, assignments: [], typeById: new Map<string, any>() };
-    const assetIds = assets.map((asset: any) => String(asset._id));
-    const assignments = await this.db.assetAssignment.find({ assetId: { $in: assetIds }, userId: userId }).sort({ assignedAt: -1 }).lean();
+    const assignments = await this.db.assetAssignment.find({ userId }).sort({ assignedAt: -1 }).lean();
+    if (!assignments.length) return { assets: [], assignments, typeById: new Map<string, any>() };
+    const assetIds = [...new Set(assignments.map((assignment: any) => String(assignment.assetId)).filter(Boolean))];
+    const assets = await this.db.asset.find({ ...this.scope(auth), _id: { $in: assetIds } }).select({ _id: 1, assetNumber: 1, status: 1, assetTypeId: 1, locationId: 1, departmentId: 1 }).lean();
     const typeIds = [...new Set(assets.map((asset: any) => String(asset.assetTypeId)).filter(Boolean))];
     const types = typeIds.length ? await this.db.assetType.find({ _id: { $in: typeIds }, companyId: auth.companyId }).select({ _id: 1, name: 1 }).lean() : [];
     return { assets, assignments, typeById: new Map(types.map((type: any) => [String(type._id), type])) };
@@ -36,8 +30,7 @@ export class UserAsset360Service extends TenantScopedRepository {
     const user = await this.scopedUser(auth, userId);
     const { assets, assignments, typeById } = await this.assignedData(auth, userId);
     const assetById = new Map(assets.map((asset: any) => [String(asset._id), asset]));
-    const current = assignments.filter((assignment: any) => !assignment.returnedAt);
-    const currentRows = current.map((assignment: any) => {
+    const currentRows = assignments.filter((assignment: any) => !assignment.returnedAt).map((assignment: any) => {
       const asset = assetById.get(String(assignment.assetId));
       return asset ? { assignment: toDto(assignment), asset: { ...toDto(asset), assetType: typeById.get(String(asset.assetTypeId)) ? { name: typeById.get(String(asset.assetTypeId)).name } : undefined } } : null;
     }).filter(Boolean);
