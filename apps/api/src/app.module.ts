@@ -5,6 +5,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { DatabaseModule } from './common/database/database.module';
 import { MongooseDatabaseService } from './common/mongoose-database.service';
 import { AuditInterceptor } from './common/audit/audit.interceptor';
+import { TenantLicenseAccessInterceptor } from './common/billing/tenant-license-access.interceptor';
 import { MailService } from './common/mail/mail.service';
 import { AuthController } from './modules/auth/auth.controller';
 import { AuthService } from './modules/auth/auth.service';
@@ -47,6 +48,6 @@ import { UsersService } from './modules/users/users.service';
 @Module({
  imports:[DatabaseModule,JwtModule.register({secret:process.env.JWT_ACCESS_SECRET,signOptions:{algorithm:'HS256'}}),ThrottlerModule.forRoot([{ttl:60000,limit:100}])],
  controllers:[AuthController,InviteController,AssetsController,AssetDocumentsController,WarrantyController,CustomFieldsController,TenancyController,RbacController,IdentityController,IdentityAdminController,TenantLicenseController,SystemSubscriptionController,SystemPlanController,SystemEntitlementController,SystemAdminController,AuditController,UsersController],
- providers:[MongooseDatabaseService,MailService,AuthService,ProvisioningService,SessionService,InviteService,AssetsService,AssetDocumentsService,WarrantyService,CustomFieldsService,TenancyService,RbacService,IdentityService,IdentitySecurityCacheService,TenantLicenseService,EntitlementService,SystemSubscriptionService,PlanEntitlementSyncService,SystemEntitlementAuditService,SystemAdminService,AuditService,{provide:APP_INTERCEPTOR,useClass:AuditInterceptor},UsersService],
+ providers:[MongooseDatabaseService,MailService,AuthService,ProvisioningService,SessionService,InviteService,AssetsService,AssetDocumentsService,WarrantyService,CustomFieldsService,TenancyService,RbacService,IdentityService,IdentitySecurityCacheService,TenantLicenseService,EntitlementService,SystemSubscriptionService,PlanEntitlementSyncService,SystemEntitlementAuditService,SystemAdminService,AuditService,{provide:APP_INTERCEPTOR,useClass:AuditInterceptor},{provide:APP_INTERCEPTOR,useClass:TenantLicenseAccessInterceptor},UsersService],
 })
 export class AppModule {}
