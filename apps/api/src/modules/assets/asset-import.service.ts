@@ -1,4 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
+import { InjectConnection } from '@nestjs/mongoose';
+import { Connection } from 'mongoose';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 import { AuthContext } from '../../common/guards/tenant-context.guard';
 import { EntitlementService } from '../billing/entitlement.service';
@@ -19,6 +21,7 @@ export class AssetImportService {
   constructor(
     private readonly db: MongooseDatabaseService,
     private readonly entitlements: EntitlementService,
+    @InjectConnection() private readonly connection: Connection,
   ) {}
 
   async preview(auth: AuthContext, csv: string) {
@@ -38,51 +41,74 @@ export class AssetImportService {
   async commit(auth: AuthContext, csv: string) {
     await this.entitlements.requireFeature(auth.tenantId, 'bulk_import_enabled');
     const rows = await this.validateRows(auth, this.parseCsv(csv));
-    const current = await this.db.asset.countDocuments({ tenantId: auth.tenantId });
-    await this.entitlements.requireWithinLimit(auth.tenantId, 'max_assets', current, rows.length);
+    if (!rows.length) throw new BadRequestException('CSV contains no data rows');
 
-    const grouped = new Map<string, ImportRow[]>();
-    for (const row of rows) {
-      const list = grouped.get(row.assetTypeId) ?? [];
-      list.push(row);
-      grouped.set(row.assetTypeId, list);
-    }
+    const session = await this.connection.startSession();
+    try {
+      let result: { imported: number; assets: any[] } | undefined;
+      await session.withTransaction(async () => {
+        // Lock the tenant document for the duration of the transaction. This
+        // serializes concurrent licensed writes for this tenant, preventing
+        // two imports from both passing the same max_assets check.
+        const tenant = await this.db.tenant.findOneAndUpdate(
+          { _id: auth.tenantId },
+          { $set: { updatedAt: new Date() } },
+          { new: true, session },
+        ).lean();
+        if (!tenant) throw new BadRequestException('Tenant not found');
 
-    const assetNumbers = new Map<number, string>();
-    for (const [assetTypeId, groupedRows] of grouped) {
-      const assetType = await this.db.assetType.findOne({ _id: assetTypeId, companyId: auth.companyId }).lean();
-      if (!assetType?.numberingRule) throw new BadRequestException(`Line ${groupedRows[0].line}: asset type numbering rule is unavailable`);
-      const amount = groupedRows.length;
-      const previous = assetType.numberingRule.nextSequence;
-      const updated = await this.db.assetType.findOneAndUpdate(
-        { _id: assetTypeId, companyId: auth.companyId, 'numberingRule.nextSequence': previous },
-        { $inc: { 'numberingRule.nextSequence': amount } },
-        { new: true },
-      ).lean();
-      if (!updated) throw new ConflictException('Asset numbering sequence changed during import; retry the import');
-      const company = await this.db.company.findById(auth.companyId).lean();
-      if (!company) throw new BadRequestException('Company not found');
-      groupedRows.forEach((row, index) => {
-        const sequence = previous + index;
-        const rule = assetType.numberingRule;
-        assetNumbers.set(row.line, `${rule.prefix}${rule.separator}${company.code}${rule.separator}${String(sequence).padStart(rule.padding, '0')}`);
+        const current = await this.db.asset.countDocuments({ tenantId: auth.tenantId }).session(session);
+        await this.entitlements.requireWithinLimit(auth.tenantId, 'max_assets', current, rows.length);
+
+        const grouped = new Map<string, ImportRow[]>();
+        for (const row of rows) {
+          const list = grouped.get(row.assetTypeId) ?? [];
+          list.push(row);
+          grouped.set(row.assetTypeId, list);
+        }
+
+        const assetNumbers = new Map<number, string>();
+        const company = await this.db.company.findOne({ _id: auth.companyId, tenantId: auth.tenantId }).session(session).lean();
+        if (!company) throw new BadRequestException('Company not found');
+
+        for (const [assetTypeId, groupedRows] of grouped) {
+          const assetType = await this.db.assetType.findOne({ _id: assetTypeId, companyId: auth.companyId }).session(session).lean();
+          if (!assetType?.numberingRule) throw new BadRequestException(`Line ${groupedRows[0].line}: asset type numbering rule is unavailable`);
+          const previous = assetType.numberingRule.nextSequence;
+          const updated = await this.db.assetType.findOneAndUpdate(
+            { _id: assetTypeId, companyId: auth.companyId, 'numberingRule.nextSequence': previous },
+            { $inc: { 'numberingRule.nextSequence': groupedRows.length } },
+            { new: true, session },
+          ).lean();
+          if (!updated) throw new ConflictException('Asset numbering sequence changed during import; retry the import');
+          const rule = assetType.numberingRule;
+          groupedRows.forEach((row, index) => {
+            const sequence = previous + index;
+            assetNumbers.set(row.line, `${rule.prefix}${rule.separator}${company.code}${rule.separator}${String(sequence).padStart(rule.padding, '0')}`);
+          });
+        }
+
+        const docs = rows.map((row) => ({
+          tenantId: auth.tenantId,
+          companyId: auth.companyId,
+          assetTypeId: row.assetTypeId,
+          assetNumber: assetNumbers.get(row.line),
+          status: AssetLifecycleState.IN_STOCK,
+          locationId: row.locationId,
+          departmentId: row.departmentId,
+          vendorId: row.vendorId,
+          customFields: row.fields as Record<string, string>,
+        }));
+
+        const created = await this.db.asset.insertMany(docs, { ordered: true, session });
+        result = { imported: created.length, assets: toDtoArray(created.map((doc: any) => doc.toObject())) };
       });
+
+      if (!result) throw new ConflictException('Asset import transaction produced no result');
+      return { ok: true, ...result };
+    } finally {
+      await session.endSession();
     }
-
-    const docs = rows.map((row) => ({
-      tenantId: auth.tenantId,
-      companyId: auth.companyId,
-      assetTypeId: row.assetTypeId,
-      assetNumber: assetNumbers.get(row.line),
-      status: AssetLifecycleState.IN_STOCK,
-      locationId: row.locationId,
-      departmentId: row.departmentId,
-      vendorId: row.vendorId,
-      customFields: row.fields as Record<string, string>,
-    }));
-
-    const created = await this.db.asset.insertMany(docs, { ordered: true });
-    return { ok: true, imported: created.length, assets: toDtoArray(created.map((doc: any) => doc.toObject())) };
   }
 
   private async validateRows(auth: AuthContext, rows: ImportRow[]) {
