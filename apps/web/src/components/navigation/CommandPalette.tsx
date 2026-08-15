@@ -53,8 +53,8 @@ export default function CommandPalette() {
   const go = (href: string) => { setOpen(false); setQuery(''); router.push(href); };
   if (!open) return <button aria-label="Open command palette" onClick={() => setOpen(true)} className="fixed bottom-4 right-4 z-40 hidden items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-3 py-2 text-xs font-semibold text-slate-600 shadow-lg backdrop-blur lg:flex"><Command size={14}/>⌘K</button>;
 
-  return <div className="fixed inset-0 z-[80] bg-slate-950/40 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-label="Search AssetHub">
-    <div className="mx-auto mt-[10vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+  return <div className="ui-command-backdrop fixed inset-0 z-[80] bg-slate-950/40 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-label="Search AssetHub">
+    <div className="ui-command-panel mx-auto mt-[10vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
       <div className="flex items-center gap-3 border-b border-slate-100 px-4"><Search size={18} className="text-slate-400"/><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search pages or assets…" className="h-14 min-w-0 flex-1 border-0 bg-transparent text-sm outline-none"/><kbd className="rounded-md border bg-slate-50 px-2 py-1 text-[10px] text-slate-500">ESC</kbd><button aria-label="Close command palette" onClick={() => setOpen(false)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X size={17}/></button></div>
       <div className="max-h-[60vh] overflow-y-auto p-2">
         <p className="px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Navigation</p>
