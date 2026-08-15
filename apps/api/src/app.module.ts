@@ -33,8 +33,10 @@ import { TenantLicenseService } from './modules/billing/tenant-license.service';
 import { EntitlementService } from './modules/billing/entitlement.service';
 import { SystemSubscriptionController } from './modules/billing/system-subscription.controller';
 import { SystemPlanController } from './modules/billing/system-plan.controller';
+import { SystemEntitlementController } from './modules/billing/system-entitlement.controller';
 import { SystemSubscriptionService } from './modules/billing/system-subscription.service';
 import { PlanEntitlementSyncService } from './modules/billing/plan-entitlement-sync.service';
+import { SystemEntitlementAuditService } from './modules/billing/system-entitlement-audit.service';
 import { SystemAdminController } from './modules/system/system-admin.controller';
 import { SystemAdminService } from './modules/system/system-admin.service';
 import { AuditController } from './modules/audit/audit.controller';
@@ -44,7 +46,7 @@ import { UsersService } from './modules/users/users.service';
 
 @Module({
  imports:[DatabaseModule,JwtModule.register({secret:process.env.JWT_ACCESS_SECRET,signOptions:{algorithm:'HS256'}}),ThrottlerModule.forRoot([{ttl:60000,limit:100}])],
- controllers:[AuthController,InviteController,AssetsController,AssetDocumentsController,WarrantyController,CustomFieldsController,TenancyController,RbacController,IdentityController,IdentityAdminController,TenantLicenseController,SystemSubscriptionController,SystemPlanController,SystemAdminController,AuditController,UsersController],
- providers:[MongooseDatabaseService,MailService,AuthService,ProvisioningService,SessionService,InviteService,AssetsService,AssetDocumentsService,WarrantyService,CustomFieldsService,TenancyService,RbacService,IdentityService,IdentitySecurityCacheService,TenantLicenseService,EntitlementService,SystemSubscriptionService,PlanEntitlementSyncService,SystemAdminService,AuditService,{provide:APP_INTERCEPTOR,useClass:AuditInterceptor},UsersService],
+ controllers:[AuthController,InviteController,AssetsController,AssetDocumentsController,WarrantyController,CustomFieldsController,TenancyController,RbacController,IdentityController,IdentityAdminController,TenantLicenseController,SystemSubscriptionController,SystemPlanController,SystemEntitlementController,SystemAdminController,AuditController,UsersController],
+ providers:[MongooseDatabaseService,MailService,AuthService,ProvisioningService,SessionService,InviteService,AssetsService,AssetDocumentsService,WarrantyService,CustomFieldsService,TenancyService,RbacService,IdentityService,IdentitySecurityCacheService,TenantLicenseService,EntitlementService,SystemSubscriptionService,PlanEntitlementSyncService,SystemEntitlementAuditService,SystemAdminService,AuditService,{provide:APP_INTERCEPTOR,useClass:AuditInterceptor},UsersService],
 })
 export class AppModule {}
