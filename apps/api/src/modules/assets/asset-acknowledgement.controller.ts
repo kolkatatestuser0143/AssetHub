@@ -1,6 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { IsOptional, IsString, MinLength } from 'class-validator';
-import { Response } from 'express';
 import { createReadStream } from 'fs';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 import { RbacGuard } from '../../common/guards/rbac.guard';
@@ -24,7 +23,7 @@ export class AssetAcknowledgementController {
   @Get('assets/:assetId') @RequirePermission('asset:read') latest(@Param('assetId') assetId: string, @Req() req: any) { return this.acknowledgements.latest(req.authContext, assetId); }
   @Get('assets/:assetId/history') @RequirePermission('asset:read') history(@Param('assetId') assetId: string, @Req() req: any) { return this.acknowledgements.listAcknowledgements(req.authContext, assetId); }
 
-  @Post('assets/:assetId/pdf') @RequirePermission('asset:read') async generate(@Param('assetId') assetId: string, @Body() body: { templateId?: string }, @Req() req: any, @Res() res: Response) {
+  @Post('assets/:assetId/pdf') @RequirePermission('asset:read') async generate(@Param('assetId') assetId: string, @Body() body: { templateId?: string }, @Req() req: any, @Res() res: any) {
     const result = await this.acknowledgements.generate(req.authContext, assetId, body?.templateId);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="asset-acknowledgement-${assetId}.pdf"`);
@@ -32,7 +31,7 @@ export class AssetAcknowledgementController {
     return res.send(result.buffer);
   }
 
-  @Get(':acknowledgementId/pdf') @RequirePermission('asset:read') async download(@Param('acknowledgementId') acknowledgementId: string, @Req() req: any, @Res() res: Response) {
+  @Get(':acknowledgementId/pdf') @RequirePermission('asset:read') async download(@Param('acknowledgementId') acknowledgementId: string, @Req() req: any, @Res() res: any) {
     const file = await this.acknowledgements.download(req.authContext, acknowledgementId);
     res.setHeader('Content-Type', file.contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${file.fileName.replace(/"/g, '')}"`);
