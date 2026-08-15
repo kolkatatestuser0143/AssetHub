@@ -40,7 +40,7 @@ export class AssetDocumentsService extends TenantScopedRepository {
     try {
       const doc = await this.db.assetDocument.create({
         tenantId: auth.tenantId, companyId: auth.companyId, assetId,
-        s3Key: stored.key, fileName, contentType: String(file.mimetype ?? 'application/octet-stream'), sizeBytes: Number(file.size ?? file.buffer.length),
+        s3Key: stored.key, storageProvider: stored.provider, fileName, contentType: String(file.mimetype ?? 'application/octet-stream'), sizeBytes: Number(file.size ?? file.buffer.length),
         ...(documentType ? { documentType: documentType.trim() } : {}),
       });
       return toDto(doc.toObject());
@@ -60,7 +60,7 @@ export class AssetDocumentsService extends TenantScopedRepository {
 
     const stored = await this.storage.upload({ buffer, fileName, contentType: 'application/pdf' });
     try {
-      const doc = await this.db.assetDocument.create({ tenantId: auth.tenantId, companyId: auth.companyId, assetId, s3Key: stored.key, fileName, contentType: 'application/pdf', sizeBytes: buffer.length, documentType });
+      const doc = await this.db.assetDocument.create({ tenantId: auth.tenantId, companyId: auth.companyId, assetId, s3Key: stored.key, storageProvider: stored.provider, fileName, contentType: 'application/pdf', sizeBytes: buffer.length, documentType });
       return toDto(doc.toObject());
     } catch (error) {
       await this.storage.remove(stored.key).catch(() => undefined);
