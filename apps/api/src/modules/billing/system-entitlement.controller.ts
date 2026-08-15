@@ -32,12 +32,12 @@ export class SystemEntitlementController {
     @Body() body: { value: unknown; reason?: string },
     @Req() req: any,
   ) {
-    const subscription = await this.db.subscription.findOne({ tenantId }).sort({ createdAt: -1 }).lean();
+    const subscription = await this.db.subscription.findOne({ tenantId }).sort({ createdAt: -1 }).lean() as any;
     if (!subscription) throw new NotFoundException('Tenant subscription not found');
     const subscriptionId = String(subscription._id);
-    const previous = await this.db.entitlement.findOne({ subscriptionId, key }).lean();
-    const plan = await this.db.plan.findById(subscription.planId).lean();
-    const planValue = (plan?.features as any)?.[key];
+    const previous = await this.db.entitlement.findOne({ subscriptionId, key }).lean() as any;
+    const plan = await this.db.plan.findById(subscription.planId).lean() as any;
+    const planValue = plan?.features?.[key];
 
     await this.db.entitlement.updateOne(
       { subscriptionId, key },
@@ -58,12 +58,12 @@ export class SystemEntitlementController {
   @Patch(':key/reset')
   @SystemPermission('platform:billing:manage')
   async reset(@Param('tenantId') tenantId: string, @Param('key') key: string, @Req() req: any) {
-    const subscription = await this.db.subscription.findOne({ tenantId }).sort({ createdAt: -1 }).lean();
+    const subscription = await this.db.subscription.findOne({ tenantId }).sort({ createdAt: -1 }).lean() as any;
     if (!subscription) throw new NotFoundException('Tenant subscription not found');
     const subscriptionId = String(subscription._id);
-    const previous = await this.db.entitlement.findOne({ subscriptionId, key }).lean();
-    const plan = await this.db.plan.findById(subscription.planId).lean();
-    const planValue = (plan?.features as any)?.[key];
+    const previous = await this.db.entitlement.findOne({ subscriptionId, key }).lean() as any;
+    const plan = await this.db.plan.findById(subscription.planId).lean() as any;
+    const planValue = plan?.features?.[key];
     if (previous?.source === 'override') {
       if (planValue === undefined) await this.db.entitlement.deleteOne({ subscriptionId, key });
       else await this.db.entitlement.updateOne({ subscriptionId, key }, { $set: { value: planValue, source: 'plan' } });
