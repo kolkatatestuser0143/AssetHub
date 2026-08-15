@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Res, UseGuards, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UseGuards, Req } from '@nestjs/common';
 import { IsString, MinLength } from 'class-validator';
 import { Response } from 'express';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
@@ -19,8 +19,11 @@ export class AssetAcknowledgementController {
   @Post('templates/:templateId/default') @RequirePermission('asset:write') setDefault(@Param('templateId') templateId: string, @Req() req: any) { return this.acknowledgements.setDefault(req.authContext, templateId); }
   @Delete('templates/:templateId') @RequirePermission('asset:write') remove(@Param('templateId') templateId: string, @Req() req: any) { return this.acknowledgements.deleteTemplate(req.authContext, templateId); }
 
-  @Post('assets/:assetId/pdf') @RequirePermission('asset:read') async generate(@Param('assetId') assetId: string, @Body() body: { templateId?: string }, @Req() req: any, @Res() res: Response) {
-    const buffer = await this.acknowledgements.generate(req.authContext, assetId, body?.templateId);
+  @Post('assets/:assetId/pdf') @RequirePermission('asset:read') async generatePost(@Param('assetId') assetId: string, @Body() body: { templateId?: string }, @Req() req: any, @Res() res: Response) { return this.sendPdf(req, res, assetId, body?.templateId); }
+  @Get('assets/:assetId/pdf') @RequirePermission('asset:read') async generateGet(@Param('assetId') assetId: string, @Query('templateId') templateId: string | undefined, @Req() req: any, @Res() res: Response) { return this.sendPdf(req, res, assetId, templateId); }
+
+  private async sendPdf(req: any, res: Response, assetId: string, templateId?: string) {
+    const buffer = await this.acknowledgements.generate(req.authContext, assetId, templateId);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="asset-acknowledgement-${assetId}.pdf"`);
     return res.send(buffer);
