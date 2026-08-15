@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { FileText, Plus, Save, Trash2 } from 'lucide-react';
-import { apiFetch } from '../../../../../../lib/api-client';
+import { apiFetch } from '../../../../lib/api-client';
 
 type Template = { id: string; name: string; content: string; isDefault: boolean };
 const PLACEHOLDERS = ['{{employee.name}}', '{{employee.employeeId}}', '{{employee.email}}', '{{employee.jobTitle}}', '{{asset.assetNumber}}', '{{asset.type}}', '{{asset.serialNumber}}', '{{asset.model}}', '{{assignment.date}}', '{{issuer.name}}'];
