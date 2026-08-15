@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { ArrowLeft, Download, FileSpreadsheet, FileText, Save } from 'lucide-react';
-import { apiFetch, downloadFile } from '../../../../../lib/api-client';
+import { apiFetch, downloadFile } from '../../../../lib/api-client';
 
 const STATES = ['REQUESTED', 'IN_STOCK', 'ASSIGNED', 'IN_REPAIR', 'LOST_STOLEN', 'RETIRED', 'DISPOSED'];
 type Option = { id: string; name: string };
