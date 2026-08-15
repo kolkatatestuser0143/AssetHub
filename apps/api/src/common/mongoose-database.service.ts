@@ -38,6 +38,7 @@ import { Entitlement, EntitlementModelName } from '../models/billing.schemas';
 
 import { AuditEvent, AuditEventModelName } from '../models/audit.schemas';
 import { PlatformAdminNote, PlatformAdminNoteModelName } from '../models/audit.schemas';
+import { AssetReportTemplate, AssetReportTemplateModelName } from '../models/report.schemas';
 
 /**
  * Replaces PrismaService. Exposes every Mongoose model under the same
@@ -81,6 +82,7 @@ export class MongooseDatabaseService {
     @InjectModel(EntitlementModelName) readonly entitlement: Model<Entitlement>,
     @InjectModel(AuditEventModelName) readonly auditEvent: Model<AuditEvent>,
     @InjectModel(PlatformAdminNoteModelName) readonly platformAdminNote: Model<PlatformAdminNote>,
+    @InjectModel(AssetReportTemplateModelName) readonly assetReportTemplate: Model<AssetReportTemplate>,
   ) {}
 
   /**
