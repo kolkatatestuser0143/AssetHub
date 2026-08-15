@@ -41,6 +41,32 @@ export async function apiFetch(path: string, options: RequestInit = {}, retry = 
   return res.json();
 }
 
+export async function downloadFile(path: string, retry = true) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    credentials: 'include',
+  });
+
+  if (res.status === 401 && retry && path !== '/auth/refresh') {
+    await refreshSession();
+    return downloadFile(path, false);
+  }
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message ?? `Request failed: ${res.status}`);
+  }
+
+  return {
+    blob: await res.blob(),
+    filename: getFilename(res.headers.get('content-disposition')),
+  };
+}
+
+function getFilename(contentDisposition: string | null) {
+  const match = contentDisposition?.match(/filename="([^"]+)"/i);
+  return match?.[1] ?? 'download';
+}
+
 export async function login(email: string, password: string) {
   return apiFetch('/auth/login', {
     method: 'POST',
