@@ -16,6 +16,7 @@ export class RbacService extends TenantScopedRepository {
   }
 
   async listRoles(auth: AuthContext) {
+    await this.entitlements.requireFeature(auth.tenantId, 'custom_roles_enabled');
     const docs = await this.db.role.find(this.scope(auth)).lean();
     return toDtoArray(docs);
   }
@@ -28,6 +29,7 @@ export class RbacService extends TenantScopedRepository {
   }
 
   async assignRole(auth: AuthContext, userId: string, roleId: string) {
+    await this.entitlements.requireFeature(auth.tenantId, 'custom_roles_enabled');
     if (!Types.ObjectId.isValid(roleId) || !Types.ObjectId.isValid(userId)) throw new Error('Invalid roleId or userId');
     const role = await this.db.role.findOne({ _id: roleId, ...this.scope(auth) }).lean();
     if (!role) throw new NotFoundException('Role not found in your scope');
@@ -40,6 +42,7 @@ export class RbacService extends TenantScopedRepository {
   }
 
   async unassignRole(auth: AuthContext, userId: string, roleId: string) {
+    await this.entitlements.requireFeature(auth.tenantId, 'custom_roles_enabled');
     if (!Types.ObjectId.isValid(roleId) || !Types.ObjectId.isValid(userId)) throw new NotFoundException('User or role not found');
     const role = await this.db.role.findOne({ _id: roleId, ...this.scope(auth) }).lean();
     if (!role) throw new NotFoundException('Role not found in your scope');
