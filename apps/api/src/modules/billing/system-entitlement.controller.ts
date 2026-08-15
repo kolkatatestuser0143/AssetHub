@@ -1,8 +1,7 @@
-import { Body, Controller, Get, Param, Patch, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Param, Patch, Req, UseGuards } from '@nestjs/common';
 import { SystemAdminGuard } from '../../common/guards/system-admin.guard';
 import { SystemPermission } from '../../common/guards/system-permission.decorator';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
-import { PlanEntitlementSyncService } from './plan-entitlement-sync.service';
 import { SystemEntitlementAuditService } from './system-entitlement-audit.service';
 
 @Controller('system/tenants/:tenantId/entitlements')
@@ -10,7 +9,6 @@ import { SystemEntitlementAuditService } from './system-entitlement-audit.servic
 export class SystemEntitlementController {
   constructor(
     private readonly db: MongooseDatabaseService,
-    private readonly sync: PlanEntitlementSyncService,
     private readonly audit: SystemEntitlementAuditService,
   ) {}
 
@@ -35,7 +33,7 @@ export class SystemEntitlementController {
     @Req() req: any,
   ) {
     const subscription = await this.db.subscription.findOne({ tenantId }).sort({ createdAt: -1 }).lean();
-    if (!subscription) throw new Error('Tenant subscription not found');
+    if (!subscription) throw new NotFoundException('Tenant subscription not found');
     const subscriptionId = String(subscription._id);
     const previous = await this.db.entitlement.findOne({ subscriptionId, key }).lean();
     const plan = await this.db.plan.findById(subscription.planId).lean();
@@ -61,7 +59,7 @@ export class SystemEntitlementController {
   @SystemPermission('platform:billing:manage')
   async reset(@Param('tenantId') tenantId: string, @Param('key') key: string, @Req() req: any) {
     const subscription = await this.db.subscription.findOne({ tenantId }).sort({ createdAt: -1 }).lean();
-    if (!subscription) throw new Error('Tenant subscription not found');
+    if (!subscription) throw new NotFoundException('Tenant subscription not found');
     const subscriptionId = String(subscription._id);
     const previous = await this.db.entitlement.findOne({ subscriptionId, key }).lean();
     const plan = await this.db.plan.findById(subscription.planId).lean();
