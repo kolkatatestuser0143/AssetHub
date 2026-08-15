@@ -1,10 +1,12 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode, CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiFetch, login as apiLogin, logout as apiLogout } from './api-client';
 
 export type TenantFeatures = Record<string, boolean | number | string | null | undefined>;
+
+type ThemeVars = CSSProperties & Record<`--theme-${string}`, string>;
 
 interface AuthState {
   status: 'loading' | 'authenticated' | 'unauthenticated';
@@ -26,11 +28,11 @@ const PRESETS: Record<string, Record<string, string>> = {
   restricted: { primary: '#dc2626', primaryHover: '#b91c1c', primarySoft: '#fef2f2', sidebar: '#2b1215', sidebarText: '#fecaca', sidebarHover: '#451a1d', sidebarActive: '#dc2626', focus: '#ef4444', link: '#dc2626' },
 };
 
-function applyTheme(preset: string) {
-  const root = document.documentElement;
+function themeVars(preset: string): ThemeVars {
   const values = PRESETS[preset] ?? PRESETS.starter;
-  root.dataset.tenantTheme = PRESETS[preset] ? preset : 'starter';
-  for (const [key, value] of Object.entries(values)) root.style.setProperty(`--theme-${key}`, value);
+  return Object.fromEntries(
+    Object.entries(values).map(([key, value]) => [`--theme-${key}`, value]),
+  ) as ThemeVars;
 }
 
 function isFeatureEnabled(features: TenantFeatures, key: string) {
@@ -46,18 +48,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function loadTheme() {
     try {
-      // TenantLicenseController exposes this as GET /billing/license.
       const license = await apiFetch('/billing/license');
       const preset = typeof license?.themePreset === 'string' ? license.themePreset : 'starter';
       const nextFeatures = license?.features && typeof license.features === 'object' ? license.features as TenantFeatures : {};
       setThemePreset(preset);
       setFeatures(nextFeatures);
-      applyTheme(preset);
       return license;
     } catch {
       setThemePreset('starter');
       setFeatures({});
-      applyTheme('starter');
       return null;
     }
   }
@@ -91,13 +90,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStatus('unauthenticated');
     setThemePreset('starter');
     setFeatures({});
-    applyTheme('starter');
     router.replace('/login');
   }
 
   const hasFeature = (key: string) => isFeatureEnabled(features, key);
 
-  return <AuthContext.Provider value={{ status, themePreset, features, hasFeature, login, logout }}>{children}</AuthContext.Provider>;
+  return (
+    <div className="min-h-screen" data-tenant-theme={themePreset} style={themeVars(themePreset)}>
+      <AuthContext.Provider value={{ status, themePreset, features, hasFeature, login, logout }}>
+        {children}
+      </AuthContext.Provider>
+    </div>
+  );
 }
 
 export function useAuth() {
