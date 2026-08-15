@@ -104,7 +104,6 @@ export class SystemAdminService {
   private async tenantUsage(tenantId: string) {
     if (!Types.ObjectId.isValid(tenantId)) throw new BadRequestException('Invalid tenant id');
 
-    const tenantObjectId = new Types.ObjectId(tenantId);
     const [companyDocs, directAssets, users, assetDocuments, subscription] = await Promise.all([
       this.db.company.find({ tenantId }).select({ _id: 1 }).lean(),
       this.db.asset.countDocuments({ tenantId }),
@@ -114,10 +113,9 @@ export class SystemAdminService {
     ]);
 
     const companyIds = companyDocs.map((company: any) => String(company._id));
-    const [businessUnits, vendors, assets, businessUnitDocs] = await Promise.all([
+    const [businessUnits, vendors, businessUnitDocs] = await Promise.all([
       companyIds.length ? this.db.businessUnit.countDocuments({ companyId: { $in: companyIds } }) : 0,
       companyIds.length ? this.db.vendor.countDocuments({ companyId: { $in: companyIds } }) : 0,
-      directAssets,
       companyIds.length ? this.db.businessUnit.find({ companyId: { $in: companyIds } }).select({ _id: 1 }).lean() : [],
     ]);
 
@@ -143,7 +141,7 @@ export class SystemAdminService {
     ]);
 
     const storageBytes = Number(storage[0]?.bytes ?? 0);
-    const usage = { users, assets, companies: companyIds.length, businessUnits, plants, locations, departments, vendors, assetDocuments, storageBytes };
+    const usage = { users, assets: directAssets, companies: companyIds.length, businessUnits, plants, locations, departments, vendors, assetDocuments, storageBytes };
 
     const quotaKeys: Record<string, keyof typeof usage> = {
       max_users: 'users',
