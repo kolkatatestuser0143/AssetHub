@@ -51,9 +51,10 @@ export class AssetDocumentsController {
   async download(@Param('assetId') assetId: string, @Param('documentId') documentId: string, @Res() res: any, @Req() req: any) {
     const result = await this.documents.download(req.authContext, assetId, documentId);
     res.setHeader('Content-Type', result.contentType);
-    const safeFileName = result.fileName.replace(/[\r\n"]/g, '');
+    const safeFileName = result.fileName.replace(/[\r\n\"] /g, '');
     res.setHeader('Content-Disposition', `attachment; filename="${safeFileName}"`);
-    return res.sendFile(result.path);
+    res.setHeader('Content-Length', String(result.buffer.length));
+    res.end(result.buffer);
   }
 
   @Delete(':documentId')
