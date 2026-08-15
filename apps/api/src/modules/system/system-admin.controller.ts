@@ -18,15 +18,11 @@ export class SystemAdminController {
 
   @Patch('tenants/:tenantId/suspend')
   @SystemPermission('platform:tenants:manage')
-  suspend(@Param('tenantId') tenantId: string, @Body() body: { reason?: string }, @Req() req: any) {
-    return this.service.setTenantStatus(tenantId, false, req.systemAuth?.sub, body?.reason);
-  }
+  suspend(@Param('tenantId') tenantId: string, @Body() body: { reason?: string }, @Req() req: any) { return this.service.setTenantStatus(tenantId, false, req.systemAuth?.sub, body?.reason); }
 
   @Patch('tenants/:tenantId/activate')
   @SystemPermission('platform:tenants:manage')
-  activate(@Param('tenantId') tenantId: string, @Req() req: any) {
-    return this.service.setTenantStatus(tenantId, true, req.systemAuth?.sub);
-  }
+  activate(@Param('tenantId') tenantId: string, @Req() req: any) { return this.service.setTenantStatus(tenantId, true, req.systemAuth?.sub); }
 
   @Get('users')
   @SystemPermission('platform:users:read')
@@ -47,4 +43,12 @@ export class SystemAdminController {
   @Get('analytics')
   @SystemPermission('platform:analytics:read')
   analytics() { return this.service.analytics(); }
+
+  @Get('usage')
+  @SystemPermission('platform:analytics:read')
+  usage() { return this.service.usage(); }
+
+  @Get('tenants/:tenantId/usage')
+  @SystemPermission('platform:analytics:read')
+  tenantUsage(@Param('tenantId') tenantId: string) { return this.service.usage(tenantId); }
 }
