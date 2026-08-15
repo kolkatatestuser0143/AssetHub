@@ -1,12 +1,16 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { SystemAdminGuard } from '../../common/guards/system-admin.guard';
 import { SystemSubscriptionService } from './system-subscription.service';
+import { PlanEntitlementSyncService } from './plan-entitlement-sync.service';
 import { SystemPermission } from '../../common/guards/system-permission.decorator';
 
 @Controller('system/subscriptions')
 @UseGuards(SystemAdminGuard)
 export class SystemSubscriptionController {
-  constructor(private readonly subscriptions: SystemSubscriptionService) {}
+  constructor(
+    private readonly subscriptions: SystemSubscriptionService,
+    private readonly entitlementSync: PlanEntitlementSyncService,
+  ) {}
 
   @Get()
   @SystemPermission('platform:billing:read')
@@ -16,13 +20,43 @@ export class SystemSubscriptionController {
   @SystemPermission('platform:billing:read')
   revoked() { return this.subscriptions.revokedTenants(); }
 
+  @Get('../plans')
+  @SystemPermission('platform:billing:read')
+  plans() { return this.subscriptions.listPlans(true); }
+
+  @Post('../plans')
+  @SystemPermission('platform:billing:manage')
+  createPlan(@Body() body: { name: string; features?: Record<string, unknown> }) {
+    return this.subscriptions.createPlan(body.name, body.features ?? {});
+  }
+
+  @Patch('../plans/:planId')
+  @SystemPermission('platform:billing:manage')
+  async updatePlan(@Param('planId') planId: string, @Body() body: { name: string; features: Record<string, unknown> }) {
+    const plan = await this.subscriptions.updatePlan(planId, body.name, body.features ?? {});
+    const sync = await this.entitlementSync.syncPlan(plan.id, plan.features);
+    return { ...plan, entitlementSync: sync };
+  }
+
+  @Patch('../plans/:planId/status')
+  @SystemPermission('platform:billing:manage')
+  planStatus(@Param('planId') planId: string, @Body() body: { isActive: boolean }) {
+    return this.subscriptions.setPlanActive(planId, body.isActive);
+  }
+
   @Patch(':tenantId')
   @SystemPermission('platform:billing:manage')
-  assign(
+  async assign(
     @Param('tenantId') tenantId: string,
     @Body() body: { planId: string; status?: 'active' | 'trialing' | 'past_due' | 'canceled'; endsAt?: string },
     @Req() req: any,
-  ) { return this.subscriptions.assign(tenantId, body.planId, body.status ?? 'active', body.endsAt, req.systemAuth?.sub); }
+  ) {
+    const subscription = await this.subscriptions.assign(tenantId, body.planId, body.status ?? 'active', body.endsAt, req.systemAuth?.sub);
+    const plan = await this.subscriptions.listPlans(true);
+    const selected = plan.find((item: any) => item.id === subscription.planId);
+    if (selected) await this.entitlementSync.materializeSubscription(subscription.id, selected.features ?? {});
+    return subscription;
+  }
 
   @Post(':tenantId/renew')
   @SystemPermission('platform:billing:manage')
@@ -38,5 +72,9 @@ export class SystemSubscriptionController {
 
   @Patch(':tenantId/entitlement/:subscriptionId')
   @SystemPermission('platform:billing:manage')
-  entitlement(@Param('subscriptionId') subscriptionId: string, @Body() body: { key: string; value: unknown }, @Req() req: any) { return this.subscriptions.setEntitlement(subscriptionId, body.key, body.value, req.systemAuth?.sub); }
+  async entitlement(@Param('subscriptionId') subscriptionId: string, @Body() body: { key: string; value: unknown }, @Req() req: any) {
+    const result = await this.subscriptions.setEntitlement(subscriptionId, body.key, body.value, req.systemAuth?.sub);
+    await this.entitlementSync.markOverride(subscriptionId, body.key.trim());
+    return result;
+  }
 }
