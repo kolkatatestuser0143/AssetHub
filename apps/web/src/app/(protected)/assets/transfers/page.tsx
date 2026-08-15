@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { ArrowLeft, Check, Clock3, RefreshCw, X } from 'lucide-react';
-import { apiFetch } from '../../../../../lib/api-client';
+import { apiFetch } from '../../../../lib/api-client';
 
 type Transfer = { id: string; assetId: string; fromUserId?: string; fromLocationId?: string; fromDepartmentId?: string; toUserId?: string; toLocationId?: string; toDepartmentId?: string; status: string; requestedByUserId: string; requestedAt: string; reason?: string; };
 
