@@ -43,17 +43,24 @@ export class UsersService extends TenantScopedRepository {
     return this.safe(doc);
   }
 
-  async create(auth: AuthContext, input: { email: string; firstName: string; lastName: string; companyId?: string; jobTitle?: string; phone?: string; departmentId?: string; locationId?: string }) {
+  async create(auth: AuthContext, input: { email: string; firstName: string; lastName: string; employeeId?: string; companyId?: string; jobTitle?: string; phone?: string; departmentId?: string; locationId?: string }) {
     const companyId = input.companyId ?? auth.companyId;
     if (!auth.crossCompany && companyId !== auth.companyId) throw new NotFoundException('Company not in scope');
-    const exists = await this.db.user.findOne({ email: input.email.trim().toLowerCase(), tenantId: auth.tenantId }).lean();
+    const email = input.email.trim().toLowerCase();
+    const exists = await this.db.user.findOne({ email, tenantId: auth.tenantId }).lean();
     if (exists) throw new ConflictException('A user with this email already exists');
+    const employeeId = input.employeeId?.trim() || undefined;
+    if (employeeId) {
+      const duplicateEmployee = await this.db.user.findOne({ tenantId: auth.tenantId, companyId, employeeId }).lean();
+      if (duplicateEmployee) throw new ConflictException('A user with this employee ID already exists');
+    }
     const currentUserCount = await this.db.user.countDocuments({ tenantId: auth.tenantId, accountType: 'TENANT' });
     await this.entitlements.requireWithinLimit(auth.tenantId, 'max_users', currentUserCount, 1);
     const doc = await this.db.user.create({
       tenantId: auth.tenantId,
       companyId,
-      email: input.email.trim().toLowerCase(),
+      employeeId,
+      email,
       firstName: input.firstName.trim(),
       lastName: input.lastName.trim(),
       jobTitle: input.jobTitle?.trim() || undefined,
@@ -68,6 +75,34 @@ export class UsersService extends TenantScopedRepository {
       backupCodesHash: [],
     });
     return this.safe(doc.toObject());
+  }
+
+  async update(auth: AuthContext, userId: string, input: { email?: string; firstName?: string; lastName?: string; employeeId?: string; jobTitle?: string; phone?: string; departmentId?: string; locationId?: string }) {
+    if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found');
+    const current = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
+    if (!current) throw new NotFoundException('User not found');
+    const email = input.email?.trim().toLowerCase();
+    if (email && email !== current.email) {
+      const duplicate = await this.db.user.findOne({ _id: { $ne: userId }, tenantId: auth.tenantId, email }).lean();
+      if (duplicate) throw new ConflictException('A user with this email already exists');
+    }
+    const employeeId = input.employeeId?.trim() || undefined;
+    if (employeeId && employeeId !== current.employeeId) {
+      const duplicate = await this.db.user.findOne({ _id: { $ne: userId }, tenantId: auth.tenantId, companyId: current.companyId, employeeId }).lean();
+      if (duplicate) throw new ConflictException('A user with this employee ID already exists');
+    }
+    const patch: Record<string, unknown> = {};
+    if (email !== undefined) patch.email = email;
+    if (input.firstName !== undefined) patch.firstName = input.firstName.trim();
+    if (input.lastName !== undefined) patch.lastName = input.lastName.trim();
+    if (input.employeeId !== undefined) patch.employeeId = employeeId;
+    if (input.jobTitle !== undefined) patch.jobTitle = input.jobTitle.trim() || undefined;
+    if (input.phone !== undefined) patch.phone = input.phone.trim() || undefined;
+    if (input.departmentId !== undefined) patch.departmentId = input.departmentId || undefined;
+    if (input.locationId !== undefined) patch.locationId = input.locationId || undefined;
+    const doc = await this.db.user.findOneAndUpdate({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }, { $set: patch }, { new: true }).lean();
+    if (!doc) throw new NotFoundException('User not found');
+    return this.safe(doc);
   }
 
   async sendAccessEmail(auth: AuthContext, userId: string, action: 'invite' | 'reset') {
@@ -115,47 +150,23 @@ export class UsersService extends TenantScopedRepository {
   async sessions(auth: AuthContext, userId: string) {
     const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
     if (!user) throw new NotFoundException('User not found');
-
-    const docs = await this.db.session
-      .find({ userId: String(user._id) })
-      .sort({ lastSeenAt: -1, createdAt: -1 })
-      .lean();
-
-    return toDtoArray(docs).map((session: any) => {
-      delete session.refreshTokenHash;
-      return session;
-    });
+    const docs = await this.db.session.find({ userId: String(user._id) }).sort({ lastSeenAt: -1, createdAt: -1 }).lean();
+    return toDtoArray(docs).map((session: any) => { delete session.refreshTokenHash; return session; });
   }
 
   async loginHistory(auth: AuthContext, userId: string) {
     const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
     if (!user) throw new NotFoundException('User not found');
-
-    const docs = await this.db.loginHistory
-      .find({ userId: String(user._id) })
-      .sort({ occurredAt: -1 })
-      .limit(100)
-      .lean();
-
+    const docs = await this.db.loginHistory.find({ userId: String(user._id) }).sort({ occurredAt: -1 }).limit(100).lean();
     return toDtoArray(docs);
   }
 
   async revokeSession(auth: AuthContext, userId: string, sessionId: string, actorUserId: string) {
     const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
     if (!user) throw new NotFoundException('User not found');
-
-    if (String(user._id) === actorUserId && String((await this.db.session.findById(sessionId).lean())?._id) === sessionId) {
-      throw new ConflictException('Your current session cannot be revoked from this screen');
-    }
-
-    const session = await this.db.session.findOneAndUpdate(
-      { _id: sessionId, userId: String(user._id), revokedAt: { $exists: false } },
-      { $set: { revokedAt: new Date(), revokedReason: 'admin_revoked' } },
-      { new: true },
-    ).lean();
-
+    if (String(user._id) === actorUserId && String((await this.db.session.findById(sessionId).lean())?._id) === sessionId) throw new ConflictException('Your current session cannot be revoked from this screen');
+    const session = await this.db.session.findOneAndUpdate({ _id: sessionId, userId: String(user._id), revokedAt: { $exists: false } }, { $set: { revokedAt: new Date(), revokedReason: 'admin_revoked' } }, { new: true }).lean();
     if (!session) throw new NotFoundException('Active session not found');
-
     return { ok: true, sessionId: String(session._id) };
   }
 }
