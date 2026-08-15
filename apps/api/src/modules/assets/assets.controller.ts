@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Header, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { IsIn, IsInt, IsISO8601, IsObject, IsOptional, IsString, Min } from 'class-validator';
 import { AssetCondition, AssetLifecycleState } from '../../common/enums';
 import { AssetsService } from './assets.service'; import { AssetImportService } from './asset-import.service'; import { AssetExcelReportService } from './asset-excel-report.service'; import { AssetPdfReportService } from './asset-pdf-report.service'; import { AssetTransferService } from './asset-transfer.service'; import { AssetAssignmentTransactionService } from './asset-assignment-transaction.service'; import { AssetTimelineService } from './asset-timeline.service'; import { AssetSearchService } from './asset-search.service'; import { AssetListService } from './asset-list.service'; import { AssetDetailService } from './asset-detail.service';
@@ -6,6 +6,7 @@ import { TenantContextGuard } from '../../common/guards/tenant-context.guard'; i
 class CreateAssetDto { @IsString() assetTypeId: string; @IsOptional() @IsString() locationId?: string; @IsOptional() @IsString() departmentId?: string; @IsOptional() @IsString() vendorId?: string; @IsOptional() @IsIn(Object.values(AssetCondition)) condition?: AssetCondition; @IsOptional() @IsString() serialNumber?: string; @IsOptional() @IsString() model?: string; @IsObject() @IsOptional() fields?: Record<string, unknown>; }
 class AssignAssetDto { @IsString() userId: string; @IsString() @IsOptional() notes?: string; }
 class ReturnAssetDto { @IsString() @IsOptional() notes?: string; @IsOptional() @IsIn(Object.values(AssetCondition)) condition?: AssetCondition; }
+class ConditionDto { @IsIn(Object.values(AssetCondition)) condition!: AssetCondition; }
 class TransitionDto { @IsIn(Object.values(AssetLifecycleState)) toState: AssetLifecycleState; @IsString() @IsOptional() reason?: string; }
 class CreateAssetTypeDto { @IsString() name: string; @IsString() prefix: string; @IsString() @IsOptional() separator?: string; @IsInt() @Min(1) @IsOptional() padding?: number; }
 class VendorDto { @IsString() name: string; @IsOptional() @IsString() contact?: string; }
@@ -33,6 +34,7 @@ export class AssetsController {
   @Get('warranties') @RequirePermission('asset:read') listWarranties(@Req() req: any) { return this.assets.listWarranties(req.authContext); }
   @Get('types') @RequirePermission('asset:read') listTypes(@Req() req: any) { return this.assets.listAssetTypes(req.authContext); }
   @Post('types') @RequirePermission('asset:write') createType(@Body() dto: CreateAssetTypeDto, @Req() req: any) { return this.assets.createAssetType(req.authContext, dto.name, { prefix: dto.prefix, separator: dto.separator, padding: dto.padding }); }
+  @Delete('types/:assetTypeId') @RequirePermission('asset:write') deleteType(@Param('assetTypeId') assetTypeId: string, @Req() req: any) { return this.assets.deleteAssetType(req.authContext, assetTypeId); }
   @Post('import/preview') @RequirePermission('asset:write') previewImport(@Body() dto: ImportCsvDto, @Req() req: any) { return this.imports.preview(req.authContext, dto.csv); }
   @Post('import') @RequirePermission('asset:write') commitImport(@Body() dto: ImportCsvDto, @Req() req: any) { return this.imports.commit(req.authContext, dto.csv); }
   @Post(':assetId/transfer') @RequirePermission('asset:write') requestTransfer(@Param('assetId') assetId: string, @Body() dto: TransferDto, @Req() req: any) { return this.transfers.request(req.authContext, assetId, dto); }
@@ -42,6 +44,7 @@ export class AssetsController {
   @Post('transfers/:transferId/cancel') @RequirePermission('asset:write') cancelTransfer(@Param('transferId') transferId: string, @Body() dto: TransferDto, @Req() req: any) { return this.transfers.cancel(req.authContext, transferId, dto.note); }
   @Post() @RequirePermission('asset:write') create(@Body() dto: CreateAssetDto, @Req() req: any) { return this.assets.createAsset(req.authContext, dto.assetTypeId, { ...(dto.fields ?? {}), locationId: dto.locationId, departmentId: dto.departmentId, vendorId: dto.vendorId, condition: dto.condition, serialNumber: dto.serialNumber, model: dto.model }); }
   @Get(':assetId') @RequirePermission('asset:read') get(@Param('assetId') assetId: string, @Req() req: any) { return this.detail.get(req.authContext, assetId); }
+  @Patch(':assetId/condition') @RequirePermission('asset:write') updateCondition(@Param('assetId') assetId: string, @Body() dto: ConditionDto, @Req() req: any) { return this.assets.updateCondition(req.authContext, assetId, dto.condition); }
   @Post(':assetId/assign') @RequirePermission('asset:write') assign(@Param('assetId') assetId: string, @Body() dto: AssignAssetDto, @Req() req: any) { return this.assignmentTransactions.assign(req.authContext, assetId, dto.userId, dto.notes); }
   @Get(':assetId/assignment') @RequirePermission('asset:read') currentAssignment(@Param('assetId') assetId: string, @Req() req: any) { return this.assets.getCurrentAssignment(req.authContext, assetId); }
   @Post(':assetId/unassign') @RequirePermission('asset:write') unassign(@Param('assetId') assetId: string, @Body() dto: ReturnAssetDto, @Req() req: any) { return this.assignmentTransactions.unassign(req.authContext, assetId, dto.notes, dto.condition); }
