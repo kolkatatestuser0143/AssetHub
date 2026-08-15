@@ -34,6 +34,7 @@ export class SystemSubscriptionService {
     if (duplicate) throw new ConflictException('A plan with this name already exists');
     const plan = await this.db.plan.findByIdAndUpdate(planId, { $set: { name: normalizedName, features } }, { new: true }).lean();
     if (!plan) throw new NotFoundException('Plan not found');
+    await this.syncPlanEntitlements(String(plan._id), features);
     return { id: String(plan._id), name: plan.name, features: plan.features ?? {}, isActive: plan.isActive !== false, createdAt: (plan as any).createdAt, updatedAt: (plan as any).updatedAt };
   }
 
@@ -92,6 +93,46 @@ export class SystemSubscriptionService {
     await this.db.auditEvent.create({ tenantId, actorUserId, action, targetType: 'subscription', targetId, metadata, occurredAt: new Date() });
   }
 
+  private async syncPlanEntitlements(planId: string, features: Record<string, unknown>) {
+    const subscriptions = await this.db.subscription.find({ planId, status: { $in: ['active', 'trialing', 'past_due'] } }).lean();
+    const keys = Object.keys(features);
+
+    for (const subscription of subscriptions) {
+      const subscriptionId = String(subscription._id);
+      for (const [key, value] of Object.entries(features)) {
+        await this.db.entitlement.updateOne(
+          { subscriptionId, key, $or: [{ source: 'plan' }, { source: { $exists: false } }] },
+          { $set: { value, source: 'plan' }, $setOnInsert: { subscriptionId, key } },
+          { upsert: true },
+        );
+      }
+
+      await this.db.entitlement.deleteMany({
+        subscriptionId,
+        source: { $in: ['plan', null] },
+        key: { $nin: keys },
+      });
+    }
+  }
+
+  private async syncSubscriptionEntitlements(subscriptionId: string, features: Record<string, unknown>) {
+    const keys = Object.keys(features);
+
+    for (const [key, value] of Object.entries(features)) {
+      await this.db.entitlement.updateOne(
+        { subscriptionId, key, $or: [{ source: 'plan' }, { source: { $exists: false } }] },
+        { $set: { value, source: 'plan' }, $setOnInsert: { subscriptionId, key } },
+        { upsert: true },
+      );
+    }
+
+    await this.db.entitlement.deleteMany({
+      subscriptionId,
+      source: { $in: ['plan', null] },
+      key: { $nin: keys },
+    });
+  }
+
   async assign(tenantId: string, planId: string, status = 'active', endsAt?: string, actorUserId?: string) {
     await this.getTenantOrThrow(tenantId);
     const plan = await this.getPlanOrThrow(planId);
@@ -104,6 +145,8 @@ export class SystemSubscriptionService {
       ? await this.db.subscription.findOneAndUpdate({ _id: current._id }, update, { new: true }).lean()
       : await this.db.subscription.create({ tenantId, planId: String(plan._id), status, startedAt: new Date(), ...(expiry ? { endsAt: expiry } : {}) });
     if (!subscription) throw new NotFoundException('Subscription could not be saved');
+
+    await this.syncSubscriptionEntitlements(String(subscription._id), (plan.features ?? {}) as Record<string, unknown>);
     await this.audit(tenantId, current?.status === 'revoked' ? 'subscription.reactivated' : current ? 'subscription.updated' : 'subscription.created', String(subscription._id), { planId: String(plan._id), status, endsAt: subscription.endsAt ?? null }, actorUserId);
     return this.dto(subscription);
   }
@@ -146,8 +189,12 @@ export class SystemSubscriptionService {
     if (!subscription) throw new NotFoundException('Subscription not found');
     const normalizedKey = key.trim();
     if (!normalizedKey) throw new BadRequestException('Entitlement key is required');
-    const entitlement = await this.db.entitlement.findOneAndUpdate({ subscriptionId, key: normalizedKey }, { $set: { value } }, { upsert: true, new: true }).lean();
-    await this.audit(subscription.tenantId, 'subscription.entitlement_updated', subscriptionId, { key: normalizedKey, value }, actorUserId);
+    const entitlement = await this.db.entitlement.findOneAndUpdate(
+      { subscriptionId, key: normalizedKey },
+      { $set: { value, source: 'override' }, $setOnInsert: { subscriptionId, key: normalizedKey } },
+      { upsert: true, new: true },
+    ).lean();
+    await this.audit(subscription.tenantId, 'subscription.entitlement_updated', subscriptionId, { key: normalizedKey, value, source: 'override' }, actorUserId);
     return { id: String(entitlement?._id), subscriptionId, key: normalizedKey, value: entitlement?.value };
   }
 }
