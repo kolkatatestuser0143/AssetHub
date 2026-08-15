@@ -1,13 +1,15 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { readFileSync } from 'fs';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 import { AuthContext } from '../../common/guards/tenant-context.guard';
 import { TenantScopedRepository } from '../../common/tenant-scoped.repository';
+import { AssetDocumentsService } from './asset-documents.service';
 
 const DEFAULT_CONTENT = `ASSET HANDOVER ACKNOWLEDGEMENT\n\nI, {{employee.name}} (Employee ID: {{employee.employeeId}}), acknowledge receipt of the following company asset:\n\nAsset: {{asset.assetNumber}}\nType: {{asset.type}}\nSerial Number: {{asset.serialNumber}}\nAssigned Date: {{assignment.date}}\n\nI confirm that the above asset has been issued to me for business use and I will take reasonable care of it, use it in accordance with company policy, and return it when requested or when my employment/assignment ends.\n\nEmployee Name: {{employee.name}}\nEmployee ID: {{employee.employeeId}}\nSignature: ______________________________\nDate: ____________________\n\nIssued By: {{issuer.name}}\nDate: {{assignment.date}}`;
 
 @Injectable()
 export class AssetAcknowledgementService extends TenantScopedRepository {
-  constructor(private readonly db: MongooseDatabaseService) { super(); }
+  constructor(private readonly db: MongooseDatabaseService, private readonly documents: AssetDocumentsService) { super(); }
   async listTemplates(auth: AuthContext) { return this.db.assetAcknowledgementTemplate.find({ tenantId: auth.tenantId }).sort({ isDefault: -1, name: 1 }).lean(); }
   async ensureDefault(auth: AuthContext) { const existing = await this.db.assetAcknowledgementTemplate.findOne({ tenantId: auth.tenantId, isDefault: true }).lean(); if (existing) return existing; return this.db.assetAcknowledgementTemplate.create({ tenantId: auth.tenantId, name: 'Default asset acknowledgement', content: DEFAULT_CONTENT, createdBy: auth.userId, isDefault: true }); }
   async createTemplate(auth: AuthContext, name: string, content: string) { const cleanName = String(name ?? '').trim(); const cleanContent = String(content ?? '').trim(); if (!cleanName || !cleanContent) throw new NotFoundException('Template name and content are required'); return this.db.assetAcknowledgementTemplate.create({ tenantId: auth.tenantId, name: cleanName, content: cleanContent, createdBy: auth.userId, isDefault: false }); }
@@ -16,16 +18,28 @@ export class AssetAcknowledgementService extends TenantScopedRepository {
   async deleteTemplate(auth: AuthContext, templateId: string) { const target = await this.db.assetAcknowledgementTemplate.findOne({ _id: templateId, tenantId: auth.tenantId }).lean(); if (!target) throw new NotFoundException('Acknowledgement template not found'); if (target.isDefault) throw new ForbiddenException('Default acknowledgement template cannot be deleted'); await this.db.assetAcknowledgementTemplate.deleteOne({ _id: templateId, tenantId: auth.tenantId }); return { ok: true }; }
   async listAcknowledgements(auth: AuthContext, assetId: string) { const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).select({ _id: 1 }).lean(); if (!asset) throw new NotFoundException('Asset not found'); return this.db.assetAcknowledgement.find({ tenantId: auth.tenantId, companyId: auth.companyId, assetId }).sort({ generatedAt: -1 }).lean(); }
   async latest(auth: AuthContext, assetId: string) { const rows = await this.listAcknowledgements(auth, assetId); return rows[0] ?? null; }
-  async generate(auth: AuthContext, assetId: string, templateId?: string): Promise<{ buffer: Buffer; acknowledgementId: string }> {
+  async generate(auth: AuthContext, assetId: string, templateId?: string): Promise<{ buffer: Buffer; acknowledgementId: string; documentId: string }> {
     const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).lean(); if (!asset) throw new NotFoundException('Asset not found');
     const assignment = await this.db.assetAssignment.findOne({ assetId, returnedAt: { $exists: false } }).sort({ assignedAt: -1 }).lean(); if (!assignment?.userId) throw new NotFoundException('Asset has no active assignment');
     const employee = await this.db.user.findOne({ _id: assignment.userId, tenantId: auth.tenantId, companyId: auth.companyId, accountType: 'TENANT' }).lean(); if (!employee) throw new NotFoundException('Assigned employee not found');
     const assetType = await this.db.assetType.findOne({ _id: asset.assetTypeId, companyId: auth.companyId }).lean(); const issuer = await this.db.user.findOne({ _id: auth.userId, tenantId: auth.tenantId }).lean();
     const template = templateId ? await this.db.assetAcknowledgementTemplate.findOne({ _id: templateId, tenantId: auth.tenantId }).lean() : await this.db.assetAcknowledgementTemplate.findOne({ tenantId: auth.tenantId, isDefault: true }).lean() ?? await this.ensureDefault(auth); if (!template) throw new NotFoundException('Acknowledgement template not found');
     const values: Record<string, string> = { '{{employee.name}}': `${employee.firstName} ${employee.lastName}`.trim(), '{{employee.employeeId}}': employee.employeeId ?? '', '{{employee.email}}': employee.email ?? '', '{{employee.jobTitle}}': employee.jobTitle ?? '', '{{asset.assetNumber}}': asset.assetNumber ?? '', '{{asset.type}}': assetType?.name ?? '', '{{asset.serialNumber}}': asset.serialNumber ?? '', '{{asset.model}}': asset.model ?? '', '{{assignment.date}}': assignment.assignedAt ? new Date(assignment.assignedAt).toLocaleDateString() : '', '{{issuer.name}}': issuer ? `${issuer.firstName} ${issuer.lastName}`.trim() : '' };
-    const body = Object.entries(values).reduce((text, [token, value]) => text.split(token).join(value), template.content); const generatedAt = new Date();
-    const record = await this.db.assetAcknowledgement.create({ tenantId: auth.tenantId, companyId: auth.companyId, assetId, employeeId: String(employee._id), templateId: String(template._id), templateName: template.name, contentSnapshot: body, generatedAt, generatedByUserId: auth.userId, status: 'PENDING' });
-    return { buffer: buildPdf(body), acknowledgementId: String(record._id) };
+    const body = Object.entries(values).reduce((text, [token, value]) => text.split(token).join(value), template.content); const buffer = buildPdf(body); const generatedAt = new Date();
+    const fileName = `asset-acknowledgement-${asset.assetNumber}-${generatedAt.toISOString().slice(0, 10)}.pdf`;
+    const document = await this.documents.storeGeneratedPdf(auth, assetId, fileName, buffer, 'ACKNOWLEDGEMENT');
+    try {
+      const record = await this.db.assetAcknowledgement.create({ tenantId: auth.tenantId, companyId: auth.companyId, assetId, employeeId: String(employee._id), templateId: String(template._id), templateName: template.name, contentSnapshot: body, documentId: document.id, generatedAt, generatedByUserId: auth.userId, status: 'PENDING' });
+      return { buffer, acknowledgementId: String(record._id), documentId: document.id };
+    } catch (error) {
+      await this.documents.remove(auth, assetId, document.id).catch(() => undefined);
+      throw error;
+    }
+  }
+  async download(auth: AuthContext, acknowledgementId: string) {
+    const record = await this.db.assetAcknowledgement.findOne({ _id: acknowledgementId, tenantId: auth.tenantId, companyId: auth.companyId }).lean(); if (!record) throw new NotFoundException('Acknowledgement not found');
+    if (!record.documentId) throw new NotFoundException('Acknowledgement PDF is not stored');
+    return this.documents.download(auth, record.assetId, record.documentId);
   }
   async acknowledge(auth: AuthContext, acknowledgementId: string, note?: string) { const record = await this.db.assetAcknowledgement.findOne({ _id: acknowledgementId, tenantId: auth.tenantId, companyId: auth.companyId }).lean(); if (!record) throw new NotFoundException('Acknowledgement not found'); if (record.employeeId !== auth.userId) throw new ForbiddenException('Only the assigned employee can acknowledge this asset'); if (record.status === 'ACKNOWLEDGED') return record; return this.db.assetAcknowledgement.findOneAndUpdate({ _id: acknowledgementId, tenantId: auth.tenantId, companyId: auth.companyId, status: 'PENDING' }, { $set: { status: 'ACKNOWLEDGED', acknowledgedAt: new Date(), acknowledgedByUserId: auth.userId, acknowledgementNote: String(note ?? '').trim() || undefined } }, { new: true }).lean(); }
 }
