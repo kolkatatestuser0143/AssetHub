@@ -25,20 +25,26 @@ const navigation: Array<{ label: string; href: string; icon: LucideIcon; exact?:
 
 const LOGIN_PATH = '/system/login';
 
-function isRouteMatch(pathname: string, href: string, exact?: boolean) {
-  return exact ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
+const SYSTEM_THEME: Record<string, string> = {
+  '--theme-primary': '#2563eb',
+  '--theme-primary-hover': '#1d4ed8',
+  '--theme-primary-soft': '#eff6ff',
+  '--theme-sidebar': '#020617',
+  '--theme-sidebar-text': '#cbd5e1',
+  '--theme-sidebar-hover': '#0f172a',
+  '--theme-sidebar-active': '#2563eb',
+  '--theme-focus': '#3b82f6',
+  '--theme-link': '#2563eb',
+};
+
+function captureTheme() {
+  const styles = getComputedStyle(document.documentElement);
+  return Object.fromEntries(Object.keys(SYSTEM_THEME).map((key) => [key, styles.getPropertyValue(key)]));
 }
 
-function getActiveHref(pathname: string) {
-  return navigation
-    .filter((item) => isRouteMatch(pathname, item.href, item.exact))
-    .sort((a, b) => b.href.length - a.href.length)[0]?.href ?? null;
-}
-
-function getPageTitle(pathname: string) {
-  return navigation
-    .filter((item) => isRouteMatch(pathname, item.href, item.exact))
-    .sort((a, b) => b.href.length - a.href.length)[0]?.label ?? 'System Console';
+function applyTheme(theme: Record<string, string>) {
+  const root = document.documentElement;
+  for (const [key, value] of Object.entries(theme)) root.style.setProperty(key, value);
 }
 
 export default function SystemLayout({ children }: { children: React.ReactNode }) {
@@ -48,8 +54,12 @@ export default function SystemLayout({ children }: { children: React.ReactNode }
   const [checkingAuth, setCheckingAuth] = useState(!isLoginPage);
   const [authenticated, setAuthenticated] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const activeHref = useMemo(() => getActiveHref(pathname), [pathname]);
-  const title = useMemo(() => getPageTitle(pathname), [pathname]);
+
+  useEffect(() => {
+    const previousTheme = captureTheme();
+    applyTheme(SYSTEM_THEME);
+    return () => applyTheme(previousTheme);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -77,6 +87,11 @@ export default function SystemLayout({ children }: { children: React.ReactNode }
     return () => { cancelled = true; };
   }, [isLoginPage, router, pathname]);
 
+  const title = useMemo(
+    () => navigation.find((item) => item.exact ? pathname === item.href : pathname.startsWith(item.href))?.label ?? 'System Console',
+    [pathname],
+  );
+
   async function logout() {
     await systemLogout();
     setAuthenticated(false);
@@ -84,10 +99,10 @@ export default function SystemLayout({ children }: { children: React.ReactNode }
     router.replace(LOGIN_PATH);
   }
 
-  if (isLoginPage) return <>{children}</>;
+  if (isLoginPage) return <div className="min-h-screen" style={SYSTEM_THEME}>{children}</div>;
 
   if (checkingAuth || !authenticated) {
-    return <div className="grid min-h-screen place-items-center bg-slate-950 text-sm text-slate-400">Loading system console…</div>;
+    return <div className="grid min-h-screen place-items-center bg-slate-950 text-sm text-slate-400" style={SYSTEM_THEME}>Loading system console…</div>;
   }
 
   const sidebar = (
@@ -104,7 +119,7 @@ export default function SystemLayout({ children }: { children: React.ReactNode }
         <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Platform</p>
         <div className="space-y-1">
           {navigation.map((item) => {
-            const active = activeHref === item.href;
+            const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
             const Icon = item.icon;
             return <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${active ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}><Icon className="h-4 w-4" />{item.label}</Link>;
           })}
@@ -115,7 +130,7 @@ export default function SystemLayout({ children }: { children: React.ReactNode }
   );
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-950">
+    <div className="min-h-screen bg-slate-950 text-slate-950" style={SYSTEM_THEME}>
       {mobileOpen && <button aria-label="Close navigation" className="fixed inset-0 z-30 bg-slate-950/60 lg:hidden" onClick={() => setMobileOpen(false)} />}
       {sidebar}
       <div className="min-h-screen lg:pl-72">
