@@ -2,6 +2,9 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { Types } from 'mongoose';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 
+const TRIAL_DAYS = Number(process.env.LICENSE_TRIAL_DAYS ?? 14);
+const GRACE_DAYS = Number(process.env.LICENSE_GRACE_DAYS ?? 7);
+
 @Injectable()
 export class SystemSubscriptionService {
   constructor(private readonly db: MongooseDatabaseService) {}
@@ -9,14 +12,7 @@ export class SystemSubscriptionService {
   async listPlans(includeArchived = true) {
     const filter = includeArchived ? {} : { $or: [{ isActive: true }, { isActive: { $exists: false } }] };
     const plans = await this.db.plan.find(filter).sort({ name: 1 }).lean();
-    return plans.map((plan: any) => ({
-      id: String(plan._id),
-      name: plan.name,
-      features: plan.features ?? {},
-      isActive: plan.isActive !== false,
-      createdAt: plan.createdAt,
-      updatedAt: plan.updatedAt,
-    }));
+    return plans.map((plan: any) => ({ id: String(plan._id), name: plan.name, features: plan.features ?? {}, isActive: plan.isActive !== false, createdAt: plan.createdAt, updatedAt: plan.updatedAt }));
   }
 
   async createPlan(name: string, features: Record<string, unknown> = {}) {
@@ -59,10 +55,7 @@ export class SystemSubscriptionService {
       this.db.plan.find({ $or: [{ isActive: true }, { isActive: { $exists: false } }] }).sort({ name: 1 }).lean(),
       this.db.subscription.find({ status: { $ne: 'revoked' } }).sort({ createdAt: -1 }).lean(),
     ]);
-    return {
-      plans: plans.map((plan: any) => ({ id: String(plan._id), name: plan.name, features: plan.features ?? {}, isActive: plan.isActive !== false })),
-      subscriptions: subscriptions.map((sub: any) => this.dto(sub)),
-    };
+    return { plans: plans.map((plan: any) => ({ id: String(plan._id), name: plan.name, features: plan.features ?? {}, isActive: plan.isActive !== false })), subscriptions: subscriptions.map((sub: any) => this.dto(sub)) };
   }
 
   async revokedTenants() {
@@ -73,11 +66,7 @@ export class SystemSubscriptionService {
     ]);
     const tenantMap = new Map(tenants.map((tenant: any) => [String(tenant._id), tenant]));
     const planMap = new Map(plans.map((plan: any) => [String(plan._id), plan]));
-    return subscriptions.map((sub: any) => ({
-      ...this.dto(sub),
-      tenantName: tenantMap.get(String(sub.tenantId))?.name ?? String(sub.tenantId),
-      planName: planMap.get(String(sub.planId))?.name ?? String(sub.planId),
-    }));
+    return subscriptions.map((sub: any) => ({ ...this.dto(sub), tenantName: tenantMap.get(String(sub.tenantId))?.name ?? String(sub.tenantId), planName: planMap.get(String(sub.planId))?.name ?? String(sub.planId) }));
   }
 
   private async getTenantOrThrow(tenantId: string) {
@@ -96,81 +85,46 @@ export class SystemSubscriptionService {
   }
 
   private dto(subscription: any) {
-    return {
-      id: String(subscription._id),
-      tenantId: subscription.tenantId,
-      planId: subscription.planId,
-      status: subscription.status,
-      startedAt: subscription.startedAt,
-      endsAt: subscription.endsAt ?? null,
-    };
+    return { id: String(subscription._id), tenantId: subscription.tenantId, planId: subscription.planId, status: subscription.status, startedAt: subscription.startedAt, endsAt: subscription.endsAt ?? null, graceUntil: subscription.graceUntil ?? null };
   }
 
   private async audit(tenantId: string, action: string, targetId: string, metadata: Record<string, unknown>, actorUserId?: string) {
-    await this.db.auditEvent.create({
-      tenantId,
-      actorUserId,
-      action,
-      targetType: 'subscription',
-      targetId,
-      metadata,
-      occurredAt: new Date(),
-    });
+    await this.db.auditEvent.create({ tenantId, actorUserId, action, targetType: 'subscription', targetId, metadata, occurredAt: new Date() });
   }
 
   async assign(tenantId: string, planId: string, status = 'active', endsAt?: string, actorUserId?: string) {
     await this.getTenantOrThrow(tenantId);
     const plan = await this.getPlanOrThrow(planId);
     const current = await this.db.subscription.findOne({ tenantId }).sort({ createdAt: -1 }).lean();
-    const expiry = endsAt ? new Date(endsAt) : undefined;
+    let expiry = endsAt ? new Date(endsAt) : undefined;
     if (expiry && Number.isNaN(expiry.getTime())) throw new BadRequestException('Invalid endsAt');
-
-    const update = { $set: { planId: String(plan._id), status, ...(expiry ? { endsAt: expiry } : {}) } };
+    if (status === 'trialing' && !expiry) { expiry = new Date(Date.now() + TRIAL_DAYS * 86400000); }
+    const update = { $set: { planId: String(plan._id), status, ...(expiry ? { endsAt: expiry } : {}), graceUntil: null } };
     const subscription = current
       ? await this.db.subscription.findOneAndUpdate({ _id: current._id }, update, { new: true }).lean()
-      : await this.db.subscription.create({
-          tenantId,
-          planId: String(plan._id),
-          status,
-          startedAt: new Date(),
-          ...(expiry ? { endsAt: expiry } : {}),
-        });
-
+      : await this.db.subscription.create({ tenantId, planId: String(plan._id), status, startedAt: new Date(), ...(expiry ? { endsAt: expiry } : {}) });
     if (!subscription) throw new NotFoundException('Subscription could not be saved');
-    await this.audit(tenantId, current?.status === 'revoked' ? 'subscription.reactivated' : current ? 'subscription.updated' : 'subscription.created', String(subscription._id), {
-      planId: String(plan._id),
-      status,
-      endsAt: subscription.endsAt ?? null,
-    }, actorUserId);
+    await this.audit(tenantId, current?.status === 'revoked' ? 'subscription.reactivated' : current ? 'subscription.updated' : 'subscription.created', String(subscription._id), { planId: String(plan._id), status, endsAt: subscription.endsAt ?? null }, actorUserId);
     return this.dto(subscription);
   }
 
   async renew(tenantId: string, endsAt: string, actorUserId?: string) {
     await this.getTenantOrThrow(tenantId);
     const expiry = new Date(endsAt);
-    if (Number.isNaN(expiry.getTime())) throw new BadRequestException('Invalid renewal date');
+    if (Number.isNaN(expiry.getTime()) || expiry.getTime() <= Date.now()) throw new BadRequestException('Renewal date must be in the future');
     const current = await this.db.subscription.findOne({ tenantId }).sort({ createdAt: -1 }).lean();
     if (!current) throw new NotFoundException('No subscription found for tenant');
-
-    const subscription = await this.db.subscription.findOneAndUpdate(
-      { _id: current._id },
-      { $set: { status: 'active', endsAt: expiry } },
-      { new: true },
-    ).lean();
+    const subscription = await this.db.subscription.findOneAndUpdate({ _id: current._id }, { $set: { status: 'active', endsAt: expiry, graceUntil: null } }, { new: true }).lean();
     if (!subscription) throw new NotFoundException('Subscription could not be renewed');
     await this.audit(tenantId, current.status === 'revoked' ? 'subscription.reactivated' : 'subscription.renewed', String(subscription._id), { endsAt: expiry }, actorUserId);
     return this.dto(subscription);
   }
 
-  async setStatus(tenantId: string, status: 'active' | 'trialing' | 'past_due' | 'canceled', actorUserId?: string) {
+  async setStatus(tenantId: string, status: 'active' | 'trialing' | 'past_due' | 'canceled' | 'expired', actorUserId?: string) {
     await this.getTenantOrThrow(tenantId);
     const current = await this.db.subscription.findOne({ tenantId }).sort({ createdAt: -1 }).lean();
     if (!current) throw new NotFoundException('No subscription found for tenant');
-    const subscription = await this.db.subscription.findOneAndUpdate(
-      { _id: current._id },
-      { $set: { status, ...(status === 'canceled' ? { endsAt: new Date() } : {}) } },
-      { new: true },
-    ).lean();
+    const subscription = await this.db.subscription.findOneAndUpdate({ _id: current._id }, { $set: { status, ...(status === 'canceled' || status === 'expired' ? { endsAt: new Date(), graceUntil: null } : {}) } }, { new: true }).lean();
     if (!subscription) throw new NotFoundException('Subscription could not be updated');
     await this.audit(tenantId, `subscription.${status}`, String(subscription._id), { status }, actorUserId);
     return this.dto(subscription);
@@ -180,11 +134,7 @@ export class SystemSubscriptionService {
     await this.getTenantOrThrow(tenantId);
     const current = await this.db.subscription.findOne({ tenantId }).sort({ createdAt: -1 }).lean();
     if (!current) throw new NotFoundException('No subscription found for tenant');
-    const subscription = await this.db.subscription.findOneAndUpdate(
-      { _id: current._id },
-      { $set: { status: 'revoked', endsAt: new Date() } },
-      { new: true },
-    ).lean();
+    const subscription = await this.db.subscription.findOneAndUpdate({ _id: current._id }, { $set: { status: 'revoked', endsAt: new Date(), graceUntil: null } }, { new: true }).lean();
     if (!subscription) throw new NotFoundException('Subscription could not be revoked');
     await this.db.entitlement.deleteMany({ subscriptionId: String(current._id) });
     await this.audit(tenantId, 'subscription.revoked', String(subscription._id), { planId: current.planId }, actorUserId);
@@ -196,11 +146,7 @@ export class SystemSubscriptionService {
     if (!subscription) throw new NotFoundException('Subscription not found');
     const normalizedKey = key.trim();
     if (!normalizedKey) throw new BadRequestException('Entitlement key is required');
-    const entitlement = await this.db.entitlement.findOneAndUpdate(
-      { subscriptionId, key: normalizedKey },
-      { $set: { value } },
-      { upsert: true, new: true },
-    ).lean();
+    const entitlement = await this.db.entitlement.findOneAndUpdate({ subscriptionId, key: normalizedKey }, { $set: { value } }, { upsert: true, new: true }).lean();
     await this.audit(subscription.tenantId, 'subscription.entitlement_updated', subscriptionId, { key: normalizedKey, value }, actorUserId);
     return { id: String(entitlement?._id), subscriptionId, key: normalizedKey, value: entitlement?.value };
   }
