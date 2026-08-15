@@ -17,7 +17,6 @@ async function main() {
   const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
   const connection = new IORedis(redisUrl, { maxRetriesPerRequest: null });
   const queue = new Queue(QUEUE_NAME, { connection });
-
   await queue.upsertJobScheduler(JOB_NAME, { every: EVERY_MS }, { name: JOB_NAME, data: { source: 'scheduler' }, opts: { removeOnComplete: 10, removeOnFail: 50 } });
 
   const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn', 'log'] });
@@ -26,7 +25,6 @@ async function main() {
 
   const worker = new Worker(QUEUE_NAME, async (_job: Job) => {
     const now = new Date();
-    const graceCutoff = new Date(now.getTime() - GRACE_MS);
     let trialExpired = 0;
     let graceStarted = 0;
     let expired = 0;
@@ -49,12 +47,10 @@ async function main() {
       graceStarted++;
     }
 
-    const graceExpired = await db.subscription.find({ status: 'past_due', endsAt: { $lte: graceCutoff } }).lean();
+    const graceExpired = await db.subscription.find({ status: 'past_due', graceUntil: { $lte: now } }).lean();
     for (const subscription of graceExpired) {
-      const graceUntil = (subscription as any).graceUntil ? new Date((subscription as any).graceUntil) : graceCutoff;
-      if (graceUntil > now) continue;
       await db.subscription.updateOne({ _id: subscription._id, status: 'past_due' }, { $set: { status: 'expired' } });
-      await db.auditEvent.create({ tenantId: subscription.tenantId, action: 'subscription.expired', targetType: 'subscription', targetId: String(subscription._id), metadata: { graceUntil }, occurredAt: now });
+      await db.auditEvent.create({ tenantId: subscription.tenantId, action: 'subscription.expired', targetType: 'subscription', targetId: String(subscription._id), metadata: { graceUntil: (subscription as any).graceUntil ?? null }, occurredAt: now });
       expired++;
     }
 
@@ -63,7 +59,6 @@ async function main() {
       const result = await audit.purgeExpired(String(tenant._id));
       auditEventsDeleted += result.deleted;
     }
-
     return { tenants: tenants.length, trialExpired, graceStarted, expired, auditEventsDeleted };
   }, { connection, concurrency: 1 });
 
@@ -73,7 +68,6 @@ async function main() {
   const shutdown = async () => { await worker.close(); await queue.close(); await connection.quit(); await app.close(); };
   process.once('SIGINT', () => void shutdown().finally(() => process.exit(0)));
   process.once('SIGTERM', () => void shutdown().finally(() => process.exit(0)));
-
   console.log(`[maintenance] worker started; schedule=24h grace=${GRACE_DAYS}d redis=${redisUrl.replace(/:\/\/.*@/, '://***@')}`);
 }
 
