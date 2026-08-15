@@ -13,9 +13,13 @@ async function refreshSession() {
   return refreshing;
 }
 
+function shouldRefreshOn401(path: string) {
+  return path !== '/auth/refresh' && path !== '/auth/login' && path !== '/auth/system/login';
+}
+
 export async function apiFetch(path: string, options: RequestInit = {}, retry = true) {
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers: { 'Content-Type': 'application/json', ...(options.headers ?? {}) }, credentials: 'include' });
-  if (res.status === 401 && retry && path !== '/auth/refresh') { await refreshSession(); return apiFetch(path, options, false); }
+  if (res.status === 401 && retry && shouldRefreshOn401(path)) { await refreshSession(); return apiFetch(path, options, false); }
   if (!res.ok) { const body = await res.json().catch(() => ({})); throw new Error(body.message ?? `Request failed: ${res.status}`); }
   return res.json();
 }
