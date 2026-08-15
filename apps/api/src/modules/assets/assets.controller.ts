@@ -1,22 +1,11 @@
-import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { IsIn, IsInt, IsISO8601, IsObject, IsOptional, IsString, Min } from 'class-validator';
-import { AssetLifecycleState } from '../../common/enums';
-import { AssetsService } from './assets.service';
-import { AssetImportService } from './asset-import.service';
-import { AssetExcelReportService } from './asset-excel-report.service';
-import { AssetPdfReportService } from './asset-pdf-report.service';
-import { AssetTransferService } from './asset-transfer.service';
-import { AssetAssignmentTransactionService } from './asset-assignment-transaction.service';
-import { AssetTimelineService } from './asset-timeline.service';
-import { AssetSearchService } from './asset-search.service';
-import { AssetListService } from './asset-list.service';
-import { AssetDetailService } from './asset-detail.service';
-import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
-import { RbacGuard } from '../../common/guards/rbac.guard';
-import { RequirePermission } from '../../common/decorators/require-permission.decorator';
-
-class CreateAssetDto { @IsString() assetTypeId: string; @IsOptional() @IsString() locationId?: string; @IsOptional() @IsString() departmentId?: string; @IsOptional() @IsString() vendorId?: string; @IsObject() @IsOptional() fields?: Record<string, unknown>; }
+import { AssetCondition, AssetLifecycleState } from '../../common/enums';
+import { AssetsService } from './assets.service'; import { AssetImportService } from './asset-import.service'; import { AssetExcelReportService } from './asset-excel-report.service'; import { AssetPdfReportService } from './asset-pdf-report.service'; import { AssetTransferService } from './asset-transfer.service'; import { AssetAssignmentTransactionService } from './asset-assignment-transaction.service'; import { AssetTimelineService } from './asset-timeline.service'; import { AssetSearchService } from './asset-search.service'; import { AssetListService } from './asset-list.service'; import { AssetDetailService } from './asset-detail.service';
+import { TenantContextGuard } from '../../common/guards/tenant-context.guard'; import { RbacGuard } from '../../common/guards/rbac.guard'; import { RequirePermission } from '../../common/decorators/require-permission.decorator';
+class CreateAssetDto { @IsString() assetTypeId: string; @IsOptional() @IsString() locationId?: string; @IsOptional() @IsString() departmentId?: string; @IsOptional() @IsString() vendorId?: string; @IsOptional() @IsIn(Object.values(AssetCondition)) condition?: AssetCondition; @IsOptional() @IsString() serialNumber?: string; @IsOptional() @IsString() model?: string; @IsObject() @IsOptional() fields?: Record<string, unknown>; }
 class AssignAssetDto { @IsString() userId: string; @IsString() @IsOptional() notes?: string; }
+class ReturnAssetDto { @IsString() @IsOptional() notes?: string; @IsOptional() @IsIn(Object.values(AssetCondition)) condition?: AssetCondition; }
 class TransitionDto { @IsIn(Object.values(AssetLifecycleState)) toState: AssetLifecycleState; @IsString() @IsOptional() reason?: string; }
 class CreateAssetTypeDto { @IsString() name: string; @IsString() prefix: string; @IsString() @IsOptional() separator?: string; @IsInt() @Min(1) @IsOptional() padding?: number; }
 class VendorDto { @IsString() name: string; @IsOptional() @IsString() contact?: string; }
@@ -26,11 +15,9 @@ class AssetListQueryDto { @IsOptional() @IsString() q?: string; @IsOptional() @I
 class TransferDto { @IsOptional() @IsString() toUserId?: string; @IsOptional() @IsString() toLocationId?: string; @IsOptional() @IsString() toDepartmentId?: string; @IsOptional() @IsString() reason?: string; @IsOptional() @IsString() note?: string; }
 class TransferStatusDto { @IsIn(['PENDING', 'APPROVED', 'COMPLETED', 'REJECTED', 'CANCELLED']) status!: 'PENDING' | 'APPROVED' | 'COMPLETED' | 'REJECTED' | 'CANCELLED'; }
 
-@Controller('assets')
-@UseGuards(TenantContextGuard, RbacGuard)
+@Controller('assets') @UseGuards(TenantContextGuard, RbacGuard)
 export class AssetsController {
   constructor(private readonly assets: AssetsService, private readonly imports: AssetImportService, private readonly excelReports: AssetExcelReportService, private readonly pdfReports: AssetPdfReportService, private readonly transfers: AssetTransferService, private readonly assignmentTransactions: AssetAssignmentTransactionService, private readonly timeline: AssetTimelineService, private readonly searchService: AssetSearchService, private readonly listService: AssetListService, private readonly detail: AssetDetailService) {}
-
   @Get('search') @RequirePermission('asset:read') search(@Query('q') query: string, @Req() req: any) { return this.searchService.search(req.authContext, query ?? ''); }
   @Get() @RequirePermission('asset:read') list(@Query() query: AssetListQueryDto, @Req() req: any) { return this.listService.list(req.authContext, query); }
   @Get('assignments') @RequirePermission('asset:read') listAssignments(@Req() req: any) { return this.assets.listAssignments(req.authContext); }
@@ -53,11 +40,11 @@ export class AssetsController {
   @Post('transfers/:transferId/reject') @RequirePermission('asset:write') rejectTransfer(@Param('transferId') transferId: string, @Body() dto: TransferDto, @Req() req: any) { return this.transfers.reject(req.authContext, transferId, dto.note); }
   @Post('transfers/:transferId/complete') @RequirePermission('asset:write') completeTransfer(@Param('transferId') transferId: string, @Body() dto: TransferDto, @Req() req: any) { return this.transfers.complete(req.authContext, transferId, dto.note); }
   @Post('transfers/:transferId/cancel') @RequirePermission('asset:write') cancelTransfer(@Param('transferId') transferId: string, @Body() dto: TransferDto, @Req() req: any) { return this.transfers.cancel(req.authContext, transferId, dto.note); }
-  @Post() @RequirePermission('asset:write') create(@Body() dto: CreateAssetDto, @Req() req: any) { return this.assets.createAsset(req.authContext, dto.assetTypeId, { ...(dto.fields ?? {}), locationId: dto.locationId, departmentId: dto.departmentId, vendorId: dto.vendorId }); }
+  @Post() @RequirePermission('asset:write') create(@Body() dto: CreateAssetDto, @Req() req: any) { return this.assets.createAsset(req.authContext, dto.assetTypeId, { ...(dto.fields ?? {}), locationId: dto.locationId, departmentId: dto.departmentId, vendorId: dto.vendorId, condition: dto.condition, serialNumber: dto.serialNumber, model: dto.model }); }
   @Get(':assetId') @RequirePermission('asset:read') get(@Param('assetId') assetId: string, @Req() req: any) { return this.detail.get(req.authContext, assetId); }
   @Post(':assetId/assign') @RequirePermission('asset:write') assign(@Param('assetId') assetId: string, @Body() dto: AssignAssetDto, @Req() req: any) { return this.assignmentTransactions.assign(req.authContext, assetId, dto.userId, dto.notes); }
   @Get(':assetId/assignment') @RequirePermission('asset:read') currentAssignment(@Param('assetId') assetId: string, @Req() req: any) { return this.assets.getCurrentAssignment(req.authContext, assetId); }
-  @Post(':assetId/unassign') @RequirePermission('asset:write') unassign(@Param('assetId') assetId: string, @Body() dto: AssignAssetDto, @Req() req: any) { return this.assignmentTransactions.unassign(req.authContext, assetId, dto.notes); }
+  @Post(':assetId/unassign') @RequirePermission('asset:write') unassign(@Param('assetId') assetId: string, @Body() dto: ReturnAssetDto, @Req() req: any) { return this.assignmentTransactions.unassign(req.authContext, assetId, dto.notes, dto.condition); }
   @Get(':assetId/assignment/history') @RequirePermission('asset:read') history(@Param('assetId') assetId: string, @Req() req: any) { return this.assets.listAssignmentHistory(req.authContext, assetId); }
   @Get(':assetId/lifecycle') @RequirePermission('asset:read') lifecycle(@Param('assetId') assetId: string, @Req() req: any) { return this.assets.allowedLifecycleTransitions(req.authContext, assetId); }
   @Get(':assetId/timeline') @RequirePermission('asset:read') timelineView(@Param('assetId') assetId: string, @Req() req: any) { return this.timeline.get(req.authContext, assetId); }
