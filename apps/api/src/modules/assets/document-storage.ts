@@ -12,6 +12,7 @@ export interface DocumentStorage {
     fileName: string;
     contentType: string;
   }): Promise<StoredDocument>;
+  register(uuid: string): Promise<StoredDocument>;
   download(key: string): Promise<{
     buffer: Buffer;
     contentType?: string;
