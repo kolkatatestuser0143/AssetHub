@@ -1,9 +1,8 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { IsDateString, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
-import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
+import { TenantContextGuard, AuthContext } from '../../common/guards/tenant-context.guard';
 import { RbacGuard } from '../../common/guards/rbac.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
-import { AuthContext, TenantAuth } from '../../common/guards/tenant-context.guard';
 import { AssetMaintenanceService, MaintenanceType } from './asset-maintenance.service';
 
 class MaintenanceDto {
@@ -23,25 +22,25 @@ export class AssetMaintenanceController {
 
   @Get()
   @RequirePermission('asset:read')
-  list(@TenantAuth() auth: AuthContext, @Param('assetId') assetId: string) {
-    return this.maintenance.list(auth, assetId);
+  list(@Req() req: any, @Param('assetId') assetId: string) {
+    return this.maintenance.list(req.authContext as AuthContext, assetId);
   }
 
   @Post()
   @RequirePermission('asset:write')
-  create(@TenantAuth() auth: AuthContext, @Param('assetId') assetId: string, @Body() dto: MaintenanceDto) {
-    return this.maintenance.create(auth, assetId, dto);
+  create(@Req() req: any, @Param('assetId') assetId: string, @Body() dto: MaintenanceDto) {
+    return this.maintenance.create(req.authContext as AuthContext, assetId, dto);
   }
 
   @Patch(':recordId')
   @RequirePermission('asset:write')
-  update(@TenantAuth() auth: AuthContext, @Param('assetId') assetId: string, @Param('recordId') recordId: string, @Body() dto: Partial<MaintenanceDto>) {
-    return this.maintenance.update(auth, assetId, recordId, dto);
+  update(@Req() req: any, @Param('assetId') assetId: string, @Param('recordId') recordId: string, @Body() dto: Partial<MaintenanceDto>) {
+    return this.maintenance.update(req.authContext as AuthContext, assetId, recordId, dto);
   }
 
   @Delete(':recordId')
   @RequirePermission('asset:write')
-  remove(@TenantAuth() auth: AuthContext, @Param('assetId') assetId: string, @Param('recordId') recordId: string) {
-    return this.maintenance.remove(auth, assetId, recordId);
+  remove(@Req() req: any, @Param('assetId') assetId: string, @Param('recordId') recordId: string) {
+    return this.maintenance.remove(req.authContext as AuthContext, assetId, recordId);
   }
 }
