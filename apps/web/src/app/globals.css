@@ -12,6 +12,33 @@ button { cursor:pointer; }
 input[type='checkbox'],input[type='radio'],input[type='range'],progress { accent-color:var(--theme-primary); }
 ::selection { background:var(--theme-primary-soft); color:var(--theme-link); }
 
+/* Theme-aware browser scrollbars. Scrollbar colors are selected from the
+   active application context instead of being written to <html>, which keeps
+   System Admin and Tenant themes isolated even in the same browser. */
+html { scrollbar-width:thin; scrollbar-color:#2563eb #eff6ff; }
+html:has([data-tenant-theme='trial']) { scrollbar-color:#64748b #f1f5f9; }
+html:has([data-tenant-theme='starter']) { scrollbar-color:#2563eb #eff6ff; }
+html:has([data-tenant-theme='professional']) { scrollbar-color:#7c3aed #f5f3ff; }
+html:has([data-tenant-theme='enterprise']) { scrollbar-color:#b7791f #fffbeb; }
+html:has([data-tenant-theme='restricted']) { scrollbar-color:#dc2626 #fef2f2; }
+html:has([data-system-theme]) { scrollbar-color:#2563eb #eff6ff; }
+
+html::-webkit-scrollbar { width:10px; height:10px; }
+html::-webkit-scrollbar-track { background:#eff6ff; }
+html::-webkit-scrollbar-thumb { background:#2563eb; border:2px solid #eff6ff; border-radius:999px; }
+html:has([data-tenant-theme='trial'])::-webkit-scrollbar-track { background:#f1f5f9; }
+html:has([data-tenant-theme='trial'])::-webkit-scrollbar-thumb { background:#64748b; border-color:#f1f5f9; }
+html:has([data-tenant-theme='starter'])::-webkit-scrollbar-track { background:#eff6ff; }
+html:has([data-tenant-theme='starter'])::-webkit-scrollbar-thumb { background:#2563eb; border-color:#eff6ff; }
+html:has([data-tenant-theme='professional'])::-webkit-scrollbar-track { background:#f5f3ff; }
+html:has([data-tenant-theme='professional'])::-webkit-scrollbar-thumb { background:#7c3aed; border-color:#f5f3ff; }
+html:has([data-tenant-theme='enterprise'])::-webkit-scrollbar-track { background:#fffbeb; }
+html:has([data-tenant-theme='enterprise'])::-webkit-scrollbar-thumb { background:#b7791f; border-color:#fffbeb; }
+html:has([data-tenant-theme='restricted'])::-webkit-scrollbar-track { background:#fef2f2; }
+html:has([data-tenant-theme='restricted'])::-webkit-scrollbar-thumb { background:#dc2626; border-color:#fef2f2; }
+html:has([data-system-theme])::-webkit-scrollbar-track { background:#eff6ff; }
+html:has([data-system-theme])::-webkit-scrollbar-thumb { background:#2563eb; border-color:#eff6ff; }
+
 .bg-blue-600 { background-color:var(--theme-primary)!important; }
 .bg-blue-50 { background-color:var(--theme-primary-soft)!important; }
 .text-blue-600,.text-blue-700 { color:var(--theme-link)!important; }
@@ -39,7 +66,7 @@ input[type='checkbox'],input[type='radio'],input[type='range'],progress { accent
 @keyframes ui-backdrop-in { from { opacity:0; } to { opacity:1; } }
 @keyframes ui-modal-in { from { opacity:0; transform:translateY(6px) scale(.985); } to { opacity:1; transform:translateY(0) scale(1); } }
 @keyframes ui-toast-in { from { opacity:0; transform:translate3d(8px,-4px,0); } to { opacity:1; transform:translate3d(0,0,0); } }
-@keyframes ui-toast-out { from { opacity:1; transform:translate3d(0,0,0); } to { opacity:0; transform:translate3d(8px,-4px,0); } }
+@keyframes ui-toast-out { from { opacity:1; transform:translate3d(0,0,0); } to { opacity:0; transform:translate3d(8px,0,0); } }
 @keyframes ui-command-in { from { opacity:0; transform:translateY(-4px) scale(.99); } to { opacity:1; transform:translateY(0) scale(1); } }
 
 @media (max-width: 767px) {
@@ -47,7 +74,6 @@ input[type='checkbox'],input[type='radio'],input[type='range'],progress { accent
   .field { min-height:44px; }
 }
 
-/* Physical asset-label dimensions are intentionally exact so browser print scaling is predictable. */
 .asset-label { width:3in; height:2in; background:#fff; color:#000; border:1px solid #d1d5db; border-radius:.08in; padding:.12in; overflow:hidden; display:block; }
 .asset-label-compact { width:2in; height:1in; padding:.07in; border-radius:.05in; }
 .asset-label-large { width:4in; height:2in; padding:.14in; }
@@ -86,7 +112,7 @@ input[type='checkbox'],input[type='radio'],input[type='range'],progress { accent
   @page { margin:0; }
   body { background:#fff; }
   .no-print, nav, aside, header { display:none !important; }
-  .print\:shadow-none { box-shadow:none !important; }
+  .print\\:shadow-none { box-shadow:none !important; }
   .print-sheet, .print-sheet-2col, .print-sheet-compact, .print-sheet-large { gap:0; }
   .asset-label { break-inside:avoid; page-break-inside:avoid; border-color:#000; border-radius:0; }
 }
