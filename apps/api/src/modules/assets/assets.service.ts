@@ -64,7 +64,7 @@ export class AssetsService extends TenantScopedRepository {
     return { generatedAt: new Date().toISOString(), totals: { assets: assets.length, assignedAssets: currentlyAssigned, assignmentRecords: assignments.length, vendors: vendors.length, warranties: warranties.length, expiredWarranties: expiredWarrantyCount, expiringWarranties: expiringWarrantyCount }, statusCounts, assets: assetRows };
   }
 
-  async getAssetReportCsv(auth: AuthContext): Promise<string> { await this.entitlements.requireFeature(auth.tenantId, 'advanced_reports_enabled'); const report = await this.getReportSummary(auth); const escape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`; const rows = [['assetId', 'assetNumber', 'status', 'assetTypeId', 'vendorId', 'warrantyProvider', 'warrantyExpiresAt'], ...report.assets.map((asset: any) => [asset.id, asset.assetNumber, asset.status, asset.assetTypeId, asset.vendorId, asset.warranty?.provider ?? '', asset.warranty?.expiresAt ?? ''])]; return rows.map((row) => row.map(escape).join(',')).join('\n'); }
+  async getAssetReportCsv(auth: AuthContext): Promise<string> { await this.entitlements.requireFeature(auth.tenantId, 'advanced_reports_enabled'); const report = await this.getReportSummary(auth); const escape = (value: unknown) => `\"${String(value ?? '').replace(/\"/g, '\"\"')}\"`; const rows = [['assetId', 'assetNumber', 'status', 'assetTypeId', 'vendorId', 'warrantyProvider', 'warrantyExpiresAt'], ...report.assets.map((asset: any) => [asset.id, asset.assetNumber, asset.status, asset.assetTypeId, asset.vendorId, asset.warranty?.provider ?? '', asset.warranty?.expiresAt ?? ''])]; return rows.map((row) => row.map(escape).join(',')).join('\\n'); }
 
   async listVendors(auth: AuthContext) { return toDtoArray(await this.db.vendor.find({ companyId: auth.companyId }).sort({ name: 1 }).lean()); }
   async createVendor(auth: AuthContext, name: string, contact?: string) { const currentVendorCount = await this.db.vendor.countDocuments({ tenantId: auth.tenantId }); await this.entitlements.requireWithinLimit(auth.tenantId, 'max_vendors', currentVendorCount, 1); const doc = await this.db.vendor.create({ tenantId: auth.tenantId, companyId: auth.companyId, name: name.trim(), contact: contact?.trim() || undefined }); return toDto(doc.toObject()); }
@@ -72,27 +72,49 @@ export class AssetsService extends TenantScopedRepository {
   async deleteVendor(auth: AuthContext, vendorId: string) { const referenced = await this.db.asset.exists({ vendorId, companyId: auth.companyId }); if (referenced) throw new ConflictException('Vendor is referenced by an asset'); const result = await this.db.vendor.deleteOne({ _id: vendorId, companyId: auth.companyId }); if (result.deletedCount === 0) throw new NotFoundException('Vendor not found'); return { ok: true }; }
   async listWarranties(auth: AuthContext) { return toDtoArray(await this.db.warranty.find({ companyId: auth.companyId }).sort({ expiresAt: 1 }).lean()); }
 
-  async assignAsset(auth: AuthContext, assetId: string, userId: string, notes?: string) { const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).lean(); if (!asset) throw new NotFoundException('Asset not found in your scope'); const user = await this.db.user.findOne({ _id: userId, tenantId: auth.tenantId, companyId: auth.companyId }).lean(); if (!user) throw new NotFoundException('User not found in your company'); if (!user.isActive) throw new ForbiddenException('Cannot assign an asset to an inactive user'); const active = await this.db.assetAssignment.findOne({ assetId, returnedAt: { $exists: false } }).lean(); if (active) throw new ConflictException('Asset is already assigned'); try { const assignment = await this.db.assetAssignment.create({ assetId, userId, assignedAt: new Date(), notes }); return toDto(assignment.toObject()); } catch (error: any) { if (error?.code === 11000) throw new ConflictException('Asset is already assigned'); throw error; } }
+  async assignAsset(auth: AuthContext, assetId: string, userId: string, notes?: string) {
+    const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).lean(); if (!asset) throw new NotFoundException('Asset not found in your scope');
+    if (asset.status !== AssetLifecycleState.IN_STOCK) throw new ConflictException(`Asset cannot be directly assigned while in ${asset.status} state`);
+    const user = await this.db.user.findOne({ _id: userId, tenantId: auth.tenantId, companyId: auth.companyId }).lean(); if (!user) throw new NotFoundException('User not found in your company'); if (!user.isActive) throw new ForbiddenException('Cannot assign an asset to an inactive user');
+    const active = await this.db.assetAssignment.findOne({ assetId, returnedAt: { $exists: false } }).lean(); if (active) throw new ConflictException('Asset is already assigned');
+    assertLifecycleTransition(AssetLifecycleState.IN_STOCK, AssetLifecycleState.ASSIGNED);
+    const transitioned = await this.db.asset.findOneAndUpdate({ _id: assetId, ...this.scope(auth), status: AssetLifecycleState.IN_STOCK }, { $set: { status: AssetLifecycleState.ASSIGNED } }, { new: true }).lean();
+    if (!transitioned) throw new ConflictException('Asset changed before assignment could be synchronized');
+    try {
+      const assignment = await this.db.assetAssignment.create({ assetId, userId, assignedAt: new Date(), notes });
+      await this.db.assetAuditEvent.create({ tenantId: auth.tenantId, companyId: auth.companyId, assetId, fromState: AssetLifecycleState.IN_STOCK, toState: AssetLifecycleState.ASSIGNED, actorUserId: auth.userId, reason: notes || 'Asset assigned', occurredAt: new Date() });
+      return toDto(assignment.toObject());
+    } catch (error: any) {
+      await this.db.asset.findOneAndUpdate({ _id: assetId, ...this.scope(auth), status: AssetLifecycleState.ASSIGNED }, { $set: { status: AssetLifecycleState.IN_STOCK } });
+      if (error?.code === 11000) throw new ConflictException('Asset is already assigned');
+      throw error;
+    }
+  }
+
   async getCurrentAssignment(auth: AuthContext, assetId: string) { const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).lean(); if (!asset) throw new NotFoundException('Asset not found in your scope'); const assignment = await this.db.assetAssignment.findOne({ assetId, returnedAt: { $exists: false } }).lean(); return assignment ? toDto(assignment) : null; }
-  async unassignAsset(auth: AuthContext, assetId: string, notes?: string) { const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).lean(); if (!asset) throw new NotFoundException('Asset not found in your scope'); const assignment = await this.db.assetAssignment.findOneAndUpdate({ assetId, returnedAt: { $exists: false } }, { $set: { returnedAt: new Date(), ...(notes ? { notes } : {}) } }, { new: true }).lean(); if (!assignment) throw new NotFoundException('Asset is not currently assigned'); return toDto(assignment); }
+
+  async unassignAsset(auth: AuthContext, assetId: string, notes?: string) {
+    const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).lean(); if (!asset) throw new NotFoundException('Asset not found in your scope');
+    const assignment = await this.db.assetAssignment.findOneAndUpdate({ assetId, returnedAt: { $exists: false } }, { $set: { returnedAt: new Date(), ...(notes ? { notes } : {}) } }, { new: true }).lean(); if (!assignment) throw new NotFoundException('Asset is not currently assigned');
+    assertLifecycleTransition(asset.status as AssetLifecycleState, AssetLifecycleState.IN_STOCK);
+    const transitioned = await this.db.asset.findOneAndUpdate({ _id: assetId, ...this.scope(auth), status: AssetLifecycleState.ASSIGNED }, { $set: { status: AssetLifecycleState.IN_STOCK } }, { new: true }).lean();
+    if (!transitioned) {
+      await this.db.assetAssignment.findOneAndUpdate({ _id: assignment._id, returnedAt: { $exists: true } }, { $unset: { returnedAt: 1 } });
+      throw new ConflictException('Asset changed before return could be synchronized');
+    }
+    await this.db.assetAuditEvent.create({ tenantId: auth.tenantId, companyId: auth.companyId, assetId, fromState: AssetLifecycleState.ASSIGNED, toState: AssetLifecycleState.IN_STOCK, actorUserId: auth.userId, reason: notes || 'Asset returned', occurredAt: new Date() });
+    return toDto(assignment);
+  }
+
   async listAssignmentHistory(auth: AuthContext, assetId: string) { const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).lean(); if (!asset) throw new NotFoundException('Asset not found in your scope'); return toDtoArray(await this.db.assetAssignment.find({ assetId }).sort({ assignedAt: -1 }).lean()); }
   private readOptionalId(value: unknown): string | undefined { if (value === undefined || value === null || value === '') return undefined; if (typeof value !== 'string') throw new ForbiddenException('Relationship IDs must be strings'); return value; }
   private async generateAssetNumber(assetTypeId: string): Promise<string> { const assetType = await this.db.assetType.findOneAndUpdate({ _id: assetTypeId, 'numberingRule.nextSequence': { $exists: true } }, { $inc: { 'numberingRule.nextSequence': 1 } }, { new: true }).lean(); if (!assetType?.numberingRule) throw new NotFoundException('No numbering rule configured for this asset type'); const sequence = assetType.numberingRule.nextSequence - 1; const rule = assetType.numberingRule; const company = await this.db.company.findById(assetType.companyId).lean(); if (!company) throw new NotFoundException('Company not found'); return `${rule.prefix}${rule.separator}${company.code}${rule.separator}${String(sequence).padStart(rule.padding, '0')}`; }
 
-  async allowedLifecycleTransitions(auth: AuthContext, assetId: string) {
-    const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).select({ status: 1 }).lean();
-    if (!asset) throw new NotFoundException('Asset not found in your scope');
-    return { currentState: asset.status, allowedStates: allowedLifecycleTransitions(asset.status as AssetLifecycleState) };
-  }
+  async allowedLifecycleTransitions(auth: AuthContext, assetId: string) { const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).select({ status: 1 }).lean(); if (!asset) throw new NotFoundException('Asset not found in your scope'); return { currentState: asset.status, allowedStates: allowedLifecycleTransitions(asset.status as AssetLifecycleState) }; }
 
   async transitionState(auth: AuthContext, assetId: string, toState: AssetLifecycleState, actorUserId: string, reason?: string) {
-    const filter = this.scope(auth);
-    const before = await this.db.asset.findOne({ _id: assetId, ...filter }).lean();
-    if (!before) throw new NotFoundException('Asset not found in your scope');
-    assertLifecycleTransition(before.status as AssetLifecycleState, toState, reason);
-    const updated = await this.db.asset.findOneAndUpdate({ _id: assetId, ...filter, status: before.status }, { $set: { status: toState } }, { new: true }).lean();
-    if (!updated) throw new ConflictException('Asset changed before lifecycle transition; retry');
-    await this.db.assetAuditEvent.create({ tenantId: auth.tenantId, companyId: auth.companyId, assetId, fromState: before.status as AssetLifecycleState, toState, actorUserId, reason: reason?.trim() || undefined, occurredAt: new Date() });
-    return { ok: true, fromState: before.status, toState, allowedStates: allowedLifecycleTransitions(toState) };
+    const filter = this.scope(auth); const before = await this.db.asset.findOne({ _id: assetId, ...filter }).lean(); if (!before) throw new NotFoundException('Asset not found in your scope'); assertLifecycleTransition(before.status as AssetLifecycleState, toState, reason);
+    const updated = await this.db.asset.findOneAndUpdate({ _id: assetId, ...filter, status: before.status }, { $set: { status: toState } }, { new: true }).lean(); if (!updated) throw new ConflictException('Asset changed before lifecycle transition; retry');
+    await this.db.assetAuditEvent.create({ tenantId: auth.tenantId, companyId: auth.companyId, assetId, fromState: before.status as AssetLifecycleState, toState, actorUserId, reason: reason?.trim() || undefined, occurredAt: new Date() }); return { ok: true, fromState: before.status, toState, allowedStates: allowedLifecycleTransitions(toState) };
   }
 }
