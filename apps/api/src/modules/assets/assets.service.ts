@@ -12,23 +12,16 @@ export class AssetsService extends TenantScopedRepository {
   constructor(private readonly db: MongooseDatabaseService, private readonly entitlements: EntitlementService) { super(); }
 
   async listAssets(auth: AuthContext) { return toDtoArray(await this.db.asset.find(this.scope(auth)).sort({ createdAt: -1 }).lean()); }
-
   async listAssetTypes(auth: AuthContext) { return toDtoArray(await this.db.assetType.find({ companyId: auth.companyId }).sort({ name: 1 }).lean()); }
 
   async createAssetType(auth: AuthContext, name: string, numberingRule: { prefix: string; separator?: string; padding?: number }) {
-    const normalizedName = name.trim();
-    const normalizedPrefix = numberingRule.prefix.trim().toUpperCase();
+    const normalizedName = name.trim(); const normalizedPrefix = numberingRule.prefix.trim().toUpperCase();
     if (!normalizedName) throw new ConflictException('Asset type name is required');
     if (!normalizedPrefix) throw new ConflictException('Asset type prefix is required');
     const duplicate = await this.db.assetType.findOne({ companyId: auth.companyId, $or: [{ name: normalizedName }, { 'numberingRule.prefix': normalizedPrefix }] }).lean();
     if (duplicate) throw new ConflictException('Another asset type already uses this name or prefix');
-    try {
-      const doc = await this.db.assetType.create({ companyId: auth.companyId, name: normalizedName, numberingRule: { prefix: normalizedPrefix, separator: numberingRule.separator ?? '-', padding: numberingRule.padding ?? 6, nextSequence: 1 } });
-      return toDto(doc.toObject());
-    } catch (error: any) {
-      if (error?.code === 11000) throw new ConflictException('Another asset type already uses this name or prefix');
-      throw error;
-    }
+    try { const doc = await this.db.assetType.create({ companyId: auth.companyId, name: normalizedName, numberingRule: { prefix: normalizedPrefix, separator: numberingRule.separator ?? '-', padding: numberingRule.padding ?? 6, nextSequence: 1 } }); return toDto(doc.toObject()); }
+    catch (error: any) { if (error?.code === 11000) throw new ConflictException('Another asset type already uses this name or prefix'); throw error; }
   }
 
   async deleteAssetType(auth: AuthContext, assetTypeId: string) {
@@ -36,102 +29,55 @@ export class AssetsService extends TenantScopedRepository {
     if (!type) throw new NotFoundException('Asset type not found');
     const referenced = await this.db.asset.exists({ assetTypeId, companyId: auth.companyId });
     if (referenced) throw new ConflictException('Asset type is referenced by assets and cannot be deleted');
-    await this.db.assetType.deleteOne({ _id: assetTypeId, companyId: auth.companyId });
-    return { ok: true };
+    await this.db.assetType.deleteOne({ _id: assetTypeId, companyId: auth.companyId }); return { ok: true };
   }
-
-  async updateCondition(auth: AuthContext, assetId: string, condition: AssetCondition) {
-    if (!Object.values(AssetCondition).includes(condition)) throw new ForbiddenException('Invalid asset condition');
-    const doc = await this.db.asset.findOneAndUpdate({ _id: assetId, ...this.scope(auth) }, { $set: { condition, updatedAt: new Date() } }, { new: true }).lean();
-    if (!doc) throw new NotFoundException('Asset not found in your scope');
-    return toDto(doc);
-  }
+  async updateCondition(auth: AuthContext, assetId: string, condition: AssetCondition) { if (!Object.values(AssetCondition).includes(condition)) throw new ForbiddenException('Invalid asset condition'); const doc = await this.db.asset.findOneAndUpdate({ _id: assetId, ...this.scope(auth) }, { $set: { condition, updatedAt: new Date() } }, { new: true }).lean(); if (!doc) throw new NotFoundException('Asset not found in your scope'); return toDto(doc); }
 
   async createAsset(auth: AuthContext, assetTypeId: string, fields: Record<string, unknown>) {
     const assetType = await this.db.assetType.findOne({ _id: assetTypeId, companyId: auth.companyId }).lean();
     if (!assetType) throw new ForbiddenException('Asset type does not belong to your company');
-    const currentAssetCount = await this.db.asset.countDocuments({ tenantId: auth.tenantId });
-    await this.entitlements.requireWithinLimit(auth.tenantId, 'max_assets', currentAssetCount, 1);
-
-    const locationId = this.readOptionalId(fields.locationId);
-    const departmentId = this.readOptionalId(fields.departmentId);
-    const vendorId = this.readOptionalId(fields.vendorId);
+    const currentAssetCount = await this.db.asset.countDocuments({ tenantId: auth.tenantId }); await this.entitlements.requireWithinLimit(auth.tenantId, 'max_assets', currentAssetCount, 1);
+    const locationId = this.readOptionalId(fields.locationId); const departmentId = this.readOptionalId(fields.departmentId); const vendorId = this.readOptionalId(fields.vendorId);
     if (locationId) {
-      const location = await this.db.location.findById(locationId).lean();
-      if (!location) throw new NotFoundException('Location not found');
-      const plant = await this.db.plant.findById(location.plantId).lean();
-      const businessUnit = plant ? await this.db.businessUnit.findById(plant.businessUnitId).lean() : null;
-      if (!plant || !businessUnit || businessUnit.companyId !== auth.companyId) throw new ForbiddenException('locationId does not belong to your company');
-      if (departmentId) {
-        const department = await this.db.department.findOne({ _id: departmentId, locationId: location._id }).lean();
-        if (!department) throw new ForbiddenException('departmentId does not belong to the selected location');
-      }
+      const location = await this.db.location.findById(locationId).lean(); if (!location) throw new NotFoundException('Location not found');
+      const site = await this.db.plant.findById(location.plantId).lean(); if (!site || String(site.companyId) !== String(auth.companyId)) throw new ForbiddenException('locationId does not belong to your company');
+      if (departmentId) { const department = await this.db.department.findOne({ _id: departmentId, locationId: location._id }).lean(); if (!department) throw new ForbiddenException('departmentId does not belong to the selected location'); }
     } else if (departmentId) {
-      const department = await this.db.department.findById(departmentId).lean();
-      if (!department) throw new NotFoundException('Department not found');
-      const location = await this.db.location.findById(department.locationId).lean();
-      const plant = location ? await this.db.plant.findById(location.plantId).lean() : null;
-      const businessUnit = plant ? await this.db.businessUnit.findById(plant.businessUnitId).lean() : null;
-      if (!location || !plant || !businessUnit || businessUnit.companyId !== auth.companyId) throw new ForbiddenException('departmentId does not belong to your company');
+      const department = await this.db.department.findById(departmentId).lean(); if (!department) throw new NotFoundException('Department not found');
+      const location = await this.db.location.findById(department.locationId).lean(); const site = location ? await this.db.plant.findById(location.plantId).lean() : null;
+      if (!location || !site || String(site.companyId) !== String(auth.companyId)) throw new ForbiddenException('departmentId does not belong to your company');
     }
-    if (vendorId) {
-      const vendor = await this.db.vendor.findOne({ _id: vendorId, companyId: auth.companyId }).lean();
-      if (!vendor) throw new ForbiddenException('vendorId does not belong to your company');
-    }
-
+    if (vendorId) { const vendor = await this.db.vendor.findOne({ _id: vendorId, companyId: auth.companyId }).lean(); if (!vendor) throw new ForbiddenException('vendorId does not belong to your company'); }
     const serialNumber = typeof fields.serialNumber === 'string' ? fields.serialNumber.trim() : '';
-    if (serialNumber) {
-      const duplicateSerial = await this.db.asset.findOne({ tenantId: auth.tenantId, serialNumber }).select({ assetNumber: 1 }).lean();
-      if (duplicateSerial) throw new ConflictException(`Serial number '${serialNumber}' is already assigned to asset ${duplicateSerial.assetNumber}`);
-    }
-
-    const assetNumber = await this.generateAssetNumber(assetTypeId);
-    const customFields = { ...fields };
-    delete customFields.locationId; delete customFields.departmentId; delete customFields.vendorId; delete customFields.condition; delete customFields.serialNumber; delete customFields.model;
+    if (serialNumber) { const duplicateSerial = await this.db.asset.findOne({ tenantId: auth.tenantId, serialNumber }).select({ assetNumber: 1 }).lean(); if (duplicateSerial) throw new ConflictException(`Serial number '${serialNumber}' is already assigned to asset ${duplicateSerial.assetNumber}`); }
+    const assetNumber = await this.generateAssetNumber(assetTypeId); const customFields = { ...fields }; delete customFields.locationId; delete customFields.departmentId; delete customFields.vendorId; delete customFields.condition; delete customFields.serialNumber; delete customFields.model;
     const condition = Object.values(AssetCondition).includes(String(fields.condition) as AssetCondition) ? String(fields.condition) : AssetCondition.GOOD;
-    try {
-      const doc = await this.db.asset.create({ tenantId: auth.tenantId, companyId: auth.companyId, assetTypeId, assetNumber, status: AssetLifecycleState.IN_STOCK, condition, serialNumber: serialNumber || undefined, model: typeof fields.model === 'string' ? fields.model.trim() || undefined : undefined, locationId, departmentId, vendorId, barcodeValue: assetNumber, customFields: customFields as Record<string, string> });
-      return toDto(doc.toObject());
-    } catch (error: any) {
-      if (error?.code === 11000) throw new ConflictException('Asset could not be created because a unique value is already in use');
-      throw error;
-    }
+    try { const doc = await this.db.asset.create({ tenantId: auth.tenantId, companyId: auth.companyId, assetTypeId, assetNumber, status: AssetLifecycleState.IN_STOCK, condition, serialNumber: serialNumber || undefined, model: typeof fields.model === 'string' ? fields.model.trim() || undefined : undefined, locationId, departmentId, vendorId, barcodeValue: assetNumber, customFields: customFields as Record<string, string> }); return toDto(doc.toObject()); }
+    catch (error: any) { if (error?.code === 11000) throw new ConflictException('Asset could not be created because a unique value is already in use'); throw error; }
   }
 
   async listAssignments(auth: AuthContext) {
-    const assets = await this.db.asset.find(this.scope(auth)).select({ _id: 1, assetNumber: 1, status: 1, assetTypeId: 1, companyId: 1 }).lean();
-    if (!assets.length) return [];
-    const assetIds = assets.map((asset: any) => String(asset._id));
-    const assignments = await this.db.assetAssignment.find({ assetId: { $in: assetIds } }).sort({ assignedAt: -1 }).lean();
-    if (!assignments.length) return [];
-    const userIds = [...new Set(assignments.map((assignment: any) => String(assignment.userId)).filter(Boolean))];
-    const users = userIds.length ? await this.db.user.find({ _id: { $in: userIds }, tenantId: auth.tenantId, ...(auth.crossCompany ? {} : { companyId: auth.companyId }) }).select({ _id: 1, email: 1, firstName: 1, lastName: 1, isActive: 1, companyId: 1 }).lean() : [];
-    const assetById = new Map(assets.map((asset: any) => [String(asset._id), asset]));
-    const userById = new Map(users.map((user: any) => [String(user._id), user]));
+    const assets = await this.db.asset.find(this.scope(auth)).select({ _id: 1, assetNumber: 1, status: 1, assetTypeId: 1, companyId: 1 }).lean(); if (!assets.length) return [];
+    const assetIds = assets.map((asset: any) => String(asset._id)); const assignments = await this.db.assetAssignment.find({ assetId: { $in: assetIds } }).sort({ assignedAt: -1 }).lean(); if (!assignments.length) return [];
+    const userIds = [...new Set(assignments.map((assignment: any) => String(assignment.userId)).filter(Boolean))]; const users = userIds.length ? await this.db.user.find({ _id: { $in: userIds }, tenantId: auth.tenantId, ...(auth.crossCompany ? {} : { companyId: auth.companyId }) }).select({ _id: 1, email: 1, firstName: 1, lastName: 1, isActive: 1, companyId: 1 }).lean() : [];
+    const assetById = new Map(assets.map((asset: any) => [String(asset._id), asset])); const userById = new Map(users.map((user: any) => [String(user._id), user]));
     return assignments.map((assignment: any) => { const asset = assetById.get(String(assignment.assetId)); const user = assignment.userId ? userById.get(String(assignment.userId)) : null; return { ...toDto(assignment), asset: asset ? toDto(asset) : null, user: user ? toDto(user) : null, active: !assignment.returnedAt }; });
   }
 
   async getReportSummary(auth: AuthContext) {
-    const scope = this.scope(auth);
-    const assets = await this.db.asset.find(scope).select({ _id: 1, assetNumber: 1, status: 1, condition: 1, assetTypeId: 1, vendorId: 1, companyId: 1 }).lean();
-    const assetIds = assets.map((asset: any) => String(asset._id));
-    const companyIds = [...new Set(assets.map((asset: any) => String(asset.companyId)).filter(Boolean))];
+    const scope = this.scope(auth); const assets = await this.db.asset.find(scope).select({ _id: 1, assetNumber: 1, status: 1, condition: 1, assetTypeId: 1, vendorId: 1, companyId: 1 }).lean();
+    const assetIds = assets.map((asset: any) => String(asset._id)); const companyIds = [...new Set(assets.map((asset: any) => String(asset.companyId)).filter(Boolean))];
     const [assignments, warranties, vendors, maintenances] = await Promise.all([
       assetIds.length ? this.db.assetAssignment.find({ assetId: { $in: assetIds } }).select({ assetId: 1, userId: 1, assignedAt: 1, returnedAt: 1 }).lean() : [],
       assetIds.length ? this.db.warranty.find({ tenantId: auth.tenantId, assetId: { $in: assetIds } }).select({ assetId: 1, provider: 1, expiresAt: 1 }).lean() : [],
       companyIds.length ? this.db.vendor.find({ tenantId: auth.tenantId, companyId: { $in: companyIds } }).select({ _id: 1 }).lean() : [],
       assetIds.length ? this.db.assetMaintenance.find({ tenantId: auth.tenantId, companyId: { $in: companyIds }, assetId: { $in: assetIds } }).select({ assetId: 1, nextServiceDate: 1 }).lean() : [],
     ]);
-    const now = Date.now(), in30 = now + 30 * 86400000;
-    const statusCounts: Record<string, number> = {};
-    const conditionCounts: Record<string, number> = {};
+    const now = Date.now(), in30 = now + 30 * 86400000; const statusCounts: Record<string, number> = {}; const conditionCounts: Record<string, number> = {};
     for (const asset of assets) { statusCounts[asset.status] = (statusCounts[asset.status] ?? 0) + 1; conditionCounts[asset.condition ?? AssetCondition.GOOD] = (conditionCounts[asset.condition ?? AssetCondition.GOOD] ?? 0) + 1; }
     const warrantyByAsset = new Map(warranties.map((w: any) => [String(w.assetId), w]));
-    const expiredWarrantyCount = warranties.filter((w: any) => w.expiresAt && new Date(w.expiresAt).getTime() < now).length;
-    const expiringWarrantyCount = warranties.filter((w: any) => w.expiresAt && new Date(w.expiresAt).getTime() >= now && new Date(w.expiresAt).getTime() <= in30).length;
-    const overdueMaintenanceCount = maintenances.filter((m: any) => m.nextServiceDate && new Date(m.nextServiceDate).getTime() < now).length;
-    const dueMaintenanceCount = maintenances.filter((m: any) => m.nextServiceDate && new Date(m.nextServiceDate).getTime() >= now && new Date(m.nextServiceDate).getTime() <= in30).length;
-    const currentlyAssigned = assignments.filter((a: any) => !a.returnedAt).length;
+    const expiredWarrantyCount = warranties.filter((w: any) => w.expiresAt && new Date(w.expiresAt).getTime() < now).length; const expiringWarrantyCount = warranties.filter((w: any) => w.expiresAt && new Date(w.expiresAt).getTime() >= now && new Date(w.expiresAt).getTime() <= in30).length;
+    const overdueMaintenanceCount = maintenances.filter((m: any) => m.nextServiceDate && new Date(m.nextServiceDate).getTime() < now).length; const dueMaintenanceCount = maintenances.filter((m: any) => m.nextServiceDate && new Date(m.nextServiceDate).getTime() >= now && new Date(m.nextServiceDate).getTime() <= in30).length; const currentlyAssigned = assignments.filter((a: any) => !a.returnedAt).length;
     return { generatedAt: new Date().toISOString(), totals: { assets: assets.length, assignedAssets: currentlyAssigned, assignmentRecords: assignments.length, vendors: vendors.length, warranties: warranties.length, expiredWarranties: expiredWarrantyCount, expiringWarranties: expiringWarrantyCount, overdueMaintenance: overdueMaintenanceCount, dueMaintenance: dueMaintenanceCount }, statusCounts, conditionCounts, assets: assets.map((asset: any) => ({ id: String(asset._id), assetNumber: asset.assetNumber, status: asset.status, condition: asset.condition, assetTypeId: String(asset.assetTypeId), vendorId: asset.vendorId ? String(asset.vendorId) : null, warranty: warrantyByAsset.get(String(asset._id)) ?? null })) };
   }
 
@@ -142,27 +88,11 @@ export class AssetsService extends TenantScopedRepository {
   async listWarranties(auth: AuthContext) { return toDtoArray(await this.db.warranty.find({ companyId: auth.companyId }).sort({ expiresAt: 1 }).lean()); }
 
   async assignAsset(auth: AuthContext, assetId: string, userId: string, notes?: string) {
-    const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).lean();
-    if (!asset) throw new NotFoundException('Asset not found in your scope');
-    if (asset.status !== AssetLifecycleState.IN_STOCK) throw new ConflictException(`Asset cannot be directly assigned while in ${asset.status} state`);
-    if (asset.condition === AssetCondition.DAMAGED || asset.condition === AssetCondition.NEEDS_INSPECTION) throw new ConflictException('Damaged or inspection-required assets cannot be assigned');
-    const user = await this.db.user.findOne({ _id: userId, tenantId: auth.tenantId, companyId: asset.companyId }).lean();
-    if (!user) throw new NotFoundException('User not found in the asset company');
-    if (!user.isActive) throw new ForbiddenException('Cannot assign an asset to an inactive user');
-    const active = await this.db.assetAssignment.findOne({ assetId, returnedAt: { $exists: false } }).lean();
-    if (active) throw new ConflictException('Asset is already assigned');
-    assertLifecycleTransition(AssetLifecycleState.IN_STOCK, AssetLifecycleState.ASSIGNED);
-    const transitioned = await this.db.asset.findOneAndUpdate({ _id: assetId, ...this.scope(auth), status: AssetLifecycleState.IN_STOCK }, { $set: { status: AssetLifecycleState.ASSIGNED } }, { new: true }).lean();
-    if (!transitioned) throw new ConflictException('Asset changed before assignment could be synchronized');
-    try {
-      const assignment = await this.db.assetAssignment.create({ assetId, userId, assignedAt: new Date(), notes });
-      await this.db.assetAuditEvent.create({ tenantId: auth.tenantId, companyId: asset.companyId, assetId, fromState: AssetLifecycleState.IN_STOCK, toState: AssetLifecycleState.ASSIGNED, actorUserId: auth.userId, reason: notes || 'Asset assigned', occurredAt: new Date() });
-      return toDto(assignment.toObject());
-    } catch (error: any) {
-      await this.db.asset.findOneAndUpdate({ _id: assetId, ...this.scope(auth), status: AssetLifecycleState.ASSIGNED }, { $set: { status: AssetLifecycleState.IN_STOCK } });
-      if (error?.code === 11000) throw new ConflictException('Asset is already assigned');
-      throw error;
-    }
+    const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).lean(); if (!asset) throw new NotFoundException('Asset not found in your scope'); if (asset.status !== AssetLifecycleState.IN_STOCK) throw new ConflictException(`Asset cannot be directly assigned while in ${asset.status} state`); if (asset.condition === AssetCondition.DAMAGED || asset.condition === AssetCondition.NEEDS_INSPECTION) throw new ConflictException('Damaged or inspection-required assets cannot be assigned');
+    const user = await this.db.user.findOne({ _id: userId, tenantId: auth.tenantId, companyId: asset.companyId }).lean(); if (!user) throw new NotFoundException('User not found in the asset company'); if (!user.isActive) throw new ForbiddenException('Cannot assign an asset to an inactive user'); const active = await this.db.assetAssignment.findOne({ assetId, returnedAt: { $exists: false } }).lean(); if (active) throw new ConflictException('Asset is already assigned'); assertLifecycleTransition(AssetLifecycleState.IN_STOCK, AssetLifecycleState.ASSIGNED);
+    const transitioned = await this.db.asset.findOneAndUpdate({ _id: assetId, ...this.scope(auth), status: AssetLifecycleState.IN_STOCK }, { $set: { status: AssetLifecycleState.ASSIGNED } }, { new: true }).lean(); if (!transitioned) throw new ConflictException('Asset changed before assignment could be synchronized');
+    try { const assignment = await this.db.assetAssignment.create({ assetId, userId, assignedAt: new Date(), notes }); await this.db.assetAuditEvent.create({ tenantId: auth.tenantId, companyId: asset.companyId, assetId, fromState: AssetLifecycleState.IN_STOCK, toState: AssetLifecycleState.ASSIGNED, actorUserId: auth.userId, reason: notes || 'Asset assigned', occurredAt: new Date() }); return toDto(assignment.toObject()); }
+    catch (error: any) { await this.db.asset.findOneAndUpdate({ _id: assetId, ...this.scope(auth), status: AssetLifecycleState.ASSIGNED }, { $set: { status: AssetLifecycleState.IN_STOCK } }); if (error?.code === 11000) throw new ConflictException('Asset is already assigned'); throw error; }
   }
 
   async getCurrentAssignment(auth: AuthContext, assetId: string) { const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).lean(); if (!asset) throw new NotFoundException('Asset not found in your scope'); const assignment = await this.db.assetAssignment.findOne({ assetId, returnedAt: { $exists: false } }).lean(); return assignment ? toDto(assignment) : null; }
