@@ -39,15 +39,14 @@ export class AssetTransferService {
     if (locationId) {
       const location = await this.db.location.findById(locationId).session(session ?? null).lean();
       if (!location) throw new NotFoundException('Destination location not found');
-      const plant = await this.db.plant.findById(location.plantId).session(session ?? null).lean();
-      const bu = plant ? await this.db.businessUnit.findById(plant.businessUnitId).session(session ?? null).lean() : null;
+      const site = await this.db.plant.findById(location.plantId).session(session ?? null).lean();
       let destinationAllowed = false;
-      if (plant && bu) {
+      if (site) {
         if (auth.crossCompany) {
-          const companyExists = await this.db.company.exists({ _id: bu.companyId, tenantId: auth.tenantId }).session(session ?? null);
+          const companyExists = await this.db.company.exists({ _id: site.companyId, tenantId: auth.tenantId }).session(session ?? null);
           destinationAllowed = Boolean(companyExists);
         } else {
-          destinationAllowed = String(bu.companyId) === String(auth.companyId);
+          destinationAllowed = String(site.companyId) === String(auth.companyId);
         }
       }
       if (!destinationAllowed) throw new ForbiddenException('Destination location is outside your scope');
@@ -62,15 +61,14 @@ export class AssetTransferService {
       const department = await this.db.department.findById(departmentId).session(session ?? null).lean();
       if (!department) throw new NotFoundException('Destination department not found');
       const location = await this.db.location.findById(department.locationId).session(session ?? null).lean();
-      const plant = location ? await this.db.plant.findById(location.plantId).session(session ?? null).lean() : null;
-      const bu = plant ? await this.db.businessUnit.findById(plant.businessUnitId).session(session ?? null).lean() : null;
+      const site = location ? await this.db.plant.findById(location.plantId).session(session ?? null).lean() : null;
       let destinationAllowed = false;
-      if (plant && bu) {
+      if (site) {
         if (auth.crossCompany) {
-          const companyExists = await this.db.company.exists({ _id: bu.companyId, tenantId: auth.tenantId }).session(session ?? null);
+          const companyExists = await this.db.company.exists({ _id: site.companyId, tenantId: auth.tenantId }).session(session ?? null);
           destinationAllowed = Boolean(companyExists);
         } else {
-          destinationAllowed = String(bu.companyId) === String(auth.companyId);
+          destinationAllowed = String(site.companyId) === String(auth.companyId);
         }
       }
       if (!destinationAllowed) throw new ForbiddenException('Destination department is outside your scope');
