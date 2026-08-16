@@ -80,5 +80,11 @@ export class TenancyService {
     const count = locationIds.length ? await this.db.department.countDocuments({ locationId: { $in: locationIds } }) : 0; await this.entitlements.requireWithinLimit(auth.tenantId, 'max_departments', count);
     const normalizedName = name.trim(); if (!normalizedName) throw new ConflictException('Department name is required'); return toDto((await this.db.department.create({ locationId, name: normalizedName })).toObject());
   }
-  private async assertCompanyInScope(auth: AuthContext, companyId: string) { const company = await this.db.company.findOne({ _id: companyId, tenantId: auth.tenantId }).select({ _id: 1 }).lean(); if (!company) throw new NotFoundException('Company not found'); if (!(await this.hasTenantWideScope(auth)) && String(auth.companyId) !== String(companyId)) throw new ForbiddenException('Company out of scope for this user'); }
+  private async assertCompanyInScope(auth: AuthContext, companyId: string) {
+    const company = await this.db.company.findOne({ _id: companyId, tenantId: auth.tenantId }).select({ _id: 1 }).lean();
+    if (!company) throw new NotFoundException('Company not found');
+    // Organization management is tenant-wide when the route grants company:write/read.
+    // The target company only needs to belong to this tenant; auth.companyId is not a valid
+    // write-scope restriction here because the Companies & Structure directory is tenant-wide.
+  }
 }
