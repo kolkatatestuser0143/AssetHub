@@ -1,5 +1,5 @@
 import { Body, Controller, Param, Patch, Req, UseGuards } from '@nestjs/common';
-import { IsIn, IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import { IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 import { RbacGuard } from '../../common/guards/rbac.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
@@ -7,7 +7,7 @@ import { AssetTypeManagementService } from './asset-type-management.service';
 
 class AssetTypeEditDto {
   @IsString() @MinLength(1) name!: string;
-  @IsString() @MinLength(1) prefix!: string;
+  @IsOptional() @IsString() prefix?: string;
   @IsOptional() @IsString() separator?: string;
   @IsOptional() @IsInt() @Min(1) padding?: number;
 }
@@ -19,6 +19,6 @@ export class AssetTypeManagementController {
 
   @Patch(':assetTypeId') @RequirePermission('asset:write')
   update(@Param('assetTypeId') id: string, @Body() dto: AssetTypeEditDto, @Req() req: any) {
-    return this.service.update(req.authContext, id, dto.name, dto.prefix, dto.separator, dto.padding);
+    return this.service.update(req.authContext, id, dto.name, dto.prefix ?? '', dto.separator, dto.padding);
   }
 }
