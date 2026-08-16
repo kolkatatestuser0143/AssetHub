@@ -9,19 +9,11 @@ class AssignAssetDto { @IsString() userId: string; @IsString() @IsOptional() not
 class ReturnAssetDto { @IsString() @IsOptional() notes?: string; @IsOptional() @IsIn(Object.values(AssetCondition)) condition?: AssetCondition; }
 class ConditionDto { @IsIn(Object.values(AssetCondition)) condition!: AssetCondition; }
 class TransitionDto { @IsIn(Object.values(AssetLifecycleState)) toState: AssetLifecycleState; @IsString() @IsOptional() reason?: string; }
-class CreateAssetTypeDto { @IsString() name: string; @IsString() prefix: string; @IsString() @IsOptional() separator?: string; @IsInt() @Min(1) @IsOptional() padding?: number; }
+class CreateAssetTypeDto { @IsString() name: string; @IsString() @IsOptional() prefix?: string; @IsString() @IsOptional() separator?: string; @IsInt() @Min(1) @IsOptional() padding?: number; }
 class VendorDto { @IsString() name: string; @IsOptional() @IsString() contact?: string; }
 class ImportCsvDto { @IsString() csv: string; }
 class ExcelReportQueryDto { @IsOptional() @IsString() status?: string; @IsOptional() @IsString() companyId?: string; @IsOptional() @IsString() assetTypeId?: string; @IsOptional() @IsString() locationId?: string; @IsOptional() @IsISO8601() fromDate?: string; @IsOptional() @IsISO8601() toDate?: string; }
-class AssetListQueryDto {
-  @IsOptional() @IsString() q?: string;
-  @IsOptional() @IsString() status?: string;
-  @IsOptional() @IsString() assetTypeId?: string;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) pageSize?: number;
-  @IsOptional() @IsString() sortBy?: string;
-  @IsOptional() @IsIn(['asc', 'desc']) sortDir?: 'asc' | 'desc';
-}
+class AssetListQueryDto { @IsOptional() @IsString() q?: string; @IsOptional() @IsString() status?: string; @IsOptional() @IsString() assetTypeId?: string; @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number; @IsOptional() @Type(() => Number) @IsInt() @Min(1) pageSize?: number; @IsOptional() @IsString() sortBy?: string; @IsOptional() @IsIn(['asc', 'desc']) sortDir?: 'asc' | 'desc'; }
 class TransferDto { @IsOptional() @IsString() toUserId?: string; @IsOptional() @IsString() toLocationId?: string; @IsOptional() @IsString() toDepartmentId?: string; @IsOptional() @IsString() reason?: string; @IsOptional() @IsString() note?: string; }
 class TransferStatusDto { @IsIn(['PENDING', 'APPROVED', 'COMPLETED', 'REJECTED', 'CANCELLED']) status!: 'PENDING' | 'APPROVED' | 'COMPLETED' | 'REJECTED' | 'CANCELLED'; }
 
@@ -43,7 +35,7 @@ export class AssetsController {
   @Delete('vendors/:vendorId') @RequirePermission('asset:write') deleteVendor(@Param('vendorId') vendorId: string, @Req() req: any) { return this.assets.deleteVendor(req.authContext, vendorId); }
   @Get('warranties') @RequirePermission('asset:read') listWarranties(@Req() req: any) { return this.assets.listWarranties(req.authContext); }
   @Get('types') @RequirePermission('asset:read') listTypes(@Req() req: any) { return this.assets.listAssetTypes(req.authContext); }
-  @Post('types') @RequirePermission('asset:write') createType(@Body() dto: CreateAssetTypeDto, @Req() req: any) { return this.assets.createAssetType(req.authContext, dto.name, { prefix: dto.prefix, separator: dto.separator, padding: dto.padding }); }
+  @Post('types') @RequirePermission('asset:write') createType(@Body() dto: CreateAssetTypeDto, @Req() req: any) { const prefix = dto.prefix?.trim() || dto.name.trim().replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'AST'; return this.assets.createAssetType(req.authContext, dto.name, { prefix, separator: dto.separator, padding: dto.padding }); }
   @Delete('types/:assetTypeId') @RequirePermission('asset:write') deleteType(@Param('assetTypeId') assetTypeId: string, @Req() req: any) { return this.assets.deleteAssetType(req.authContext, assetTypeId); }
   @Post('import/preview') @RequirePermission('asset:write') previewImport(@Body() dto: ImportCsvDto, @Req() req: any) { return this.imports.preview(req.authContext, dto.csv); }
   @Post('import') @RequirePermission('asset:write') commitImport(@Body() dto: ImportCsvDto, @Req() req: any) { return this.imports.commit(req.authContext, dto.csv); }
