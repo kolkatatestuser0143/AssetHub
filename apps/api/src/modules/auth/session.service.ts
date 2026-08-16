@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
@@ -37,15 +37,18 @@ export class SessionService {
       }
     }
 
-    const permissions = system ? await this.resolveSystemPermissions(rawUser.roleIds ?? []) : await this.resolvePermissions(rawUser.tenantId, rawUser.companyId, rawUser.roleIds ?? []);
+    const access = system
+      ? { permissions: await this.resolveSystemPermissions(rawUser.roleIds ?? []), crossCompany: false }
+      : await this.resolveTenantAccess(rawUser.tenantId, rawUser.companyId, rawUser.roleIds ?? []);
     const rawRefreshToken = crypto.randomBytes(48).toString('hex');
     const session = await this.db.session.create({ userId: normalizedUserId, refreshTokenHash: this.hashToken(rawRefreshToken), ipAddress: ip, userAgent, lastSeenAt: new Date(), expiresAt: new Date(Date.now() + refreshTokenTtlMs) });
     const sessionId = String(session._id);
-    const claims: Record<string, any> = { sub: normalizedUserId, sessionId, permissions, accountType: rawUser.accountType };
+    const claims: Record<string, any> = { sub: normalizedUserId, sessionId, permissions: access.permissions, accountType: rawUser.accountType };
     if (system) claims.systemAdmin = true;
     else {
       claims.tenantId = rawUser.tenantId;
       claims.companyId = rawUser.companyId;
+      claims.crossCompany = access.crossCompany;
       claims.forcePasswordReset = rawUser.forcePasswordReset === true;
     }
     const accessToken = this.jwt.sign(claims, { expiresIn: ACCESS_TOKEN_TTL });
@@ -64,12 +67,16 @@ export class SessionService {
   async findByRefreshToken(rawRefreshToken: string) { const doc = await this.db.session.findOne({ refreshTokenHash: this.hashToken(rawRefreshToken) }).lean(); return doc ? toDto(doc) : null; }
   hashToken(raw: string): string { return crypto.createHash('sha256').update(raw).digest('hex'); }
 
-  private async resolvePermissions(tenantId: string, companyId: string, roleIds: string[]): Promise<string[]> {
-    if (roleIds.length === 0) return [];
+  private async resolveTenantAccess(tenantId: string, companyId: string, roleIds: string[]): Promise<{ permissions: string[]; crossCompany: boolean }> {
+    if (roleIds.length === 0) return { permissions: [], crossCompany: false };
     const roles = await this.db.role.find({ _id: { $in: roleIds }, tenantId, $or: [{ companyId }, { companyId: null }] }).lean();
     const perms = new Set<string>();
-    for (const role of roles) for (const rp of role.permissions ?? []) perms.add(rp.permissionKey);
-    return [...perms];
+    let crossCompany = false;
+    for (const role of roles) {
+      if (role.companyId == null) crossCompany = true;
+      for (const rp of role.permissions ?? []) perms.add(rp.permissionKey);
+    }
+    return { permissions: [...perms], crossCompany };
   }
 
   private async resolveSystemPermissions(roleIds: string[]): Promise<string[]> {
