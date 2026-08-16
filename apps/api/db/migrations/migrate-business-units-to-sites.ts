@@ -4,81 +4,43 @@ import path from 'node:path';
 import dns from 'node:dns';
 import mongoose from 'mongoose';
 
-const envCandidates = [
-  path.resolve(__dirname, '../../.env'),
-  path.resolve(__dirname, '../../../.env'),
-  path.resolve(__dirname, '../../../../.env'),
-  path.resolve(__dirname, '../../../../../itam.env'),
-  path.resolve(process.cwd(), '.env'),
-];
+const envCandidates = [path.resolve(__dirname, '../../.env'), path.resolve(__dirname, '../../../.env'), path.resolve(__dirname, '../../../../.env'), path.resolve(__dirname, '../../../../../itam.env'), path.resolve(process.cwd(), '.env')];
 for (const envPath of envCandidates) if (fs.existsSync(envPath)) dotenv.config({ path: envPath, override: false });
 
-function getMongoUri(): string {
-  const uri = process.env.MONGODB_URI ?? process.env.DATABASE_URL;
-  if (!uri) throw new Error('MONGODB_URI or DATABASE_URL must be configured');
-  return uri;
-}
-
-function configureMongoDns(): void {
-  const servers = (process.env.MONGODB_DNS_SERVERS ?? '1.1.1.1,8.8.8.8').split(',').map((x) => x.trim()).filter(Boolean);
-  if (servers.length) dns.setServers(servers);
-}
-
-async function findLegacyBusinessUnits(db: mongoose.mongo.Db) {
-  for (const name of ['businessunits', 'business_units', 'businessUnits']) {
-    const exists = await db.listCollections({ name }, { nameOnly: true }).toArray();
-    if (exists.length) return db.collection(name);
-  }
-  return null;
-}
+function getMongoUri(): string { const uri = process.env.MONGODB_URI ?? process.env.DATABASE_URL; if (!uri) throw new Error('MONGODB_URI or DATABASE_URL must be configured'); return uri; }
+function configureMongoDns(): void { const servers = (process.env.MONGODB_DNS_SERVERS ?? '1.1.1.1,8.8.8.8').split(',').map((x) => x.trim()).filter(Boolean); if (servers.length) dns.setServers(servers); }
+async function findLegacyBusinessUnits(db: mongoose.mongo.Db) { for (const name of ['businessunits', 'business_units', 'businessUnits']) { const exists = await db.listCollections({ name }, { nameOnly: true }).toArray(); if (exists.length) return db.collection(name); } return null; }
 
 async function main() {
-  configureMongoDns();
-  await mongoose.connect(getMongoUri());
-  const db = mongoose.connection.db;
-  if (!db) throw new Error('MongoDB database handle unavailable');
-
-  const plants = db.collection('plants');
-  const legacyBusinessUnits = await findLegacyBusinessUnits(db);
-  const legacyCount = legacyBusinessUnits ? await legacyBusinessUnits.countDocuments({}) : 0;
+  configureMongoDns(); await mongoose.connect(getMongoUri()); const db = mongoose.connection.db; if (!db) throw new Error('MongoDB database handle unavailable');
+  const plants = db.collection('plants'); const legacyBusinessUnits = await findLegacyBusinessUnits(db); const legacyCount = legacyBusinessUnits ? await legacyBusinessUnits.countDocuments({}) : 0;
   console.log(`Legacy business-unit records found: ${legacyCount}`);
 
-  let migrated = 0;
-  let skipped = 0;
-
-  const cursor = plants.find({ $or: [{ companyId: { $exists: false } }, { companyId: null }] });
-  for await (const plant of cursor) {
+  let migrated = 0; let skipped = 0;
+  for await (const plant of plants.find({ $or: [{ companyId: { $exists: false } }, { companyId: null }] })) {
     let companyId = plant.companyId;
-
-    if (!companyId && legacyBusinessUnits && plant.businessUnitId) {
-      const bu = await legacyBusinessUnits.findOne({ _id: plant.businessUnitId });
-      companyId = bu?.companyId;
-    }
-
-    if (!companyId) {
-      console.warn(`Skipping plant ${String(plant._id)} (${plant.name ?? 'unnamed'}): company could not be resolved`);
-      skipped += 1;
-      continue;
-    }
-
+    if (!companyId && legacyBusinessUnits && plant.businessUnitId) { const bu = await legacyBusinessUnits.findOne({ _id: plant.businessUnitId }); companyId = bu?.companyId; }
+    if (!companyId) { console.warn(`Skipping plant ${String(plant._id)} (${plant.name ?? 'unnamed'}): company could not be resolved`); skipped += 1; continue; }
     const type = ['plant', 'branch_office', 'head_office'].includes(plant.type) ? plant.type : 'plant';
-    await plants.updateOne(
-      { _id: plant._id },
-      { $set: { companyId: String(companyId), type }, $unset: { businessUnitId: '' } },
-    );
+    await plants.updateOne({ _id: plant._id }, { $set: { companyId: String(companyId), type }, $unset: { businessUnitId: '' } });
     migrated += 1;
   }
 
-  const remainingLegacyLinks = await plants.countDocuments({ businessUnitId: { $exists: true } });
-  console.log(`Migrated sites: ${migrated}`);
-  console.log(`Skipped sites: ${skipped}`);
-  console.log(`Remaining legacy businessUnitId links on plants: ${remainingLegacyLinks}`);
+  const plans = db.collection('plans'); const planCursor = plans.find({}); let plansUpdated = 0;
+  for await (const plan of planCursor) {
+    const features = { ...(plan.features ?? {}) } as Record<string, unknown>;
+    if (features.max_sites === undefined) {
+      const plantLimit = features.max_plants;
+      const buLimit = features.max_business_units;
+      features.max_sites = plantLimit !== undefined ? plantLimit : buLimit !== undefined ? buLimit : null;
+    }
+    delete features.max_business_units; delete features.max_plants;
+    await plans.updateOne({ _id: plan._id }, { $set: { features, updatedAt: new Date() } });
+    plansUpdated += 1;
+  }
 
+  const remainingLegacyLinks = await plants.countDocuments({ businessUnitId: { $exists: true } });
+  console.log(`Migrated sites: ${migrated}`); console.log(`Skipped sites: ${skipped}`); console.log(`Plans updated: ${plansUpdated}`); console.log(`Remaining legacy businessUnitId links on plants: ${remainingLegacyLinks}`);
   await mongoose.disconnect();
 }
-
-main().catch(async (error) => {
-  console.error(error);
-  await mongoose.disconnect().catch(() => undefined);
-  process.exit(1);
-});
+main().catch(async (error) => { console.error(error); await mongoose.disconnect().catch(() => undefined); process.exit(1); });
