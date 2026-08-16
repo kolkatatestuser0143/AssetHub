@@ -1,13 +1,12 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 import { AuthContext } from '../../common/guards/tenant-context.guard';
-import { TenantScopedRepository } from '../../common/tenant-scoped.repository';
 import { toDto, toDtoArray } from '../../common/mongoose.utils';
 import { EntitlementService } from '../billing/entitlement.service';
 
 @Injectable()
-export class TenancyService extends TenantScopedRepository {
-  constructor(private readonly db: MongooseDatabaseService, private readonly entitlements: EntitlementService) { super(); }
+export class TenancyService {
+  constructor(private readonly db: MongooseDatabaseService, private readonly entitlements: EntitlementService) {}
 
   async getTenantProfile(auth: AuthContext) {
     const tenant = await this.db.tenant.findById(auth.tenantId).lean();
@@ -34,21 +33,37 @@ export class TenancyService extends TenantScopedRepository {
     return toDtoArray(await this.db.company.find(filter).sort({ name: 1 }).lean());
   }
 
+  async getAssetHierarchy(auth: AuthContext) {
+    const companies = await this.db.company.find(auth.crossCompany ? { tenantId: auth.tenantId } : { tenantId: auth.tenantId, _id: auth.companyId }).sort({ name: 1 }).lean();
+    const companyIds = companies.map((company: any) => String(company._id));
+    if (!companyIds.length) return [];
+    const businessUnits = await this.db.businessUnit.find({ companyId: { $in: companyIds } }).sort({ name: 1 }).lean();
+    const businessUnitIds = businessUnits.map((unit: any) => String(unit._id));
+    const plants = businessUnitIds.length ? await this.db.plant.find({ businessUnitId: { $in: businessUnitIds } }).sort({ name: 1 }).lean() : [];
+    const plantIds = plants.map((plant: any) => String(plant._id));
+    const locations = plantIds.length ? await this.db.location.find({ plantId: { $in: plantIds } }).sort({ name: 1 }).lean() : [];
+    const locationIds = locations.map((location: any) => String(location._id));
+    const departments = locationIds.length ? await this.db.department.find({ locationId: { $in: locationIds } }).sort({ name: 1 }).lean() : [];
+    const departmentsByLocation = new Map<string, any[]>();
+    for (const department of departments as any[]) { const key = String(department.locationId); const list = departmentsByLocation.get(key) ?? []; list.push(toDto(department)); departmentsByLocation.set(key, list); }
+    const locationsByPlant = new Map<string, any[]>();
+    for (const location of locations as any[]) { const key = String(location.plantId); const list = locationsByPlant.get(key) ?? []; list.push({ ...toDto(location), departments: departmentsByLocation.get(String(location._id)) ?? [] }); locationsByPlant.set(key, list); }
+    const plantsByBusinessUnit = new Map<string, any[]>();
+    for (const plant of plants as any[]) { const key = String(plant.businessUnitId); const list = plantsByBusinessUnit.get(key) ?? []; list.push({ ...toDto(plant), locations: locationsByPlant.get(String(plant._id)) ?? [] }); plantsByBusinessUnit.set(key, list); }
+    const businessUnitsByCompany = new Map<string, any[]>();
+    for (const unit of businessUnits as any[]) { const key = String(unit.companyId); const list = businessUnitsByCompany.get(key) ?? []; list.push({ ...toDto(unit), plants: plantsByBusinessUnit.get(String(unit._id)) ?? [] }); businessUnitsByCompany.set(key, list); }
+    return companies.map((company: any) => ({ ...toDto(company), businessUnits: businessUnitsByCompany.get(String(company._id)) ?? [] }));
+  }
+
   async createCompany(auth: AuthContext, name: string, code: string) {
-    const normalizedName = name.trim();
-    const normalizedCode = code.trim().toUpperCase();
+    const normalizedName = name.trim(); const normalizedCode = code.trim().toUpperCase();
     if (!normalizedName) throw new ConflictException('Company name is required');
     if (!normalizedCode) throw new ConflictException('Company code is required');
     const duplicate = await this.db.company.findOne({ tenantId: auth.tenantId, code: normalizedCode }).lean();
     if (duplicate) throw new ConflictException(`Company code '${normalizedCode}' is already in use in this tenant`);
-    const count = await this.db.company.countDocuments({ tenantId: auth.tenantId });
-    await this.entitlements.requireWithinLimit(auth.tenantId, 'max_companies', count, 1);
-    try {
-      return toDto((await this.db.company.create({ tenantId: auth.tenantId, name: normalizedName, code: normalizedCode })).toObject());
-    } catch (error: any) {
-      if (error?.code === 11000) throw new ConflictException(`Company code '${normalizedCode}' is already in use in this tenant`);
-      throw error;
-    }
+    const count = await this.db.company.countDocuments({ tenantId: auth.tenantId }); await this.entitlements.requireWithinLimit(auth.tenantId, 'max_companies', count, 1);
+    try { return toDto((await this.db.company.create({ tenantId: auth.tenantId, name: normalizedName, code: normalizedCode })).toObject()); }
+    catch (error: any) { if (error?.code === 11000) throw new ConflictException(`Company code '${normalizedCode}' is already in use in this tenant`); throw error; }
   }
 
   async listBusinessUnits(auth: AuthContext, companyId: string) { await this.assertCompanyInScope(auth,companyId); return toDtoArray(await this.db.businessUnit.find({companyId}).lean()); }
