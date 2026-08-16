@@ -1,1 +1,5 @@
-export default function LocationsPage(){return <div className="space-y-6"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-600">Organization</p><h2 className="mt-1 text-2xl font-bold text-slate-950">Locations</h2><p className="mt-2 text-sm text-slate-500">Manage physical and logical asset locations.</p></div><div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm"><h3 className="font-semibold text-slate-950">Location list API required</h3><p className="mt-2 text-sm leading-6 text-slate-500">The current API exposes location creation but not location listing. This screen stays empty until a read endpoint exists.</p><span className="mt-5 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">Waiting for list API</span></div></div>}
+import { redirect } from 'next/navigation';
+
+export default function LocationsPage() {
+  redirect('/companies');
+}
