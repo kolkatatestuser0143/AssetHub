@@ -43,7 +43,8 @@ export class AuthService {
     return this.sessions.issueSession(user.id, ip, userAgent, true);
   }
 
-  async changeTenantPassword(userId: string, currentPassword: string | undefined, newPassword: string) {
+  async changeTenantPassword(userId: string, currentPassword: string | undefined, newPassword: string, currentSessionId: string, ip: string, userAgent: string) {
+    if (!currentSessionId) throw new UnauthorizedException('Active tenant session is required');
     if (!newPassword || newPassword.length < 12) throw new BadRequestException('Password must be at least 12 characters');
     const user = await this.db.user.findOne({ _id: userId, accountType: 'TENANT' }).lean();
     if (!user?.passwordHash) throw new UnauthorizedException('Tenant account not found');
@@ -54,7 +55,8 @@ export class AuthService {
     await this.db.user.updateOne({ _id: user._id }, { $set: { passwordHash, forcePasswordReset: false, updatedAt: new Date() } });
     await this.db.session.updateMany({ userId: String(user._id), revokedAt: { $exists: false } }, { $set: { revokedAt: new Date(), revokedReason: 'password_changed' } });
     await this.db.auditEvent.create({ tenantId: user.tenantId, companyId: user.companyId, actorUserId: String(user._id), action: 'auth.password_changed', targetType: 'user', targetId: String(user._id), result: 'success', occurredAt: new Date() });
-    return { ok: true, mustChangePassword: false };
+    const session = await this.sessions.issueSession(String(user._id), ip, userAgent, false);
+    return { ok: true, mustChangePassword: false, ...session };
   }
 
   async refresh(rawRefreshToken: string, ip: string, userAgent: string) { const session = await this.sessions.findByRefreshToken(rawRefreshToken); if (!session || session.revokedAt || session.expiresAt < new Date()) throw new UnauthorizedException('Invalid refresh token'); await this.sessions.revokeSession(session.id, session.userId, 'rotated'); return this.sessions.issueSession(session.userId, ip, userAgent, await this.sessions.isSystemUser(session.userId)); }
