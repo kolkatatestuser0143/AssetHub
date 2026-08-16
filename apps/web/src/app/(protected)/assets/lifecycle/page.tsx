@@ -3,8 +3,8 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, ArrowRight, Boxes, CheckCircle2, Clock3, History, RefreshCw, Search, Wrench } from 'lucide-react';
-import { apiFetch } from '../../../../../lib/api-client';
-import { StatusBadge } from '../../../../../components/ui';
+import { apiFetch } from '../../../../lib/api-client';
+import { StatusBadge } from '../../../../components/ui';
 
 type Asset = {
   id: string;
