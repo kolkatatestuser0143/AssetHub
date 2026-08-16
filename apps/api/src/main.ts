@@ -7,32 +7,38 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { RequestContextInterceptor } from './common/request-context.interceptor';
 
-function allowedOrigins(): string[] {
-  const configured = (process.env.WEB_ORIGINS ?? process.env.WEB_ORIGIN ?? 'http://localhost:3000')
+function configuredOrigins(): string[] {
+  return (process.env.WEB_ORIGINS ?? process.env.WEB_ORIGIN ?? 'http://localhost:3000')
     .split(',')
-    .map((value) => value.trim())
+    .map((value) => value.trim().replace(/\/$/, ''))
     .filter(Boolean);
-  return configured.length ? configured : ['http://localhost:3000'];
+}
+
+function isAllowedOrigin(origin: string | undefined, configured: string[]): boolean {
+  if (!origin) return true;
+  if (configured.includes(origin)) return true;
+  if (process.env.NODE_ENV === 'production') return false;
+  return /^https?:\/\/([a-z0-9-]+\.)?localhost(?::\d+)?$/i.test(origin)
+    || /^https?:\/\/127\.0\.0\.1(?::\d+)?$/i.test(origin);
 }
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const configured = configuredOrigins();
 
   app.enableCors({
-    origin: allowedOrigins(),
+    origin: (origin, callback) => callback(null, isAllowedOrigin(origin, configured)),
     credentials: true,
     methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Auth-Scope', 'X-Request-ID'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Auth-Scope', 'X-Request-ID', 'X-Tenant-Slug'],
     exposedHeaders: ['X-Request-ID'],
   });
 
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      transform: true,
-      transformOptions: { enableImplicitConversion: true },
-    }),
-  );
+  app.useGlobalPipes(new ValidationPipe({
+    whitelist: true,
+    transform: true,
+    transformOptions: { enableImplicitConversion: true },
+  }));
 
   app.useGlobalInterceptors(new RequestContextInterceptor());
   app.setGlobalPrefix('api/v1');
