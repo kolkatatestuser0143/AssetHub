@@ -4,6 +4,8 @@ import { MongooseDatabaseService } from '../../common/mongoose-database.service'
 
 const TRIAL_DAYS = Number(process.env.LICENSE_TRIAL_DAYS ?? 14);
 const GRACE_DAYS = Number(process.env.LICENSE_GRACE_DAYS ?? 7);
+const THEME_PRESETS = ['trial', 'starter', 'professional', 'enterprise', 'restricted'] as const;
+type ThemePreset = typeof THEME_PRESETS[number];
 
 @Injectable()
 export class SystemSubscriptionService {
@@ -12,30 +14,41 @@ export class SystemSubscriptionService {
   async listPlans(includeArchived = true) {
     const filter = includeArchived ? {} : { $or: [{ isActive: true }, { isActive: { $exists: false } }] };
     const plans = await this.db.plan.find(filter).sort({ name: 1 }).lean();
-    return plans.map((plan: any) => ({ id: String(plan._id), name: plan.name, features: plan.features ?? {}, isActive: plan.isActive !== false, createdAt: plan.createdAt, updatedAt: plan.updatedAt }));
+    return plans.map((plan: any) => ({ id: String(plan._id), name: plan.name, themePreset: this.resolveTheme(plan), features: plan.features ?? {}, isActive: plan.isActive !== false, createdAt: plan.createdAt, updatedAt: plan.updatedAt }));
   }
 
-  async createPlan(name: string, features: Record<string, unknown> = {}) {
+  private resolveTheme(plan: any): ThemePreset {
+    if (plan.themePreset && (THEME_PRESETS as readonly string[]).includes(plan.themePreset)) return plan.themePreset as ThemePreset;
+    const normalized = String(plan.name ?? '').trim().toLowerCase();
+    if (normalized.includes('enterprise')) return 'enterprise';
+    if (normalized.includes('professional') || normalized.includes('pro') || normalized.includes('business')) return 'professional';
+    if (normalized.includes('trial') || normalized.includes('free')) return 'trial';
+    return 'starter';
+  }
+
+  async createPlan(name: string, features: Record<string, unknown> = {}, themePreset: ThemePreset = 'starter') {
     const normalizedName = name?.trim();
     if (!normalizedName) throw new BadRequestException('Plan name is required');
     if (!features || typeof features !== 'object' || Array.isArray(features)) throw new BadRequestException('Plan features must be an object');
+    if (!(THEME_PRESETS as readonly string[]).includes(themePreset)) throw new BadRequestException('Invalid theme preset');
     const existing = await this.db.plan.findOne({ name: normalizedName }).lean();
     if (existing) throw new ConflictException('A plan with this name already exists');
-    const plan = await this.db.plan.create({ name: normalizedName, features, isActive: true });
-    return { id: String(plan._id), name: plan.name, features: plan.features ?? {}, isActive: true, createdAt: (plan as any).createdAt, updatedAt: (plan as any).updatedAt };
+    const plan = await this.db.plan.create({ name: normalizedName, themePreset, features, isActive: true });
+    return { id: String(plan._id), name: plan.name, themePreset: this.resolveTheme(plan), features: plan.features ?? {}, isActive: true, createdAt: (plan as any).createdAt, updatedAt: (plan as any).updatedAt };
   }
 
-  async updatePlan(planId: string, name: string, features: Record<string, unknown>) {
+  async updatePlan(planId: string, name: string, features: Record<string, unknown>, themePreset: ThemePreset = 'starter') {
     if (!Types.ObjectId.isValid(planId)) throw new BadRequestException('Invalid plan id');
     const normalizedName = name?.trim();
     if (!normalizedName) throw new BadRequestException('Plan name is required');
     if (!features || typeof features !== 'object' || Array.isArray(features)) throw new BadRequestException('Plan features must be an object');
+    if (!(THEME_PRESETS as readonly string[]).includes(themePreset)) throw new BadRequestException('Invalid theme preset');
     const duplicate = await this.db.plan.findOne({ name: normalizedName, _id: { $ne: planId } }).lean();
     if (duplicate) throw new ConflictException('A plan with this name already exists');
-    const plan = await this.db.plan.findByIdAndUpdate(planId, { $set: { name: normalizedName, features } }, { new: true }).lean();
+    const plan = await this.db.plan.findByIdAndUpdate(planId, { $set: { name: normalizedName, themePreset, features } }, { new: true }).lean();
     if (!plan) throw new NotFoundException('Plan not found');
     await this.syncPlanEntitlements(String(plan._id), features);
-    return { id: String(plan._id), name: plan.name, features: plan.features ?? {}, isActive: plan.isActive !== false, createdAt: (plan as any).createdAt, updatedAt: (plan as any).updatedAt };
+    return { id: String(plan._id), name: plan.name, themePreset: this.resolveTheme(plan), features: plan.features ?? {}, isActive: plan.isActive !== false, createdAt: (plan as any).createdAt, updatedAt: (plan as any).updatedAt };
   }
 
   async setPlanActive(planId: string, isActive: boolean) {
@@ -48,7 +61,7 @@ export class SystemSubscriptionService {
     }
     const updated = await this.db.plan.findByIdAndUpdate(planId, { $set: { isActive } }, { new: true }).lean();
     if (!updated) throw new NotFoundException('Plan not found');
-    return { id: String(updated._id), name: updated.name, features: updated.features ?? {}, isActive: updated.isActive !== false };
+    return { id: String(updated._id), name: updated.name, themePreset: this.resolveTheme(updated), features: updated.features ?? {}, isActive: updated.isActive !== false };
   }
 
   async overview() {
@@ -56,136 +69,33 @@ export class SystemSubscriptionService {
       this.db.plan.find({ $or: [{ isActive: true }, { isActive: { $exists: false } }] }).sort({ name: 1 }).lean(),
       this.db.subscription.find({ status: { $ne: 'revoked' } }).sort({ createdAt: -1 }).lean(),
     ]);
-    return { plans: plans.map((plan: any) => ({ id: String(plan._id), name: plan.name, features: plan.features ?? {}, isActive: plan.isActive !== false })), subscriptions: subscriptions.map((sub: any) => this.dto(sub)) };
+    return { plans: plans.map((plan: any) => ({ id: String(plan._id), name: plan.name, themePreset: this.resolveTheme(plan), features: plan.features ?? {}, isActive: plan.isActive !== false })), subscriptions: subscriptions.map((sub: any) => this.dto(sub)) };
   }
 
   async revokedTenants() {
-    const [subscriptions, tenants, plans] = await Promise.all([
-      this.db.subscription.find({ status: 'revoked' }).sort({ updatedAt: -1, createdAt: -1 }).lean(),
-      this.db.tenant.find({}).lean(),
-      this.db.plan.find({}).lean(),
-    ]);
-    const tenantMap = new Map(tenants.map((tenant: any) => [String(tenant._id), tenant]));
-    const planMap = new Map(plans.map((plan: any) => [String(plan._id), plan]));
+    const [subscriptions, tenants, plans] = await Promise.all([this.db.subscription.find({ status: 'revoked' }).sort({ updatedAt: -1, createdAt: -1 }).lean(), this.db.tenant.find({}).lean(), this.db.plan.find({}).lean()]);
+    const tenantMap = new Map(tenants.map((tenant: any) => [String(tenant._id), tenant])); const planMap = new Map(plans.map((plan: any) => [String(plan._id), plan]));
     return subscriptions.map((sub: any) => ({ ...this.dto(sub), tenantName: tenantMap.get(String(sub.tenantId))?.name ?? String(sub.tenantId), planName: planMap.get(String(sub.planId))?.name ?? String(sub.planId) }));
   }
 
-  private async getTenantOrThrow(tenantId: string) {
-    if (!Types.ObjectId.isValid(tenantId)) throw new BadRequestException('Invalid tenant id');
-    const tenant = await this.db.tenant.findById(tenantId).lean();
-    if (!tenant) throw new NotFoundException('Tenant not found');
-    return tenant;
-  }
-
-  private async getPlanOrThrow(planId: string) {
-    if (!Types.ObjectId.isValid(planId)) throw new BadRequestException('Invalid plan id');
-    const plan = await this.db.plan.findById(planId).lean();
-    if (!plan) throw new NotFoundException('Plan not found');
-    if (plan.isActive === false) throw new ConflictException('Plan is archived and cannot be assigned');
-    return plan;
-  }
-
-  private dto(subscription: any) {
-    return { id: String(subscription._id), tenantId: subscription.tenantId, planId: subscription.planId, status: subscription.status, startedAt: subscription.startedAt, endsAt: subscription.endsAt ?? null, graceUntil: subscription.graceUntil ?? null };
-  }
-
-  private async audit(tenantId: string, action: string, targetId: string, metadata: Record<string, unknown>, actorUserId?: string) {
-    await this.db.auditEvent.create({ tenantId, actorUserId, action, targetType: 'subscription', targetId, metadata, occurredAt: new Date() });
-  }
+  private async getTenantOrThrow(tenantId: string) { if (!Types.ObjectId.isValid(tenantId)) throw new BadRequestException('Invalid tenant id'); const tenant = await this.db.tenant.findById(tenantId).lean(); if (!tenant) throw new NotFoundException('Tenant not found'); return tenant; }
+  private async getPlanOrThrow(planId: string) { if (!Types.ObjectId.isValid(planId)) throw new BadRequestException('Invalid plan id'); const plan = await this.db.plan.findById(planId).lean(); if (!plan) throw new NotFoundException('Plan not found'); if (plan.isActive === false) throw new ConflictException('Plan is archived and cannot be assigned'); return plan; }
+  private dto(subscription: any) { return { id: String(subscription._id), tenantId: subscription.tenantId, planId: subscription.planId, status: subscription.status, startedAt: subscription.startedAt, endsAt: subscription.endsAt ?? null, graceUntil: subscription.graceUntil ?? null }; }
+  private async audit(tenantId: string, action: string, targetId: string, metadata: Record<string, unknown>, actorUserId?: string) { await this.db.auditEvent.create({ tenantId, actorUserId, action, targetType: 'subscription', targetId, metadata, occurredAt: new Date() }); }
 
   private async applyPlanEntitlements(subscriptionId: string, features: Record<string, unknown>) {
-    const existing = await this.db.entitlement.find({ subscriptionId }).lean();
-    const existingByKey = new Map(existing.map((item: any) => [item.key, item]));
-    const keys = Object.keys(features);
-
-    for (const [key, value] of Object.entries(features)) {
-      const current = existingByKey.get(key);
-      if (!current) {
-        await this.db.entitlement.create({ subscriptionId, key, value, source: 'plan' });
-      } else if (current.source !== 'override') {
-        await this.db.entitlement.updateOne(
-          { _id: current._id },
-          { $set: { value, source: 'plan' } },
-        );
-      }
-    }
-
-    await this.db.entitlement.deleteMany({
-      subscriptionId,
-      source: 'plan',
-      key: { $nin: keys },
-    });
+    const existing = await this.db.entitlement.find({ subscriptionId }).lean(); const existingByKey = new Map(existing.map((item: any) => [item.key, item])); const keys = Object.keys(features);
+    for (const [key, value] of Object.entries(features)) { const current = existingByKey.get(key); if (!current) await this.db.entitlement.create({ subscriptionId, key, value, source: 'plan' }); else if (current.source !== 'override') await this.db.entitlement.updateOne({ _id: current._id }, { $set: { value, source: 'plan' } }); }
+    await this.db.entitlement.deleteMany({ subscriptionId, source: 'plan', key: { $nin: keys } });
   }
-
-  private async syncPlanEntitlements(planId: string, features: Record<string, unknown>) {
-    const subscriptions = await this.db.subscription.find({ planId, status: { $in: ['active', 'trialing', 'past_due'] } }).lean();
-    for (const subscription of subscriptions) {
-      await this.applyPlanEntitlements(String(subscription._id), features);
-    }
-  }
+  private async syncPlanEntitlements(planId: string, features: Record<string, unknown>) { const subscriptions = await this.db.subscription.find({ planId, status: { $in: ['active', 'trialing', 'past_due'] } }).lean(); for (const subscription of subscriptions) await this.applyPlanEntitlements(String(subscription._id), features); }
 
   async assign(tenantId: string, planId: string, status = 'active', endsAt?: string, actorUserId?: string) {
-    await this.getTenantOrThrow(tenantId);
-    const plan = await this.getPlanOrThrow(planId);
-    const current = await this.db.subscription.findOne({ tenantId }).sort({ createdAt: -1 }).lean();
-    let expiry = endsAt ? new Date(endsAt) : undefined;
-    if (expiry && Number.isNaN(expiry.getTime())) throw new BadRequestException('Invalid endsAt');
-    if (status === 'trialing' && !expiry) expiry = new Date(Date.now() + TRIAL_DAYS * 86400000);
-    const update = { $set: { planId: String(plan._id), status, ...(expiry ? { endsAt: expiry } : {}), graceUntil: null } };
-    const subscription = current
-      ? await this.db.subscription.findOneAndUpdate({ _id: current._id }, update, { new: true }).lean()
-      : await this.db.subscription.create({ tenantId, planId: String(plan._id), status, startedAt: new Date(), ...(expiry ? { endsAt: expiry } : {}) });
-    if (!subscription) throw new NotFoundException('Subscription could not be saved');
-
-    await this.applyPlanEntitlements(String(subscription._id), (plan.features ?? {}) as Record<string, unknown>);
-    await this.audit(tenantId, current?.status === 'revoked' ? 'subscription.reactivated' : current ? 'subscription.updated' : 'subscription.created', String(subscription._id), { planId: String(plan._id), status, endsAt: subscription.endsAt ?? null }, actorUserId);
-    return this.dto(subscription);
+    await this.getTenantOrThrow(tenantId); const plan = await this.getPlanOrThrow(planId); const current = await this.db.subscription.findOne({ tenantId }).sort({ createdAt: -1 }).lean(); let expiry = endsAt ? new Date(endsAt) : undefined; if (expiry && Number.isNaN(expiry.getTime())) throw new BadRequestException('Invalid endsAt'); if (status === 'trialing' && !expiry) expiry = new Date(Date.now() + TRIAL_DAYS * 86400000); const update = { $set: { planId: String(plan._id), status, ...(expiry ? { endsAt: expiry } : {}), graceUntil: null } }; const subscription = current ? await this.db.subscription.findOneAndUpdate({ _id: current._id }, update, { new: true }).lean() : await this.db.subscription.create({ tenantId, planId: String(plan._id), status, startedAt: new Date(), ...(expiry ? { endsAt: expiry } : {}) }); if (!subscription) throw new NotFoundException('Subscription could not be saved'); await this.applyPlanEntitlements(String(subscription._id), (plan.features ?? {}) as Record<string, unknown>); await this.audit(tenantId, current?.status === 'revoked' ? 'subscription.reactivated' : current ? 'subscription.updated' : 'subscription.created', String(subscription._id), { planId: String(plan._id), status, endsAt: subscription.endsAt ?? null }, actorUserId); return this.dto(subscription);
   }
 
-  async renew(tenantId: string, endsAt: string, actorUserId?: string) {
-    await this.getTenantOrThrow(tenantId);
-    const expiry = new Date(endsAt);
-    if (Number.isNaN(expiry.getTime()) || expiry.getTime() <= Date.now()) throw new BadRequestException('Renewal date must be in the future');
-    const current = await this.db.subscription.findOne({ tenantId }).sort({ createdAt: -1 }).lean();
-    if (!current) throw new NotFoundException('No subscription found for tenant');
-    const subscription = await this.db.subscription.findOneAndUpdate({ _id: current._id }, { $set: { status: 'active', endsAt: expiry, graceUntil: null } }, { new: true }).lean();
-    if (!subscription) throw new NotFoundException('Subscription could not be renewed');
-    await this.audit(tenantId, current.status === 'revoked' ? 'subscription.reactivated' : 'subscription.renewed', String(subscription._id), { endsAt: expiry }, actorUserId);
-    return this.dto(subscription);
-  }
-
-  async setStatus(tenantId: string, status: 'active' | 'trialing' | 'past_due' | 'canceled' | 'expired', actorUserId?: string) {
-    await this.getTenantOrThrow(tenantId);
-    const current = await this.db.subscription.findOne({ tenantId }).sort({ createdAt: -1 }).lean();
-    if (!current) throw new NotFoundException('No subscription found for tenant');
-    const subscription = await this.db.subscription.findOneAndUpdate({ _id: current._id }, { $set: { status, ...(status === 'canceled' || status === 'expired' ? { endsAt: new Date(), graceUntil: null } : {}) } }, { new: true }).lean();
-    if (!subscription) throw new NotFoundException('Subscription could not be updated');
-    await this.audit(tenantId, `subscription.${status}`, String(subscription._id), { status }, actorUserId);
-    return this.dto(subscription);
-  }
-
-  async revoke(tenantId: string, actorUserId?: string) {
-    await this.getTenantOrThrow(tenantId);
-    const current = await this.db.subscription.findOne({ tenantId }).sort({ createdAt: -1 }).lean();
-    if (!current) throw new NotFoundException('No subscription found for tenant');
-    const subscription = await this.db.subscription.findOneAndUpdate({ _id: current._id }, { $set: { status: 'revoked', endsAt: new Date(), graceUntil: null } }, { new: true }).lean();
-    if (!subscription) throw new NotFoundException('Subscription could not be revoked');
-    await this.db.entitlement.deleteMany({ subscriptionId: String(current._id) });
-    await this.audit(tenantId, 'subscription.revoked', String(subscription._id), { planId: current.planId }, actorUserId);
-    return this.dto(subscription);
-  }
-
-  async setEntitlement(subscriptionId: string, key: string, value: unknown, actorUserId?: string) {
-    const subscription = await this.db.subscription.findById(subscriptionId).lean();
-    if (!subscription) throw new NotFoundException('Subscription not found');
-    const normalizedKey = key.trim();
-    if (!normalizedKey) throw new BadRequestException('Entitlement key is required');
-    const entitlement = await this.db.entitlement.findOneAndUpdate(
-      { subscriptionId, key: normalizedKey },
-      { $set: { value, source: 'override' }, $setOnInsert: { subscriptionId, key: normalizedKey } },
-      { upsert: true, new: true },
-    ).lean();
-    await this.audit(subscription.tenantId, 'subscription.entitlement_updated', subscriptionId, { key: normalizedKey, value, source: 'override' }, actorUserId);
-    return { id: String(entitlement?._id), subscriptionId, key: normalizedKey, value: entitlement?.value };
-  }
+  async renew(tenantId: string, endsAt: string, actorUserId?: string) { await this.getTenantOrThrow(tenantId); const expiry = new Date(endsAt); if (Number.isNaN(expiry.getTime()) || expiry.getTime() <= Date.now()) throw new BadRequestException('Renewal date must be in the future'); const current = await this.db.subscription.findOne({ tenantId }).sort({ createdAt: -1 }).lean(); if (!current) throw new NotFoundException('No subscription found for tenant'); const subscription = await this.db.subscription.findOneAndUpdate({ _id: current._id }, { $set: { status: 'active', endsAt: expiry, graceUntil: null } }, { new: true }).lean(); if (!subscription) throw new NotFoundException('Subscription could not be renewed'); await this.audit(tenantId, current.status === 'revoked' ? 'subscription.reactivated' : 'subscription.renewed', String(subscription._id), { endsAt: expiry }, actorUserId); return this.dto(subscription); }
+  async setStatus(tenantId: string, status: 'active' | 'trialing' | 'past_due' | 'canceled' | 'expired', actorUserId?: string) { await this.getTenantOrThrow(tenantId); const current = await this.db.subscription.findOne({ tenantId }).sort({ createdAt: -1 }).lean(); if (!current) throw new NotFoundException('No subscription found for tenant'); const subscription = await this.db.subscription.findOneAndUpdate({ _id: current._id }, { $set: { status, ...(status === 'canceled' || status === 'expired' ? { endsAt: new Date(), graceUntil: null } : {}) } }, { new: true }).lean(); if (!subscription) throw new NotFoundException('Subscription could not be updated'); await this.audit(tenantId, `subscription.${status}`, String(subscription._id), { status }, actorUserId); return this.dto(subscription); }
+  async revoke(tenantId: string, actorUserId?: string) { await this.getTenantOrThrow(tenantId); const current = await this.db.subscription.findOne({ tenantId }).sort({ createdAt: -1 }).lean(); if (!current) throw new NotFoundException('No subscription found for tenant'); const subscription = await this.db.subscription.findOneAndUpdate({ _id: current._id }, { $set: { status: 'revoked', endsAt: new Date(), graceUntil: null } }, { new: true }).lean(); if (!subscription) throw new NotFoundException('Subscription could not be revoked'); await this.db.entitlement.deleteMany({ subscriptionId: String(current._id) }); await this.audit(tenantId, 'subscription.revoked', String(subscription._id), { planId: current.planId }, actorUserId); return this.dto(subscription); }
+  async setEntitlement(subscriptionId: string, key: string, value: unknown, actorUserId?: string) { const subscription = await this.db.subscription.findById(subscriptionId).lean(); if (!subscription) throw new NotFoundException('Subscription not found'); const normalizedKey = key.trim(); if (!normalizedKey) throw new BadRequestException('Entitlement key is required'); const entitlement = await this.db.entitlement.findOneAndUpdate({ subscriptionId, key: normalizedKey }, { $set: { value, source: 'override' }, $setOnInsert: { subscriptionId, key: normalizedKey } }, { upsert: true, new: true }).lean(); await this.audit(subscription.tenantId, 'subscription.entitlement_updated', subscriptionId, { key: normalizedKey, value, source: 'override' }, actorUserId); return { id: String(entitlement?._id), subscriptionId, key: normalizedKey, value: entitlement?.value }; }
 }
