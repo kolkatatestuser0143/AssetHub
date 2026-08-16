@@ -17,6 +17,7 @@ export class AuditEvent {
   @Prop() route?: string;
   @Prop() method?: string;
   @Prop() statusCode?: number;
+  @Prop({ index: true }) requestId?: string;
   @Prop() ipAddress?: string;
   @Prop() userAgent?: string;
   @Prop({ default: Date.now, index: true }) occurredAt!: Date;
@@ -27,6 +28,7 @@ AuditEventSchema.index({ tenantId: 1, occurredAt: -1 });
 AuditEventSchema.index({ companyId: 1, occurredAt: -1 });
 AuditEventSchema.index({ actorUserId: 1, occurredAt: -1 });
 AuditEventSchema.index({ action: 1, occurredAt: -1 });
+AuditEventSchema.index({ requestId: 1, occurredAt: -1 });
 
 export const PlatformAdminNoteModelName = 'PlatformAdminNote';
 export type PlatformAdminNoteDocument = HydratedDocument<PlatformAdminNote>;

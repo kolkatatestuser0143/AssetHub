@@ -4,12 +4,14 @@ import { TenantScopedRepository } from '../../common/tenant-scoped.repository';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 import { EntitlementService } from '../billing/entitlement.service';
 import { AssetExcelReportFilters } from './asset-excel-report.service';
+import { TenantPdfBrandingService } from './tenant-pdf-branding.service';
 
 @Injectable()
 export class AssetPdfReportService extends TenantScopedRepository {
   constructor(
     private readonly db: MongooseDatabaseService,
     private readonly entitlements: EntitlementService,
+    private readonly branding: TenantPdfBrandingService,
   ) { super(); }
 
   async generate(auth: AuthContext, filters: AssetExcelReportFilters = {}): Promise<Buffer> {
@@ -58,7 +60,7 @@ export class AssetPdfReportService extends TenantScopedRepository {
     ]);
 
     const filtersText = Object.entries(filters).filter(([, v]) => v).map(([k, v]) => `${k}=${v}`).join(', ') || 'None';
-    return buildPdf([
+    const pdf = buildPdf([
       ['AssetHub Asset Report'],
       [`Generated: ${new Date().toISOString()}`],
       [`Tenant: ${auth.tenantId}`],
@@ -68,6 +70,7 @@ export class AssetPdfReportService extends TenantScopedRepository {
       ['Asset Number', 'Status', 'Asset Type', 'Company', 'Created'],
       ...rows,
     ]);
+    return this.branding.brand(auth.tenantId, pdf);
   }
 }
 
@@ -93,9 +96,8 @@ function buildPdf(rows: string[][]): Buffer {
   if (page.length) pages.push(page);
 
   const objects: string[] = [];
-  objects.push(''); // 0 placeholder
+  objects.push('');
   objects.push('<< /Type /Catalog /Pages 2 0 R >>');
-  const pageRefs: string[] = [];
   const fontObject = 3 + pages.length * 2;
   objects.push(`<< /Type /Pages /Kids [${pages.map((_, i) => `${4 + i * 2} 0 R`).join(' ')}] /Count ${pages.length} >>`);
   for (let i = 0; i < pages.length; i += 1) {
@@ -110,7 +112,6 @@ function buildPdf(rows: string[][]): Buffer {
     const stream = commands.join('\n');
     objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 ${fontObject} 0 R >> >> /Contents ${contentObj} 0 R >>`);
     objects.push(`<< /Length ${Buffer.byteLength(stream, 'utf8')} >>\nstream\n${stream}\nendstream`);
-    pageRefs.push(`${pageObj} 0 R`);
   }
   objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
 
@@ -123,7 +124,7 @@ function buildPdf(rows: string[][]): Buffer {
     chunks.push(obj); offset += obj.length;
   }
   const xrefOffset = offset;
-  const xref = [`xref`, `0 ${objects.length}`, `0000000000 65535 f `];
+  const xref = ['xref', `0 ${objects.length}`, '0000000000 65535 f '];
   for (let i = 1; i < objects.length; i += 1) xref.push(`${String(offsets[i]).padStart(10, '0')} 00000 n `);
   xref.push('trailer', `<< /Size ${objects.length} /Root 1 0 R >>`, 'startxref', String(xrefOffset), '%%EOF');
   chunks.push(Buffer.from(`${xref.join('\n')}\n`));

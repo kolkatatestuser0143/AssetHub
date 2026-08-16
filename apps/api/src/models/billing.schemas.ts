@@ -7,6 +7,7 @@ export type PlanDocument = HydratedDocument<Plan>;
 @Schema({ collection: 'plans', timestamps: true, versionKey: false })
 export class Plan {
   @Prop({ required: true, unique: true }) name!: string;
+  @Prop({ required: true, enum: ['trial', 'starter', 'professional', 'enterprise', 'restricted'], default: 'starter' }) themePreset!: 'trial' | 'starter' | 'professional' | 'enterprise' | 'restricted';
   @Prop({ type: Object }) features?: Record<string, unknown>; // feature flags + limits
   @Prop({ default: true, index: true }) isActive!: boolean;
 }

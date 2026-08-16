@@ -9,6 +9,7 @@ export interface AuthContext {
   companyId: string;
   crossCompany: boolean;
   permissions: string[];
+  forcePasswordReset: boolean;
 }
 
 @Injectable()
@@ -25,14 +26,17 @@ export class TenantContextGuard implements CanActivate {
 
     try {
       const payload = this.jwt.verify(token);
-      if (!payload.sub || !payload.sessionId || !payload.tenantId || !payload.companyId) throw new UnauthorizedException('Invalid access token claims');
+      if (!payload.sub || !payload.sessionId || !payload.tenantId || !payload.companyId) {
+        throw new UnauthorizedException('Invalid access token claims');
+      }
       req.authContext = {
         userId: payload.sub,
         sessionId: payload.sessionId,
         tenantId: payload.tenantId,
         companyId: payload.companyId,
         crossCompany: !!payload.crossCompany,
-        permissions: payload.permissions ?? [],
+        permissions: Array.isArray(payload.permissions) ? payload.permissions : [],
+        forcePasswordReset: payload.forcePasswordReset === true,
       } as AuthContext;
       return true;
     } catch (error) {
