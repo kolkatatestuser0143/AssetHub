@@ -42,27 +42,23 @@ export class Company {
 export const CompanySchema = SchemaFactory.createForClass(Company);
 CompanySchema.index({ tenantId: 1, code: 1 }, { unique: true });
 
-export const BusinessUnitModelName = 'BusinessUnit';
-export type BusinessUnitDocument = HydratedDocument<BusinessUnit>;
-
-@Schema({ collection: 'business_units', timestamps: true, versionKey: false })
-export class BusinessUnit {
-  @Prop({ required: true, index: true }) companyId!: string;
-  @Prop({ required: true }) name!: string;
+export enum SiteType {
+  PLANT = 'plant',
+  BRANCH_OFFICE = 'branch_office',
+  HEAD_OFFICE = 'head_office',
 }
 
-export const BusinessUnitSchema = SchemaFactory.createForClass(BusinessUnit);
-
-export const PlantModelName = 'Plant';
-export type PlantDocument = HydratedDocument<Plant>;
+export const SiteModelName = 'Site';
+export type SiteDocument = HydratedDocument<Site>;
 
 @Schema({ collection: 'plants', timestamps: true, versionKey: false })
-export class Plant {
-  @Prop({ required: true, index: true }) businessUnitId!: string;
+export class Site {
+  @Prop({ required: true, index: true }) companyId!: string;
+  @Prop({ required: true, enum: SiteType, default: SiteType.PLANT }) type!: SiteType;
   @Prop({ required: true }) name!: string;
 }
 
-export const PlantSchema = SchemaFactory.createForClass(Plant);
+export const SiteSchema = SchemaFactory.createForClass(Site);
 
 export const LocationModelName = 'Location';
 export type LocationDocument = HydratedDocument<Location>;
