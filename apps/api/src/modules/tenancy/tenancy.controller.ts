@@ -37,14 +37,31 @@ export class TenancyController {
 
   @Get() @RequirePermission('company:read')
   list(@Req() req:any){return this.tenancy.listCompanies(req.authContext);}
+
   @Post() @RequirePermission('company:write')
   create(@Body() dto:CreateCompanyDto,@Req() req:any){return this.tenancy.createCompany(req.authContext,dto.name,dto.code);}
+
+  @Get(':companyId/business-units') @RequirePermission('company:read')
+  listBusinessUnits(@Param('companyId') companyId:string,@Req() req:any){return this.tenancy.listBusinessUnits(req.authContext,companyId);}
+
   @Post(':companyId/business-units') @RequirePermission('company:write')
   createBusinessUnit(@Param('companyId') companyId:string,@Body() dto:CreateNamedChildDto,@Req() req:any){return this.tenancy.createBusinessUnit(req.authContext,companyId,dto.name);}
+
+  @Get('business-units/:businessUnitId/plants') @RequirePermission('company:read')
+  listPlants(@Param('businessUnitId') businessUnitId:string,@Req() req:any){return this.tenancy.listPlants(req.authContext,businessUnitId);}
+
   @Post('business-units/:businessUnitId/plants') @RequirePermission('company:write')
   createPlant(@Param('businessUnitId') businessUnitId:string,@Body() dto:CreateNamedChildDto,@Req() req:any){return this.tenancy.createPlant(req.authContext,businessUnitId,dto.name);}
+
+  @Get('plants/:plantId/locations') @RequirePermission('company:read')
+  listLocations(@Param('plantId') plantId:string,@Req() req:any){return this.tenancy.listLocations(req.authContext,plantId);}
+
   @Post('plants/:plantId/locations') @RequirePermission('company:write')
   createLocation(@Param('plantId') plantId:string,@Body() dto:CreateNamedChildDto,@Req() req:any){return this.tenancy.createLocation(req.authContext,plantId,dto.name);}
+
+  @Get('locations/:locationId/departments') @RequirePermission('company:read')
+  listDepartments(@Param('locationId') locationId:string,@Req() req:any){return this.tenancy.listDepartments(req.authContext,locationId);}
+
   @Post('locations/:locationId/departments') @RequirePermission('company:write')
   createDepartment(@Param('locationId') locationId:string,@Body() dto:CreateNamedChildDto,@Req() req:any){return this.tenancy.createDepartment(req.authContext,locationId,dto.name);}
 }
