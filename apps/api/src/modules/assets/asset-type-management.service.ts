@@ -10,10 +10,15 @@ export class AssetTypeManagementService {
   async update(auth: AuthContext, assetTypeId: string, name: string, prefix: string, separator = '-', padding = 6) {
     const existing = await this.db.assetType.findOne({ _id: assetTypeId, companyId: auth.companyId }).lean();
     if (!existing) throw new NotFoundException('Asset type not found');
+    const normalizedName = name.trim();
     const normalizedPrefix = prefix.trim().toUpperCase();
-    const duplicate = await this.db.assetType.findOne({ companyId: auth.companyId, _id: { $ne: assetTypeId }, $or: [{ name: name.trim() }, { 'numberingRule.prefix': normalizedPrefix }] }).lean();
-    if (duplicate) throw new ConflictException('Another asset type already uses this name or prefix');
-    const updated = await this.db.assetType.findOneAndUpdate({ _id: assetTypeId, companyId: auth.companyId }, { $set: { name: name.trim(), 'numberingRule.prefix': normalizedPrefix, 'numberingRule.separator': separator || '-', 'numberingRule.padding': Math.max(1, Number(padding) || 6), updatedAt: new Date() } }, { new: true }).lean();
+    if (!normalizedName) throw new ConflictException('Asset type name is required');
+    const duplicateFilter: Record<string, unknown> = { companyId: auth.companyId, _id: { $ne: assetTypeId }, 'name': normalizedName };
+    if (normalizedPrefix) duplicateFilter.$or = [{ name: normalizedName }, { 'numberingRule.prefix': normalizedPrefix }];
+    else duplicateFilter.$or = [{ name: normalizedName }];
+    const duplicate = await this.db.assetType.findOne(duplicateFilter).lean();
+    if (duplicate) throw new ConflictException(normalizedPrefix ? 'Another asset type already uses this name or prefix' : 'Another asset type already uses this name');
+    const updated = await this.db.assetType.findOneAndUpdate({ _id: assetTypeId, companyId: auth.companyId }, { $set: { name: normalizedName, 'numberingRule.prefix': normalizedPrefix, 'numberingRule.separator': separator || '-', 'numberingRule.padding': Math.max(1, Number(padding) || 6) || 6, updatedAt: new Date() } }, { new: true }).lean();
     if (!updated) throw new NotFoundException('Asset type not found');
     return toDto(updated);
   }
