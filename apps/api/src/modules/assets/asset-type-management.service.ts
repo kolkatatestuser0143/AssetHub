@@ -7,6 +7,21 @@ import { toDto } from '../../common/mongoose.utils';
 export class AssetTypeManagementService {
   constructor(private readonly db: MongooseDatabaseService) {}
 
+  async create(auth: AuthContext, name: string, prefix?: string, separator = '-', padding = 6) {
+    const normalizedName = name.trim();
+    const normalizedPrefix = prefix?.trim().toUpperCase() || normalizedName.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'AST';
+    if (!normalizedName) throw new ConflictException('Asset type name is required');
+    const duplicate = await this.db.assetType.findOne({ companyId: auth.companyId, $or: [{ name: normalizedName }, { 'numberingRule.prefix': normalizedPrefix }] }).lean();
+    if (duplicate) throw new ConflictException('Another asset type already uses this name or prefix');
+    try {
+      const doc = await this.db.assetType.create({ companyId: auth.companyId, name: normalizedName, numberingRule: { prefix: normalizedPrefix, separator: separator || '-', padding: Math.max(1, Number(padding) || 6), nextSequence: 1 } });
+      return toDto(doc.toObject());
+    } catch (error: any) {
+      if (error?.code === 11000) throw new ConflictException('Another asset type already uses this name or prefix');
+      throw error;
+    }
+  }
+
   async update(auth: AuthContext, assetTypeId: string, name: string, prefix: string, separator = '-', padding = 6) {
     const existing = await this.db.assetType.findOne({ _id: assetTypeId, companyId: auth.companyId }).lean();
     if (!existing) throw new NotFoundException('Asset type not found');
