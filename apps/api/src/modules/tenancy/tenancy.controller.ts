@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Req, UseGuards } from '@nestjs/common';
 import { IsOptional, IsString, MinLength } from 'class-validator';
 import { TenancyService } from './tenancy.service';
+import { TenantLogoService } from './tenant-logo.service';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 import { RbacGuard } from '../../common/guards/rbac.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
@@ -17,7 +18,7 @@ class TenantLogoDto { @IsString() @MinLength(8) fileId!: string; }
 @Controller('companies')
 @UseGuards(TenantContextGuard, RbacGuard)
 export class TenancyController {
-  constructor(private readonly tenancy: TenancyService) {}
+  constructor(private readonly tenancy: TenancyService, private readonly logos: TenantLogoService) {}
 
   @Get('/tenant-profile') @RequirePermission('company:read')
   profile(@Req() req:any){ return this.tenancy.getTenantProfile(req.authContext); }
@@ -26,10 +27,10 @@ export class TenancyController {
   updateProfile(@Body() dto:TenantProfileDto,@Req() req:any){ return this.tenancy.updateTenantProfile(req.authContext,dto); }
 
   @Put('/tenant-profile/logo') @RequirePermission('company:write')
-  updateLogo(@Body() dto:TenantLogoDto,@Req() req:any){ return this.tenancy.updateTenantLogo(req.authContext,dto.fileId); }
+  updateLogo(@Body() dto:TenantLogoDto,@Req() req:any){ return this.logos.setLogo(req.authContext,dto.fileId); }
 
   @Delete('/tenant-profile/logo') @RequirePermission('company:write')
-  removeLogo(@Req() req:any){ return this.tenancy.removeTenantLogo(req.authContext); }
+  removeLogo(@Req() req:any){ return this.logos.removeLogo(req.authContext); }
 
   @Get() @RequirePermission('company:read')
   list(@Req() req:any){return this.tenancy.listCompanies(req.authContext);}
