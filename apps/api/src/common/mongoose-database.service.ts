@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { Tenant, TenantModelName, Company, CompanyModelName, BusinessUnit, BusinessUnitModelName, Plant, PlantModelName, Location, LocationModelName, Department, DepartmentModelName } from '../models/tenancy.schemas';
+import { Tenant, TenantModelName, Company, CompanyModelName, Site, SiteModelName, Location, LocationModelName, Department, DepartmentModelName } from '../models/tenancy.schemas';
 import { User, UserModelName, Session, SessionModelName, LoginHistory, LoginHistoryModelName } from '../models/user.schemas';
 import { Permission, PermissionModelName, Role, RoleModelName } from '../models/rbac.schemas';
 import { AssetType, AssetTypeModelName, Asset, AssetModelName, AssetAuditEvent, AssetAuditEventModelName, AssetAssignment, AssetAssignmentModelName, AssetTransfer, AssetTransferModelName } from '../models/asset.schemas';
@@ -16,7 +16,11 @@ import { AssetReportTemplate, AssetReportTemplateModelName, AssetAcknowledgement
 @Injectable()
 export class MongooseDatabaseService {
   constructor(
-    @InjectModel(TenantModelName) readonly tenant: Model<Tenant>, @InjectModel(CompanyModelName) readonly company: Model<Company>, @InjectModel(BusinessUnitModelName) readonly businessUnit: Model<BusinessUnit>, @InjectModel(PlantModelName) readonly plant: Model<Plant>, @InjectModel(LocationModelName) readonly location: Model<Location>, @InjectModel(DepartmentModelName) readonly department: Model<Department>,
+    @InjectModel(TenantModelName) readonly tenant: Model<Tenant>,
+    @InjectModel(CompanyModelName) readonly company: Model<Company>,
+    @InjectModel(SiteModelName) readonly plant: Model<Site>,
+    @InjectModel(LocationModelName) readonly location: Model<Location>,
+    @InjectModel(DepartmentModelName) readonly department: Model<Department>,
     @InjectModel(UserModelName) readonly user: Model<User>, @InjectModel(SessionModelName) readonly session: Model<Session>, @InjectModel(LoginHistoryModelName) readonly loginHistory: Model<LoginHistory>, @InjectModel(PermissionModelName) readonly permission: Model<Permission>, @InjectModel(RoleModelName) readonly role: Model<Role>,
     @InjectModel(AssetTypeModelName) readonly assetType: Model<AssetType>, @InjectModel(AssetModelName) readonly asset: Model<Asset>, @InjectModel(AssetAuditEventModelName) readonly assetAuditEvent: Model<AssetAuditEvent>, @InjectModel(AssetAssignmentModelName) readonly assetAssignment: Model<AssetAssignment>, @InjectModel(AssetTransferModelName) readonly assetTransfer: Model<AssetTransfer>,
     @InjectModel(AssetMaintenanceModelName) readonly assetMaintenance: Model<AssetMaintenance>, @InjectModel(VendorModelName) readonly vendor: Model<Vendor>, @InjectModel(WarrantyModelName) readonly warranty: Model<Warranty>, @InjectModel(CustomFieldDefModelName) readonly customFieldDefinition: Model<CustomFieldDefinition>, @InjectModel(AssetCustomFieldValueModelName) readonly assetCustomFieldValue: Model<AssetCustomFieldValue>, @InjectModel(AssetDocumentModelName) readonly assetDocument: Model<AssetDocumentMeta>,
