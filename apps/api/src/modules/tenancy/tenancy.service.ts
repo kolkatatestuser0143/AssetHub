@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 import { AuthContext } from '../../common/guards/tenant-context.guard';
 import { TenantScopedRepository } from '../../common/tenant-scoped.repository';
@@ -29,8 +29,28 @@ export class TenancyService extends TenantScopedRepository {
     return { id: String(updated?._id), name: updated?.name, slug: updated?.slug, status: updated?.status, primaryEmail: updated?.primaryEmail ?? null, phone: updated?.phone ?? null, website: updated?.website ?? null, logoFileId: updated?.logoFileId ?? null, logoUrl: updated?.logoUrl ?? null };
   }
 
-  async listCompanies(auth: AuthContext) { return toDtoArray(await this.db.company.find(this.scope(auth)).lean()); }
-  async createCompany(auth: AuthContext, name: string, code: string) { const count=await this.db.company.countDocuments({tenantId:auth.tenantId}); await this.entitlements.requireWithinLimit(auth.tenantId,'max_companies',count); return toDto((await this.db.company.create({tenantId:auth.tenantId,name,code})).toObject()); }
+  async listCompanies(auth: AuthContext) {
+    const filter = auth.crossCompany ? { tenantId: auth.tenantId } : { tenantId: auth.tenantId, companyId: auth.companyId };
+    return toDtoArray(await this.db.company.find(filter).sort({ name: 1 }).lean());
+  }
+
+  async createCompany(auth: AuthContext, name: string, code: string) {
+    const normalizedName = name.trim();
+    const normalizedCode = code.trim().toUpperCase();
+    if (!normalizedName) throw new ConflictException('Company name is required');
+    if (!normalizedCode) throw new ConflictException('Company code is required');
+    const duplicate = await this.db.company.findOne({ tenantId: auth.tenantId, code: normalizedCode }).lean();
+    if (duplicate) throw new ConflictException(`Company code '${normalizedCode}' is already in use in this tenant`);
+    const count = await this.db.company.countDocuments({ tenantId: auth.tenantId });
+    await this.entitlements.requireWithinLimit(auth.tenantId, 'max_companies', count, 1);
+    try {
+      return toDto((await this.db.company.create({ tenantId: auth.tenantId, name: normalizedName, code: normalizedCode })).toObject());
+    } catch (error: any) {
+      if (error?.code === 11000) throw new ConflictException(`Company code '${normalizedCode}' is already in use in this tenant`);
+      throw error;
+    }
+  }
+
   async listBusinessUnits(auth: AuthContext, companyId: string) { await this.assertCompanyInScope(auth,companyId); return toDtoArray(await this.db.businessUnit.find({companyId}).lean()); }
   async createBusinessUnit(auth: AuthContext, companyId: string, name: string) { await this.assertCompanyInScope(auth,companyId); const companyIds=await this.db.company.find({tenantId:auth.tenantId}).select({_id:1}).lean(); const count=companyIds.length?await this.db.businessUnit.countDocuments({companyId:{$in:companyIds.map((c:any)=>String(c._id))}}):0; await this.entitlements.requireWithinLimit(auth.tenantId,'max_business_units',count); return toDto((await this.db.businessUnit.create({companyId,name})).toObject()); }
   async listPlants(auth: AuthContext, businessUnitId: string) { const bu=await this.db.businessUnit.findById(businessUnitId).lean(); if(!bu)throw new NotFoundException('BusinessUnit not found'); await this.assertCompanyInScope(auth,bu.companyId); return toDtoArray(await this.db.plant.find({businessUnitId}).lean()); }
