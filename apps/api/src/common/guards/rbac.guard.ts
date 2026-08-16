@@ -2,33 +2,57 @@ import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@
 import { Reflector } from '@nestjs/core';
 import { PERMISSION_KEY } from '../decorators/require-permission.decorator';
 import { AuthContext } from './tenant-context.guard';
+import { MongooseDatabaseService } from '../mongoose-database.service';
 
 /**
- * Runs AFTER TenantContextGuard. Re-checks permission server-side on
- * every mutating route — the frontend hides UI for UX only, this is the
- * actual enforcement (architecture doc §6, master prompt §3/§67:
- * "authorization only in frontend" is an explicit anti-pattern to avoid).
- *
- * Platform-admin permissions live in a separate namespace
- * (platform:*) and are never satisfied by a tenant-scoped role —
- * enforced simply by the fact platform:* permissions are only ever
- * granted to platform-admin accounts, never seeded into tenant roles.
+ * Server-side permission enforcement. JWT permissions are useful for fast
+ * authorization, but role changes must take effect without waiting for an
+ * old access token to expire. When the token does not contain the required
+ * permission, resolve the user's current tenant roles from MongoDB.
  */
 @Injectable()
 export class RbacGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(private readonly reflector: Reflector, private readonly db: MongooseDatabaseService) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const required = this.reflector.get<string>(PERMISSION_KEY, context.getHandler());
-    if (!required) return true; // route opted out of permission checks explicitly
+    if (!required) return true;
 
     const req = context.switchToHttp().getRequest();
     const authContext: AuthContext | undefined = req.authContext;
-    if (!authContext) {
-      throw new ForbiddenException('No auth context resolved');
+    if (!authContext) throw new ForbiddenException('No auth context resolved');
+
+    if (authContext.permissions.includes(required)) return true;
+
+    const user = await this.db.user.findOne({
+      _id: authContext.userId,
+      tenantId: authContext.tenantId,
+    }).select({ roleIds: 1, companyId: 1 }).lean();
+
+    if (!user?.roleIds?.length) {
+      throw new ForbiddenException(`Missing permission: ${required}`);
     }
 
-    if (!authContext.permissions.includes(required)) {
+    const roles = await this.db.role.find({
+      _id: { $in: user.roleIds },
+      tenantId: authContext.tenantId,
+      $or: [{ companyId: String(user.companyId) }, { companyId: null }, { companyId: { $exists: false } }],
+    }).select({ permissions: 1, companyId: 1 }).lean();
+
+    const permissions = new Set<string>(authContext.permissions);
+    let crossCompany = authContext.crossCompany;
+    for (const role of roles as any[]) {
+      if (role.companyId == null) crossCompany = true;
+      for (const permission of role.permissions ?? []) {
+        if (permission?.permissionKey) permissions.add(String(permission.permissionKey));
+      }
+    }
+
+    authContext.permissions = [...permissions];
+    authContext.crossCompany = crossCompany;
+    req.authContext = authContext;
+
+    if (!permissions.has(required)) {
       throw new ForbiddenException(`Missing permission: ${required}`);
     }
     return true;
