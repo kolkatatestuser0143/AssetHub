@@ -21,11 +21,11 @@ export class TenancyService {
     const company = await this.db.company.findById(auth.companyId).lean();
     return { id: String(tenant._id), name: tenant.name, slug: tenant.slug, status: tenant.status, primaryEmail: tenant.primaryEmail ?? null, phone: tenant.phone ?? null, website: tenant.website ?? null, logoFileId: tenant.logoFileId ?? null, logoUrl: tenant.logoUrl ?? null, company: company ? { id: String(company._id), name: company.name, code: company.code } : null };
   }
-  async updateTenantProfile(auth: AuthContext, input: { name?: string; primaryEmail?: string; phone?: string; website?: string; logoFileId?: string; logoUrl?: string }) {
+  async updateTenantProfile(auth: AuthContext, input: { name?: string; phone?: string; website?: string; logoFileId?: string; logoUrl?: string }) {
     const tenant = await this.db.tenant.findById(auth.tenantId).lean();
     if (!tenant) throw new NotFoundException('Tenant not found');
     const set: Record<string, unknown> = {};
-    for (const key of ['name','primaryEmail','phone','website','logoFileId','logoUrl']) { const value = input[key as keyof typeof input]; if (value !== undefined) set[key] = typeof value === 'string' ? value.trim() : value; }
+    for (const key of ['name','phone','website','logoFileId','logoUrl']) { const value = input[key as keyof typeof input]; if (value !== undefined) set[key] = typeof value === 'string' ? value.trim() : value; }
     if (set.name) await this.db.company.updateOne({ _id: auth.companyId, tenantId: auth.tenantId }, { $set: { name: set.name } });
     const updated = await this.db.tenant.findByIdAndUpdate(auth.tenantId, { $set: set }, { new: true }).lean();
     return { id: String(updated?._id), name: updated?.name, slug: updated?.slug, status: updated?.status, primaryEmail: updated?.primaryEmail ?? null, phone: updated?.phone ?? null, website: updated?.website ?? null, logoFileId: updated?.logoFileId ?? null, logoUrl: updated?.logoUrl ?? null };
@@ -63,7 +63,7 @@ export class TenancyService {
     await this.assertCompanyInScope(auth, companyId);
     const normalizedName = name.trim(); if (!normalizedName) throw new ConflictException('Site name is required');
     const siteType = Object.values(SiteType).includes(type) ? type : SiteType.PLANT;
-    const count = await this.db.plant.countDocuments({ companyId }); await this.entitlements.requireWithinLimit(auth.tenantId, 'max_plants', count);
+    const siteCount = await this.db.plant.countDocuments({ companyId }); await this.entitlements.requireWithinLimit(auth.tenantId, 'max_sites', siteCount);
     return toDto((await this.db.plant.create({ companyId, name: normalizedName, type: siteType })).toObject());
   }
   async listLocations(auth: AuthContext, siteId: string) { const site = await this.db.plant.findById(siteId).lean(); if (!site) throw new NotFoundException('Site not found'); await this.assertCompanyInScope(auth, site.companyId); return toDtoArray(await this.db.location.find({ plantId: siteId }).lean()); }
