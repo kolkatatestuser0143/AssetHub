@@ -37,13 +37,11 @@ export class TenancyService {
   }
 
   async listCompanies(auth: AuthContext) {
-    const crossCompany = await this.hasTenantWideScope(auth);
-    return toDtoArray(await this.db.company.find(crossCompany ? { tenantId: auth.tenantId } : { tenantId: auth.tenantId, _id: auth.companyId }).sort({ name: 1 }).lean());
+    return toDtoArray(await this.db.company.find({ tenantId: auth.tenantId }).sort({ name: 1 }).lean());
   }
 
   async getAssetHierarchy(auth: AuthContext) {
-    const crossCompany = await this.hasTenantWideScope(auth);
-    const companies = await this.db.company.find(crossCompany ? { tenantId: auth.tenantId } : { tenantId: auth.tenantId, _id: auth.companyId }).sort({ name: 1 }).lean();
+    const companies = await this.db.company.find({ tenantId: auth.tenantId }).sort({ name: 1 }).lean();
     const companyIds = companies.map((company: any) => String(company._id));
     if (!companyIds.length) return [];
     const businessUnits = await this.db.businessUnit.find({ companyId: { $in: companyIds } }).sort({ name: 1 }).lean();
