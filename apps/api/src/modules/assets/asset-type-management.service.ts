@@ -11,12 +11,12 @@ export class AssetTypeManagementService {
     const existing = await this.db.assetType.findOne({ _id: assetTypeId, companyId: auth.companyId }).lean();
     if (!existing) throw new NotFoundException('Asset type not found');
     const normalizedName = name.trim();
-    const normalizedPrefix = prefix.trim().toUpperCase();
+    const normalizedPrefix = prefix.trim().toUpperCase() || normalizedName.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'AST';
     if (!normalizedName) throw new ConflictException('Asset type name is required');
     const duplicateFilter: Record<string, unknown> = { companyId: auth.companyId, _id: { $ne: assetTypeId } };
-    duplicateFilter.$or = normalizedPrefix ? [{ name: normalizedName }, { 'numberingRule.prefix': normalizedPrefix }] : [{ name: normalizedName }];
+    duplicateFilter.$or = [{ name: normalizedName }, { 'numberingRule.prefix': normalizedPrefix }];
     const duplicate = await this.db.assetType.findOne(duplicateFilter).lean();
-    if (duplicate) throw new ConflictException(normalizedPrefix ? 'Another asset type already uses this name or prefix' : 'Another asset type already uses this name');
+    if (duplicate) throw new ConflictException('Another asset type already uses this name or prefix');
     const updated = await this.db.assetType.findOneAndUpdate(
       { _id: assetTypeId, companyId: auth.companyId },
       { $set: { name: normalizedName, 'numberingRule.prefix': normalizedPrefix, 'numberingRule.separator': separator || '-', 'numberingRule.padding': Math.max(1, Number(padding) || 6), updatedAt: new Date() } },
