@@ -7,7 +7,7 @@ import { RbacGuard } from '../../common/guards/rbac.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 
 class CreateCompanyDto { @IsString() @MinLength(1) name!: string; @IsString() @MinLength(2) code!: string; }
-class CreateSiteDto { @IsString() @MinLength(1) name!: string; @IsOptional() @IsIn(['plant','branch_office','head_office']) type?: 'plant' | 'branch_office' | 'head_office'; }
+class CreateSiteDto { @IsString() @MinLength(1) name!: string; @IsOptional() @IsIn(['plant','branch_office','head_office','other']) type?: 'plant' | 'branch_office' | 'head_office' | 'other'; }
 class CreateNamedChildDto { @IsString() @MinLength(1) name!: string; }
 class TenantProfileDto { @IsOptional() @IsString() @MinLength(2) name?: string; @IsOptional() @IsString() phone?: string; @IsOptional() @IsString() website?: string; }
 class TenantLogoDto { @IsString() @MinLength(8) fileId!: string; }
