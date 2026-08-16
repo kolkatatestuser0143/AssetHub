@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Activity, BarChart3, Building2, CreditCard, FileSearch, LayoutDashboard, LogOut, Menu, Settings, ShieldAlert, ShieldCheck, Users, X, type LucideIcon } from 'lucide-react';
+import { Activity, BarChart3, Building2, CreditCard, FileSearch, LayoutDashboard, LogOut, Menu, ServerCog, Settings, ShieldAlert, ShieldCheck, Users, X, type LucideIcon } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { systemBootstrap, systemLogout } from '../../lib/system-api';
 
@@ -17,6 +17,7 @@ const navigation: Array<{ label: string; href: string; icon: LucideIcon; exact?:
   { label: 'Audit & Security', href: '/system/audit', icon: FileSearch },
   { label: 'Sessions & Security', href: '/system/security', icon: ShieldAlert },
   { label: 'System Health', href: '/system/health', icon: Activity },
+  { label: 'Background Jobs', href: '/system/operations', icon: ServerCog },
   { label: 'Analytics', href: '/system/analytics', icon: BarChart3 },
   { label: 'Settings', href: '/system/settings', icon: Settings },
 ];
