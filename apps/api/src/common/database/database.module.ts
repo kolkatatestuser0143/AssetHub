@@ -1,6 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { TenantModelName, TenantSchema, CompanyModelName, CompanySchema, BusinessUnitModelName, BusinessUnitSchema, PlantModelName, PlantSchema, LocationModelName, LocationSchema, DepartmentModelName, DepartmentSchema } from '../../models/tenancy.schemas';
+import { TenantModelName, TenantSchema, CompanyModelName, CompanySchema, SiteModelName, SiteSchema, LocationModelName, LocationSchema, DepartmentModelName, DepartmentSchema } from '../../models/tenancy.schemas';
 import { UserModelName, UserSchema, SessionModelName, SessionSchema, LoginHistoryModelName, LoginHistorySchema } from '../../models/user.schemas';
 import { PermissionModelName, PermissionSchema, RoleModelName, RoleSchema } from '../../models/rbac.schemas';
 import { AssetTypeModelName, AssetTypeSchema, AssetModelName, AssetSchema, AssetAuditEventModelName, AssetAuditEventSchema, AssetAssignmentModelName, AssetAssignmentSchema, AssetTransferModelName, AssetTransferSchema } from '../../models/asset.schemas';
@@ -13,7 +13,7 @@ import { AuditEventModelName, AuditEventSchema, PlatformAdminNoteModelName, Plat
 import { AssetReportTemplateModelName, AssetReportTemplateSchema, AssetAcknowledgementTemplateModelName, AssetAcknowledgementTemplateSchema, AssetAcknowledgementModelName, AssetAcknowledgementSchema } from '../../models/report.schemas';
 
 const MODEL_PROVIDERS = [
-  { name: TenantModelName, schema: TenantSchema }, { name: CompanyModelName, schema: CompanySchema }, { name: BusinessUnitModelName, schema: BusinessUnitSchema }, { name: PlantModelName, schema: PlantSchema }, { name: LocationModelName, schema: LocationSchema }, { name: DepartmentModelName, schema: DepartmentSchema },
+  { name: TenantModelName, schema: TenantSchema }, { name: CompanyModelName, schema: CompanySchema }, { name: SiteModelName, schema: SiteSchema }, { name: LocationModelName, schema: LocationSchema }, { name: DepartmentModelName, schema: DepartmentSchema },
   { name: UserModelName, schema: UserSchema }, { name: SessionModelName, schema: SessionSchema }, { name: LoginHistoryModelName, schema: LoginHistorySchema }, { name: PermissionModelName, schema: PermissionSchema }, { name: RoleModelName, schema: RoleSchema },
   { name: AssetTypeModelName, schema: AssetTypeSchema }, { name: AssetModelName, schema: AssetSchema }, { name: AssetAuditEventModelName, schema: AssetAuditEventSchema }, { name: AssetAssignmentModelName, schema: AssetAssignmentSchema }, { name: AssetTransferModelName, schema: AssetTransferSchema }, { name: AssetMaintenanceModelName, schema: AssetMaintenanceSchema },
   { name: VendorModelName, schema: VendorSchema }, { name: WarrantyModelName, schema: WarrantySchema }, { name: CustomFieldDefModelName, schema: CustomFieldDefSchema }, { name: AssetCustomFieldValueModelName, schema: AssetCustomFieldValueSchema }, { name: AssetDocumentModelName, schema: AssetDocumentSchema },
