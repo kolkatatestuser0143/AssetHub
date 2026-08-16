@@ -15,6 +15,13 @@ export class Tenant {
   @Prop({ required: true }) name!: string;
   @Prop({ required: true, unique: true }) slug!: string;
   @Prop({ enum: TenantStatus, default: TenantStatus.ACTIVE, index: true }) status!: TenantStatus;
+  @Prop() primaryEmail?: string;
+  @Prop() phone?: string;
+  @Prop() website?: string;
+  @Prop() logoFileId?: string;
+  @Prop() logoUrl?: string;
+  @Prop() faviconFileId?: string;
+  @Prop() faviconUrl?: string;
   @Prop() suspendedAt?: Date;
   @Prop() suspendedBy?: string;
   @Prop() suspensionReason?: string;
