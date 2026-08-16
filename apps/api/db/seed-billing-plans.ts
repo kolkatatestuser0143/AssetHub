@@ -5,11 +5,9 @@ loadEnv({ path: require('path').resolve(__dirname, '../../../.env') });
 import mongoose from 'mongoose';
 
 const UNLIMITED = null;
-
 const PLANS = [
   {
-    name: 'Free / Trial',
-    features: {
+    name: 'Free / Trial', themePreset: 'trial', features: {
       max_assets: 100, max_users: 5, max_companies: 1, max_business_units: 2, max_plants: 5, max_locations: 5,
       max_departments: 10, max_vendors: 25, max_asset_documents: 250, max_saved_reports: 3, max_api_keys: 1,
       max_integrations: 1, max_storage_gb: 1, max_asset_document_size_mb: 10, max_api_rate_limit_per_minute: 60,
@@ -21,8 +19,7 @@ const PLANS = [
     },
   },
   {
-    name: 'Starter',
-    features: {
+    name: 'Starter', themePreset: 'starter', features: {
       max_assets: 1000, max_users: 25, max_companies: 3, max_business_units: 10, max_plants: 25, max_locations: 25,
       max_departments: 100, max_vendors: 100, max_asset_documents: 2500, max_saved_reports: 15, max_api_keys: 3,
       max_integrations: 3, max_storage_gb: 10, max_asset_document_size_mb: 25, max_api_rate_limit_per_minute: 120,
@@ -34,8 +31,7 @@ const PLANS = [
     },
   },
   {
-    name: 'Professional',
-    features: {
+    name: 'Professional', themePreset: 'professional', features: {
       max_assets: 5000, max_users: 100, max_companies: 10, max_business_units: 50, max_plants: 100, max_locations: 100,
       max_departments: 500, max_vendors: 500, max_asset_documents: 10000, max_saved_reports: 50, max_api_keys: 10,
       max_integrations: 10, max_storage_gb: 50, max_asset_document_size_mb: 50, max_api_rate_limit_per_minute: 300,
@@ -47,8 +43,7 @@ const PLANS = [
     },
   },
   {
-    name: 'Business',
-    features: {
+    name: 'Business', themePreset: 'professional', features: {
       max_assets: 25000, max_users: 500, max_companies: 50, max_business_units: 250, max_plants: 500, max_locations: 500,
       max_departments: 2500, max_vendors: 2000, max_asset_documents: 50000, max_saved_reports: 200, max_api_keys: 25,
       max_integrations: 25, max_storage_gb: 250, max_asset_document_size_mb: 100, max_api_rate_limit_per_minute: 1000,
@@ -60,8 +55,7 @@ const PLANS = [
     },
   },
   {
-    name: 'Enterprise',
-    features: {
+    name: 'Enterprise', themePreset: 'enterprise', features: {
       max_assets: UNLIMITED, max_users: UNLIMITED, max_companies: UNLIMITED, max_business_units: UNLIMITED,
       max_plants: UNLIMITED, max_locations: UNLIMITED, max_departments: UNLIMITED, max_vendors: UNLIMITED,
       max_asset_documents: UNLIMITED, max_saved_reports: UNLIMITED, max_api_keys: UNLIMITED, max_integrations: UNLIMITED,
@@ -87,12 +81,11 @@ async function main() {
     for (const plan of PLANS) {
       await plans.updateOne(
         { name: plan.name },
-        { $set: { name: plan.name, features: plan.features, updatedAt: now }, $setOnInsert: { _id: new mongoose.Types.ObjectId(), createdAt: now } },
+        { $set: { name: plan.name, themePreset: plan.themePreset, features: plan.features, updatedAt: now }, $setOnInsert: { _id: new mongoose.Types.ObjectId(), createdAt: now } },
         { upsert: true },
       );
     }
     console.log(`Seeded ${PLANS.length} AssetHub plans.`);
-    for (const plan of PLANS) console.log(`${plan.name}: ${JSON.stringify(plan.features)}`);
   } finally {
     await connection.close();
   }
