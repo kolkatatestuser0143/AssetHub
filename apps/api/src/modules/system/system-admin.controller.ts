@@ -1,7 +1,24 @@
-import { Body, Controller, Get, Param, Patch, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { IsEmail, IsOptional, IsString, Matches, MinLength } from 'class-validator';
 import { SystemAdminGuard } from '../../common/guards/system-admin.guard';
 import { SystemAdminService } from './system-admin.service';
 import { SystemPermission } from '../../common/guards/system-permission.decorator';
+
+class CreateTenantDto {
+  @IsString() @MinLength(2) name!: string;
+  @IsString() @Matches(/^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?$/) slug!: string;
+  @IsEmail() email!: string;
+  @IsString() @MinLength(1) planId!: string;
+}
+
+class BrandingDto {
+  @IsOptional() @IsString() @MinLength(2) name?: string;
+  @IsOptional() @IsString() logoFileId?: string;
+  @IsOptional() @IsString() logoUrl?: string;
+  @IsOptional() @IsEmail() primaryEmail?: string;
+  @IsOptional() @IsString() phone?: string;
+  @IsOptional() @IsString() website?: string;
+}
 
 @Controller('system')
 @UseGuards(SystemAdminGuard)
@@ -15,6 +32,22 @@ export class SystemAdminController {
   @Get('tenants')
   @SystemPermission('platform:tenants:read')
   tenants() { return this.service.tenants(); }
+
+  @Post('tenants')
+  @SystemPermission('platform:tenants:manage')
+  createTenant(@Body() dto: CreateTenantDto, @Req() req: any) { return this.service.createTenant({ ...dto, actorUserId: req.systemAuth?.sub }); }
+
+  @Get('tenants/:tenantId')
+  @SystemPermission('platform:tenants:read')
+  tenant(@Param('tenantId') tenantId: string) { return this.service.tenantDetails(tenantId); }
+
+  @Post('tenants/:tenantId/reset-password')
+  @SystemPermission('platform:tenants:manage')
+  resetPassword(@Param('tenantId') tenantId: string, @Req() req: any) { return this.service.resetTenantPassword(tenantId, req.systemAuth?.sub); }
+
+  @Patch('tenants/:tenantId/branding')
+  @SystemPermission('platform:tenants:manage')
+  branding(@Param('tenantId') tenantId: string, @Body() body: BrandingDto, @Req() req: any) { return this.service.updateTenantBranding(tenantId, body, req.systemAuth?.sub); }
 
   @Patch('tenants/:tenantId/suspend')
   @SystemPermission('platform:tenants:manage')
