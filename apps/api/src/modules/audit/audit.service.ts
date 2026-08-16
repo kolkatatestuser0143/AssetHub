@@ -12,6 +12,12 @@ export type AuditWriteInput = {
   targetType?: string;
   targetId?: string;
   metadata?: Record<string, unknown>;
+  route?: string;
+  method?: string;
+  statusCode?: number;
+  requestId?: string;
+  ipAddress?: string;
+  userAgent?: string;
 };
 
 export type AuditQuery = {
@@ -43,6 +49,12 @@ export class AuditService {
       targetType: input.targetType,
       targetId: input.targetId,
       metadata,
+      route: input.route,
+      method: input.method,
+      statusCode: input.statusCode,
+      requestId: input.requestId,
+      ipAddress: input.ipAddress,
+      userAgent: input.userAgent,
       occurredAt: new Date(),
     });
   }
@@ -94,8 +106,8 @@ export class AuditService {
       const text = value == null ? '' : typeof value === 'string' ? value : JSON.stringify(value);
       return `"${text.replace(/"/g, '""')}"`;
     };
-    const header = ['occurredAt', 'action', 'targetType', 'targetId', 'actorUserId', 'metadata'];
-    const rows = events.map((event: any) => [event.occurredAt, event.action, event.targetType, event.targetId, event.actorUserId, event.metadata].map(escape).join(','));
+    const header = ['occurredAt', 'action', 'targetType', 'targetId', 'actorUserId', 'requestId', 'metadata'];
+    const rows = events.map((event: any) => [event.occurredAt, event.action, event.targetType, event.targetId, event.actorUserId, event.requestId, event.metadata].map(escape).join(','));
     return [header.join(','), ...rows].join('\n');
   }
 }
