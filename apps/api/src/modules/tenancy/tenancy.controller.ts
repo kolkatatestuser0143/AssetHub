@@ -32,6 +32,9 @@ export class TenancyController {
   @Delete('/tenant-profile/logo') @RequirePermission('company:write')
   removeLogo(@Req() req:any){ return this.logos.removeLogo(req.authContext); }
 
+  @Get('/hierarchy') @RequirePermission('company:read')
+  hierarchy(@Req() req:any){ return this.tenancy.getAssetHierarchy(req.authContext); }
+
   @Get() @RequirePermission('company:read')
   list(@Req() req:any){return this.tenancy.listCompanies(req.authContext);}
   @Post() @RequirePermission('company:write')
