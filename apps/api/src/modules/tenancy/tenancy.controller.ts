@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
-import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsOptional, IsString, MinLength } from 'class-validator';
 import { TenancyService } from './tenancy.service';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 import { RbacGuard } from '../../common/guards/rbac.guard';
@@ -7,7 +7,12 @@ import { RequirePermission } from '../../common/decorators/require-permission.de
 
 class CreateCompanyDto { @IsString() @MinLength(1) name!: string; @IsString() @MinLength(2) code!: string; }
 class CreateNamedChildDto { @IsString() @MinLength(1) name!: string; }
-class TenantProfileDto { @IsOptional() @IsString() @MinLength(2) name?: string; @IsOptional() @IsEmail() primaryEmail?: string; @IsOptional() @IsString() phone?: string; @IsOptional() @IsString() website?: string; @IsOptional() @IsString() logoFileId?: string; @IsOptional() @IsString() logoUrl?: string; }
+class TenantProfileDto {
+  @IsOptional() @IsString() @MinLength(2) name?: string;
+  @IsOptional() @IsString() phone?: string;
+  @IsOptional() @IsString() website?: string;
+}
+class TenantLogoDto { @IsString() @MinLength(8) fileId!: string; }
 
 @Controller('companies')
 @UseGuards(TenantContextGuard, RbacGuard)
@@ -19,6 +24,12 @@ export class TenancyController {
 
   @Patch('/tenant-profile') @RequirePermission('company:write')
   updateProfile(@Body() dto:TenantProfileDto,@Req() req:any){ return this.tenancy.updateTenantProfile(req.authContext,dto); }
+
+  @Put('/tenant-profile/logo') @RequirePermission('company:write')
+  updateLogo(@Body() dto:TenantLogoDto,@Req() req:any){ return this.tenancy.updateTenantLogo(req.authContext,dto.fileId); }
+
+  @Delete('/tenant-profile/logo') @RequirePermission('company:write')
+  removeLogo(@Req() req:any){ return this.tenancy.removeTenantLogo(req.authContext); }
 
   @Get() @RequirePermission('company:read')
   list(@Req() req:any){return this.tenancy.listCompanies(req.authContext);}
