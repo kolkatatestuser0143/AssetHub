@@ -10,7 +10,6 @@ import { UserAccountType } from '../../models/user.schemas';
 export class AuthService {
   constructor(private readonly db: MongooseDatabaseService, private readonly sessions: SessionService) {}
   async hashPassword(plain: string): Promise<string> { return argon2.hash(plain, { type: argon2.argon2id }); }
-
   async login(email: string, password: string, ip: string, userAgent: string) {
     const userDoc = await this.db.user.findOne({ email: email.trim().toLowerCase(), accountType: UserAccountType.TENANT }).lean();
     const user = userDoc ? toDto(userDoc) : null;
@@ -19,7 +18,6 @@ export class AuthService {
     await this.recordLoginAttempt(user.id, true, ip, userAgent, null);
     return this.sessions.issueSession(user.id, ip, userAgent, false);
   }
-
   async systemLogin(email: string, password: string, ip: string, userAgent: string) {
     const normalizedEmail = email.trim().toLowerCase();
     const userDoc = await this.db.user.findOne({ email: normalizedEmail, accountType: UserAccountType.SYSTEM }).lean();
@@ -31,21 +29,19 @@ export class AuthService {
     await this.recordLoginAttempt(user.id, true, ip, userAgent, null);
     return this.sessions.issueSession(user.id, ip, userAgent, true);
   }
-
   async changeTenantPassword(userId: string, currentPassword: string | undefined, newPassword: string) {
     if (!newPassword || newPassword.length < 12) throw new BadRequestException('Password must be at least 12 characters');
-    const user = await this.db.user.findOne({ _id: userId, accountType: UserAccountType.TENANT }).lean();
+    const user = await this.db.user.findOne({ _id: userId, accountType: 'TENANT' }).lean();
     if (!user?.passwordHash) throw new UnauthorizedException('Tenant account not found');
     if (!user.forcePasswordReset && currentPassword && !(await argon2.verify(user.passwordHash, currentPassword))) throw new UnauthorizedException('Current password is incorrect');
     if (!user.forcePasswordReset && !currentPassword) throw new BadRequestException('Current password is required');
-    if (currentPassword && user.passwordHash === newPassword) throw new BadRequestException('New password must be different');
+    if (await argon2.verify(user.passwordHash, newPassword)) throw new BadRequestException('New password must be different from the current password');
     const passwordHash = await this.hashPassword(newPassword);
     await this.db.user.updateOne({ _id: user._id }, { $set: { passwordHash, forcePasswordReset: false, updatedAt: new Date() } });
-    await this.db.session.updateMany({ userId: String(user._id), _id: { $ne: undefined }, revokedAt: { $exists: false } }, { $set: { revokedAt: new Date(), revokedReason: 'password_changed' } });
+    await this.db.session.updateMany({ userId: String(user._id), revokedAt: { $exists: false } }, { $set: { revokedAt: new Date(), revokedReason: 'password_changed' } });
     await this.db.auditEvent.create({ tenantId: user.tenantId, companyId: user.companyId, actorUserId: String(user._id), action: 'auth.password_changed', targetType: 'user', targetId: String(user._id), result: 'success', occurredAt: new Date() });
     return { ok: true, mustChangePassword: false };
   }
-
   async refresh(rawRefreshToken: string, ip: string, userAgent: string) { const session = await this.sessions.findByRefreshToken(rawRefreshToken); if (!session || session.revokedAt || session.expiresAt < new Date()) throw new UnauthorizedException('Invalid refresh token'); await this.sessions.revokeSession(session.id, session.userId, 'rotated'); return this.sessions.issueSession(session.userId, ip, userAgent, await this.sessions.isSystemUser(session.userId)); }
   async logout(sessionId: string, userId: string) { await this.sessions.revokeSession(sessionId, userId, 'user_logout'); }
   async logoutByRefreshToken(rawRefreshToken: string) { const session = await this.sessions.findByRefreshToken(rawRefreshToken); if (session && !session.revokedAt) await this.sessions.revokeSession(session.id, session.userId, 'user_logout'); }
