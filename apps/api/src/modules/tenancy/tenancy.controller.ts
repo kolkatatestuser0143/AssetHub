@@ -17,6 +17,7 @@ class TenantLogoDto { @IsString() @MinLength(8) fileId!: string; }
 export class TenancyController {
   constructor(private readonly tenancy: TenancyService, private readonly logos: TenantLogoService) {}
   @Get('/tenant-profile') @RequirePermission('company:read') profile(@Req() req:any){ return this.tenancy.getTenantProfile(req.authContext); }
+  @Get('/tenant-profile/logo-config') @RequirePermission('company:read') logoConfig(){ return this.logos.getClientConfig(); }
   @Patch('/tenant-profile') @RequirePermission('company:write') updateProfile(@Body() dto:TenantProfileDto,@Req() req:any){ return this.tenancy.updateTenantProfile(req.authContext,dto); }
   @Put('/tenant-profile/logo') @RequirePermission('company:write') updateLogo(@Body() dto:TenantLogoDto,@Req() req:any){ return this.logos.setLogo(req.authContext,dto.fileId); }
   @Delete('/tenant-profile/logo') @RequirePermission('company:write') removeLogo(@Req() req:any){ return this.logos.removeLogo(req.authContext); }

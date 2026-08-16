@@ -1,5 +1,12 @@
 import './bootstrap-dns';
-import 'dotenv/config';
+import { config as loadEnv } from 'dotenv';
+import path from 'path';
+
+// The workspace .env is the canonical API environment. Loading it explicitly
+// avoids configuration depending on the directory from which pnpm starts the
+// Nest process.
+loadEnv({ path: path.resolve(__dirname, '../../../.env'), override: false });
+loadEnv({ path: path.resolve(__dirname, '../.env'), override: false });
 
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
