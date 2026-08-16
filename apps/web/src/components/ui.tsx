@@ -1,21 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import {
-  AlertCircle,
-  CheckCircle2,
-  Info,
-  Loader2,
-  Plus,
-  RefreshCw,
-  Search,
-  TriangleAlert,
-  X,
-} from 'lucide-react';
-import {
-  type ButtonHTMLAttributes,
-  type ReactNode,
-} from 'react';
+import { AlertCircle, CheckCircle2, Info, Loader2, Plus, RefreshCw, Search, TriangleAlert, X } from 'lucide-react';
+import { type ButtonHTMLAttributes, type ReactNode } from 'react';
 
 export function PageHeader({ title, description, action, actionHref }: { title: string; description?: string; action?: string; actionHref?: string }) {
   return <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between page-section-enter"><div className="min-w-0"><h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">{title}</h1>{description ? <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">{description}</p> : null}</div>{action ? actionHref ? <Link href={actionHref} className="btn-primary ui-interactive shrink-0"><Plus size={16}/>{action}</Link> : <button type="button" className="btn-primary ui-interactive shrink-0"><Plus size={16}/>{action}</button> : null}</div>;
@@ -55,6 +42,10 @@ export function Alert({ title, message, tone = 'info', onClose }: { title: strin
 
 export function ErrorState({ title = 'Something went wrong', message = 'We could not complete this request. Please try again.', onRetry }: { title?: string; message?: string; onRetry?: () => void }) {
   return <div className="panel empty-state p-10 text-center" role="alert"><div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-red-200 bg-red-50 text-red-600 shadow-sm"><AlertCircle size={24}/></div><h3 className="mt-4 text-base font-semibold text-slate-900">{title}</h3><p className="mx-auto mt-1 max-w-md text-sm leading-6 text-slate-500">{message}</p>{onRetry ? <Button variant="secondary" className="mt-5" onClick={onRetry}><RefreshCw size={15}/>Try again</Button> : null}</div>;
+}
+
+export function EmptyState({ title, text, action, onAction }: { title: string; text?: string; action?: string; onAction?: () => void }) {
+  return <div className="panel empty-state p-10 text-center"><div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-400"><AlertCircle size={24}/></div><h3 className="mt-4 text-base font-semibold text-slate-900">{title}</h3>{text ? <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-slate-500">{text}</p> : null}{action && onAction ? <Button variant="secondary" className="mt-5" onClick={onAction}><Plus size={15}/>{action}</Button> : null}</div>;
 }
 
 export function LoadingState({ label = 'Loading…' }: { label?: string }) {
