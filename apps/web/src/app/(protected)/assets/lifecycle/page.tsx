@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import { AlertTriangle, ArrowRight, Boxes, CheckCircle2, Clock3, History, RefreshCw, Search, Wrench } from 'lucide-react';
 import { apiFetch } from '../../../../lib/api-client';
 import { StatusBadge } from '../../../../components/ui';
@@ -17,6 +17,13 @@ type Asset = {
 type PageResponse = {
   items: Asset[];
   pagination?: { page: number; pageSize: number; total: number; totalPages: number };
+};
+
+type Metric = {
+  title: string;
+  value: number;
+  Icon: ComponentType<{ size?: number; className?: string }>;
+  hint: string;
 };
 
 const STATES = ['IN_STOCK', 'ASSIGNED', 'IN_REPAIR', 'LOST_STOLEN', 'RETIRED', 'DISPOSED'];
@@ -85,6 +92,13 @@ export default function AssetLifecyclePage() {
   const active = assets.filter((asset) => asset.status === 'ASSIGNED');
   const ready = assets.filter((asset) => asset.status === 'IN_STOCK');
 
+  const metrics: Metric[] = [
+    { title: 'Total tracked', value: total, Icon: Boxes, hint: 'Across the current operational inventory' },
+    { title: 'Ready to issue', value: counts.IN_STOCK || 0, Icon: CheckCircle2, hint: 'Assets currently in stock' },
+    { title: 'Active custody', value: counts.ASSIGNED || 0, Icon: Clock3, hint: 'Assets assigned to employees' },
+    { title: 'Needs attention', value: (counts.IN_REPAIR || 0) + (counts.LOST_STOLEN || 0), Icon: AlertTriangle, hint: 'Repair or lost/stolen states' },
+  ];
+
   return (
     <div className="mx-auto max-w-[1500px] space-y-6">
       <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -104,13 +118,8 @@ export default function AssetLifecyclePage() {
       {message && <div role="status" className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div>}
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          ['Total tracked', total, Boxes, 'Across the current operational inventory'],
-          ['Ready to issue', counts.IN_STOCK || 0, CheckCircle2, 'Assets currently in stock'],
-          ['Active custody', counts.ASSIGNED || 0, Clock3, 'Assets assigned to employees'],
-          ['Needs attention', (counts.IN_REPAIR || 0) + (counts.LOST_STOLEN || 0), AlertTriangle, 'Repair or lost/stolen states'],
-        ].map(([title, value, Icon, hint]) => (
-          <div key={String(title)} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        {metrics.map(({ title, value, Icon, hint }) => (
+          <div key={title} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between"><p className="text-xs font-semibold uppercase tracking-wider text-slate-400">{title}</p><Icon size={18} className="text-[var(--theme-link)]"/></div>
             <p className="mt-2 text-2xl font-bold text-slate-950">{value}</p>
             <p className="mt-1 text-xs text-slate-500">{hint}</p>
