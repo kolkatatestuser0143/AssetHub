@@ -20,6 +20,13 @@ class TransferStatusDto { @IsIn(['PENDING', 'APPROVED', 'COMPLETED', 'REJECTED',
 @Controller('assets') @UseGuards(TenantContextGuard, RbacGuard, FeatureGuard)
 export class AssetsController {
   constructor(private readonly db: MongooseDatabaseService, private readonly assets: AssetsService, private readonly imports: AssetImportService, private readonly excelReports: AssetExcelReportService, private readonly pdfReports: AssetPdfReportService, private readonly transfers: AssetTransferService, private readonly assignmentTransactions: AssetAssignmentTransactionService, private readonly timeline: AssetTimelineService, private readonly searchService: AssetSearchService, private readonly listService: AssetListService, private readonly detail: AssetDetailService) {}
+  private async hasTenantWideScope(auth: any): Promise<boolean> {
+    if (auth.crossCompany) return true;
+    const user = await this.db.user.findById(auth.userId).select({ tenantId: 1, roleIds: 1 }).lean();
+    if (!user || String(user.tenantId) !== String(auth.tenantId) || !user.roleIds?.length) return false;
+    const roles = await this.db.role.find({ _id: { $in: user.roleIds }, tenantId: auth.tenantId }).select({ companyId: 1 }).lean();
+    return roles.some((role: any) => role.companyId == null);
+  }
   @Get('search') @RequirePermission('asset:read') search(@Query('q') query: string, @Req() req: any) { return this.searchService.search(req.authContext, query ?? ''); }
   @Get() @RequirePermission('asset:read') list(@Query() query: AssetListQueryDto, @Req() req: any) { return this.listService.list(req.authContext, query); }
   @Get('assignments') @RequirePermission('asset:read') listAssignments(@Req() req: any) { return this.assets.listAssignments(req.authContext); }
@@ -45,6 +52,7 @@ export class AssetsController {
   @Post('transfers/:transferId/cancel') @RequirePermission('asset:write') cancelTransfer(@Param('transferId') transferId: string, @Body() dto: TransferDto, @Req() req: any) { return this.transfers.cancel(req.authContext, transferId, dto.note); }
   @Post() @RequirePermission('asset:write') async create(@Body() dto: CreateAssetDto, @Req() req: any) {
     let assetAuth = req.authContext;
+    const tenantWide = await this.hasTenantWideScope(req.authContext);
     if (dto.locationId) {
       const location = await this.db.location.findById(dto.locationId).lean();
       if (!location) throw new NotFoundException('Location not found');
@@ -52,9 +60,9 @@ export class AssetsController {
       if (!site) throw new NotFoundException('Site not found');
       const company = await this.db.company.findOne({ _id: site.companyId, tenantId: req.authContext.tenantId }).select({ _id: 1 }).lean();
       if (!company) throw new ForbiddenException('Selected location does not belong to this tenant');
-      if (!req.authContext.crossCompany && String(site.companyId) !== String(req.authContext.companyId)) throw new ForbiddenException('Selected location does not belong to your company');
-      if (req.authContext.crossCompany) assetAuth = { ...req.authContext, companyId: String(site.companyId) };
-    } else if (dto.departmentId && req.authContext.crossCompany) {
+      if (!tenantWide && String(site.companyId) !== String(req.authContext.companyId)) throw new ForbiddenException('Selected location does not belong to your company');
+      if (tenantWide) assetAuth = { ...req.authContext, companyId: String(site.companyId), crossCompany: true };
+    } else if (dto.departmentId) {
       const department = await this.db.department.findById(dto.departmentId).lean();
       if (!department) throw new NotFoundException('Department not found');
       const location = await this.db.location.findById(department.locationId).lean();
@@ -62,7 +70,8 @@ export class AssetsController {
       if (!site) throw new NotFoundException('Site not found');
       const company = await this.db.company.findOne({ _id: site.companyId, tenantId: req.authContext.tenantId }).select({ _id: 1 }).lean();
       if (!company) throw new ForbiddenException('Selected department does not belong to this tenant');
-      assetAuth = { ...req.authContext, companyId: String(site.companyId) };
+      if (!tenantWide && String(site.companyId) !== String(req.authContext.companyId)) throw new ForbiddenException('Selected department does not belong to your company');
+      if (tenantWide) assetAuth = { ...req.authContext, companyId: String(site.companyId), crossCompany: true };
     }
     return this.assets.createAsset(assetAuth, dto.assetTypeId, { ...(dto.fields ?? {}), locationId: dto.locationId, departmentId: dto.departmentId, vendorId: dto.vendorId, condition: dto.condition, serialNumber: dto.serialNumber, model: dto.model });
   }
