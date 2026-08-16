@@ -17,9 +17,13 @@ export class AuthController {
   constructor(private readonly authService: AuthService, private readonly jwt: JwtService) {}
   private sendSession(res: any, result: any, scope: 'tenant' | 'system') { if (scope === 'system') setSystemAuthCookies(res, result.accessToken, result.refreshToken); else setTenantAuthCookies(res, result.accessToken, result.refreshToken); return { ok: true, sessionId: result.sessionId, accountType: result.accountType, forcePasswordReset: result.forcePasswordReset === true }; }
   private cookieNames(scope: 'tenant' | 'system') { return scope === 'system' ? { access: SYSTEM_ACCESS_COOKIE, refresh: SYSTEM_REFRESH_COOKIE } : { access: TENANT_ACCESS_COOKIE, refresh: TENANT_REFRESH_COOKIE }; }
+  private tenantSlug(req: any): string | undefined {
+    const header = String(req.headers?.['x-tenant-slug'] ?? '').trim().toLowerCase();
+    return header || undefined;
+  }
 
   @Post('login') @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  async login(@Body() dto: LoginDto, @Req() req: any, @Res({ passthrough: true }) res: any) { return this.sendSession(res, await this.authService.login(dto.email, dto.password, req.ip, req.headers['user-agent'] ?? ''), 'tenant'); }
+  async login(@Body() dto: LoginDto, @Req() req: any, @Res({ passthrough: true }) res: any) { return this.sendSession(res, await this.authService.login(dto.email, dto.password, req.ip, req.headers['user-agent'] ?? '', this.tenantSlug(req)), 'tenant'); }
 
   @Post('system/login') @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async systemLogin(@Body() dto: LoginDto, @Req() req: any, @Res({ passthrough: true }) res: any) { return this.sendSession(res, await this.authService.systemLogin(dto.email, dto.password, req.ip, req.headers['user-agent'] ?? ''), 'system'); }
