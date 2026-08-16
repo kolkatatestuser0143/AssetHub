@@ -30,7 +30,11 @@ export class AuthController {
 
   @Post('change-password')
   @UseGuards(TenantContextGuard)
-  async changePassword(@Body() dto: ChangePasswordDto, @Req() req: any) { return this.authService.changeTenantPassword(req.authContext.userId, dto.currentPassword, dto.newPassword); }
+  async changePassword(@Body() dto: ChangePasswordDto, @Req() req: any, @Res({ passthrough: true }) res: any) {
+    const result = await this.authService.changeTenantPassword(req.authContext.userId, dto.currentPassword, dto.newPassword, req.authContext.sessionId, req.ip, req.headers['user-agent'] ?? '');
+    setTenantAuthCookies(res, result.accessToken, result.refreshToken);
+    return { ok: true, mustChangePassword: false, sessionId: result.sessionId, accountType: result.accountType, forcePasswordReset: false };
+  }
 
   @Get('session')
   async session(@Req() req: any, @Res({ passthrough: true }) res: any) {
