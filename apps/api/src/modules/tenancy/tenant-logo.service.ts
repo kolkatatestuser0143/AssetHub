@@ -14,6 +14,10 @@ export class TenantLogoService {
 
   constructor(private readonly db: MongooseDatabaseService) {}
 
+  getClientConfig() {
+    return { publicKey: this.publicKey || null, cdnBase: this.cdnBase };
+  }
+
   private assertConfigured() {
     if (!this.publicKey || !this.secretKey) {
       throw new ServiceUnavailableException('Uploadcare is not configured. Set UPLOADCARE_PUBLIC_KEY and UPLOADCARE_SECRET_KEY on the API.');
@@ -49,9 +53,10 @@ export class TenantLogoService {
     if (mime && !['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/svg+xml'].includes(mime)) {
       throw new BadRequestException('Tenant logo must be a PNG, JPEG, WebP or SVG image');
     }
-    const url = `${this.cdnBase}/${encodeURIComponent(fileId.trim())}/`;
-    const updated = await this.db.tenant.findByIdAndUpdate(auth.tenantId, { $set: { logoFileId: fileId.trim(), logoUrl: url, updatedAt: new Date() } }, { new: true }).lean();
-    await this.db.auditEvent.create({ tenantId: auth.tenantId, actorUserId: auth.userId, action: 'tenant.logo_updated', targetType: 'tenant', targetId: auth.tenantId, metadata: { fileId: fileId.trim() }, result: 'success', occurredAt: new Date() });
+    const normalizedFileId = fileId.trim();
+    const url = `${this.cdnBase}/${encodeURIComponent(normalizedFileId)}/`;
+    const updated = await this.db.tenant.findByIdAndUpdate(auth.tenantId, { $set: { logoFileId: normalizedFileId, logoUrl: url, updatedAt: new Date() } }, { new: true }).lean();
+    await this.db.auditEvent.create({ tenantId: auth.tenantId, actorUserId: auth.userId, action: 'tenant.logo_updated', targetType: 'tenant', targetId: auth.tenantId, metadata: { fileId: normalizedFileId }, result: 'success', occurredAt: new Date() });
     return { logoFileId: updated?.logoFileId ?? null, logoUrl: updated?.logoUrl ?? null };
   }
 
