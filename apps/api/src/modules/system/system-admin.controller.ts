@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nest
 import { IsEmail, IsOptional, IsString, Matches, MinLength } from 'class-validator';
 import { SystemAdminGuard } from '../../common/guards/system-admin.guard';
 import { SystemAdminService } from './system-admin.service';
+import { SystemSecurityService } from './system-security.service';
 import { SystemPermission } from '../../common/guards/system-permission.decorator';
 
 class CreateTenantDto {
@@ -23,7 +24,7 @@ class BrandingDto {
 @Controller('system')
 @UseGuards(SystemAdminGuard)
 export class SystemAdminController {
-  constructor(private readonly service: SystemAdminService) {}
+  constructor(private readonly service: SystemAdminService, private readonly security: SystemSecurityService) {}
 
   @Get('overview')
   @SystemPermission('platform:overview:read')
@@ -68,6 +69,22 @@ export class SystemAdminController {
   @Get('audit')
   @SystemPermission('platform:audit:read')
   audit() { return this.service.audit(); }
+
+  @Get('security/sessions')
+  @SystemPermission('platform:audit:read')
+  securitySessions() { return this.security.sessions(); }
+
+  @Post('security/sessions/:sessionId/revoke')
+  @SystemPermission('platform:users:manage')
+  revokeSecuritySession(@Param('sessionId') sessionId: string, @Req() req: any) { return this.security.revokeSession(sessionId, req.systemAuth?.sub); }
+
+  @Post('security/users/:userId/revoke-sessions')
+  @SystemPermission('platform:users:manage')
+  revokeSecurityUserSessions(@Param('userId') userId: string, @Req() req: any) { return this.security.revokeUserSessions(userId, req.systemAuth?.sub, req.systemAuth?.sessionId); }
+
+  @Get('security/login-history')
+  @SystemPermission('platform:audit:read')
+  securityLoginHistory() { return this.security.loginHistory(); }
 
   @Get('health')
   @SystemPermission('platform:health:read')
