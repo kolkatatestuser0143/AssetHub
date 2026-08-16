@@ -74,7 +74,7 @@ export class TenancyService {
     catch (error: any) { if (error?.code === 11000) throw new ConflictException(`Company code '${normalizedCode}' is already in use in this tenant`); throw error; }
   }
 
-  async listBusinessUnits(auth: AuthContext, companyId: string) { await this.assertCompanyInScope(auth,companyId); return toDtoArray(await this.db.businessUnit.find({companyId}).lean()); }
+  async listBusinessUnits(auth: AuthContext, companyId: string) { await this.assertCompanyInScope(auth,companyId); return toDtoArray(await this.db.businessUnit.find({companyId, tenantId: auth.tenantId}).lean()); }
   async createBusinessUnit(auth: AuthContext, companyId: string, name: string) { await this.assertCompanyInScope(auth,companyId); const companyIds=await this.db.company.find({tenantId:auth.tenantId}).select({_id:1}).lean(); const count=companyIds.length?await this.db.businessUnit.countDocuments({companyId:{$in:companyIds.map((c:any)=>String(c._id))}}):0; await this.entitlements.requireWithinLimit(auth.tenantId,'max_business_units',count); return toDto((await this.db.businessUnit.create({companyId,name:name.trim()})).toObject()); }
   async listPlants(auth: AuthContext, businessUnitId: string) { const bu=await this.db.businessUnit.findById(businessUnitId).lean(); if(!bu)throw new NotFoundException('BusinessUnit not found'); await this.assertCompanyInScope(auth,bu.companyId); return toDtoArray(await this.db.plant.find({businessUnitId}).lean()); }
   async createPlant(auth:AuthContext,businessUnitId:string,name:string){const bu=await this.db.businessUnit.findById(businessUnitId).lean();if(!bu)throw new NotFoundException('BusinessUnit not found');await this.assertCompanyInScope(auth,bu.companyId);const businessUnitIds=await this.db.businessUnit.find({}).select({_id:1,companyId:1}).lean();const companyIds=await this.db.company.find({tenantId:auth.tenantId}).select({_id:1}).lean();const tenantCompanyIds=new Set(companyIds.map((c:any)=>String(c._id)));const tenantBusinessUnitIds=businessUnitIds.filter((b:any)=>tenantCompanyIds.has(String(b.companyId))).map((b:any)=>String(b._id));const count=tenantBusinessUnitIds.length?await this.db.plant.countDocuments({businessUnitId:{$in:tenantBusinessUnitIds}}):0;await this.entitlements.requireWithinLimit(auth.tenantId,'max_plants',count);return toDto((await this.db.plant.create({businessUnitId,name:name.trim()})).toObject());}
@@ -86,6 +86,5 @@ export class TenancyService {
   private async assertCompanyInScope(auth:AuthContext,companyId:string){
     const company = await this.db.company.findOne({ _id: companyId, tenantId: auth.tenantId }).select({ _id: 1 }).lean();
     if (!company) throw new NotFoundException('Company not found');
-    if (!(await this.hasTenantWideScope(auth)) && String(auth.companyId) !== String(companyId)) throw new ForbiddenException('Company out of scope for this user');
   }
 }
