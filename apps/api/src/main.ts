@@ -12,16 +12,8 @@ import { AppModule } from './app.module';
 import { RequestContextInterceptor } from './common/request-context.interceptor';
 import { csrfMiddleware } from './common/security/csrf.middleware';
 
-function configuredOrigins(): string[] {
-  return (process.env.WEB_ORIGINS ?? process.env.WEB_ORIGIN ?? 'http://localhost:3000').split(',').map((value) => value.trim().replace(/\/$/, '')).filter(Boolean);
-}
-
-function isAllowedOrigin(origin: string | undefined, configured: string[]): boolean {
-  if (!origin) return true;
-  if (configured.includes(origin)) return true;
-  if (process.env.NODE_ENV === 'production') return false;
-  return /^https?:\/\/([a-z0-9-]+\.)?localhost(?::\d+)?$/i.test(origin) || /^https?:\/\/127\.0\.0\.1(?::\d+)?$/i.test(origin);
-}
+function configuredOrigins(): string[] { return (process.env.WEB_ORIGINS ?? process.env.WEB_ORIGIN ?? 'http://localhost:3000').split(',').map((value) => value.trim().replace(/\/$/, '')).filter(Boolean); }
+function isAllowedOrigin(origin: string | undefined, configured: string[]): boolean { if (!origin) return true; if (configured.includes(origin)) return true; if (process.env.NODE_ENV === 'production') return false; return /^https?:\/\/([a-z0-9-]+\.)?localhost(?::\d+)?$/i.test(origin) || /^https?:\/\/127\.0\.0\.1(?::\d+)?$/i.test(origin); }
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -32,11 +24,9 @@ async function bootstrap() {
   app.useGlobalInterceptors(new RequestContextInterceptor());
   app.setGlobalPrefix('api/v1');
   const swaggerEnabled = process.env.SWAGGER_ENABLED === 'true' || process.env.NODE_ENV !== 'production';
-  if (swaggerEnabled) {
-    const config = new DocumentBuilder().setTitle('ITAM SaaS API').setDescription('Enterprise IT Asset Management API').setVersion('0.1.0').addBearerAuth().build();
-    const document = SwaggerModule.createDocument(app, config);
-    SwaggerModule.setup('api/docs', app, document);
-  }
+  if (swaggerEnabled) { const config = new DocumentBuilder().setTitle('ITAM SaaS API').setDescription('Enterprise IT Asset Management API').setVersion('0.1.0').addBearerAuth().build(); SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config)); }
+  const shutdown = async () => { await app.close(); process.exit(0); };
+  process.once('SIGTERM', shutdown); process.once('SIGINT', shutdown);
   await app.listen(process.env.PORT ?? 3001);
 }
-bootstrap();
+bootstrap().catch((error) => { console.error('API bootstrap failed', error); process.exit(1); });
