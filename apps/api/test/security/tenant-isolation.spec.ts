@@ -1,9 +1,14 @@
 import { TenancyService } from '../../src/modules/tenancy/tenancy.service';
 import { AssetsService } from '../../src/modules/assets/assets.service';
+import { EntitlementService } from '../../src/modules/billing/entitlement.service';
 import { SiteType } from '../../src/models/tenancy.schemas';
 import { connectTestDb, seedTwoTenants } from './isolation-fixture';
 
 type Fixture = Awaited<ReturnType<typeof seedTwoTenants>>;
+
+const testEntitlements = {
+  requireWithinLimit: async () => true,
+} as unknown as EntitlementService;
 
 describe('Cross-tenant isolation', () => {
   let testDb: Awaited<ReturnType<typeof connectTestDb>>;
@@ -12,8 +17,8 @@ describe('Cross-tenant isolation', () => {
 
   beforeAll(async () => {
     testDb = await connectTestDb();
-    tenancy = new TenancyService(testDb.db);
-    assets = new AssetsService(testDb.db);
+    tenancy = new TenancyService(testDb.db, testEntitlements);
+    assets = new AssetsService(testDb.db, testEntitlements);
   });
 
   afterAll(async () => { await testDb.disconnect(); });
