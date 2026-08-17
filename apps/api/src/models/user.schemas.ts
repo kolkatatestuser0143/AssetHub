@@ -15,7 +15,7 @@ export class User {
   @Prop({ required: true, enum: UserAccountType, default: UserAccountType.TENANT, index: true })
   accountType!: UserAccountType;
 
-  @Prop({ required: true, index: true }) tenantId!: string;
+  @Prop({ required: true }) tenantId!: string;
   @Prop({ required: true, index: true }) companyId!: string;
   @Prop({ index: true, sparse: true }) employeeId?: string;
 
