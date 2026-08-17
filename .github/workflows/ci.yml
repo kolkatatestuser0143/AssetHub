@@ -15,7 +15,7 @@ jobs:
       MONGODB_URI: mongodb://127.0.0.1:27017/itam_ci?replicaSet=rs0
       MONGODB_DB: itam_ci
       REDIS_URL: redis://127.0.0.1:6379
-      IDP_CONFIG_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3OWFiY2RlZjAxMjM0NTY3OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      IDP_CONFIG_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
     services:
       redis:
         image: redis:7-alpine
