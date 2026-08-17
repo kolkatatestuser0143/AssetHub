@@ -36,7 +36,7 @@ export class RbacService extends TenantScopedRepository {
     const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth) }).lean();
     if (!user) throw new NotFoundException('User not found in your scope');
     if (!auth.crossCompany && role.companyId !== auth.companyId) throw new ForbiddenException('Role out of scope for this user');
-    const doc = await this.db.user.findOneAndUpdate({ _id: userId, ...this.scope(auth), roleIds: { $ne: roleId } }, { $push: { roleIds: roleId } }, { new: true }).lean();
+    const doc = await this.db.user.findOneAndUpdate({ _id: userId, ...this.scope(auth), roleIds: { $ne: roleId } }, { $push: { roleIds: roleId }, $inc: { authVersion: 1 } }, { new: true }).lean();
     if (!doc) throw new Error('Role already assigned');
     return toDto(doc);
   }
@@ -49,8 +49,8 @@ export class RbacService extends TenantScopedRepository {
     const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
     if (!user) throw new NotFoundException('User not found in your scope');
     if (!auth.crossCompany && role.companyId !== auth.companyId) throw new ForbiddenException('Role out of scope for this user');
-    const doc = await this.db.user.findOneAndUpdate({ _id: userId, ...this.scope(auth), roleIds: roleId }, { $pull: { roleIds: roleId } }, { new: true }).lean();
-    if (!doc) throw new NotFoundException('Role is not assigned to this user');
+    const doc = await this.db.user.findOneAndUpdate({ _id: userId, ...this.scope(auth), roleIds: roleId }, { $pull: { roleIds: roleId }, $inc: { authVersion: 1 } }, { new: true }).lean();
+    if (!doc) throw new Error('Role is not assigned to this user');
     return toDto(doc);
   }
 }

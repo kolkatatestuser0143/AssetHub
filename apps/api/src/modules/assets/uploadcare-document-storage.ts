@@ -14,9 +14,7 @@ export class UploadcareDocumentStorage implements DocumentStorage {
   private readonly cdnBase = (process.env.UPLOADCARE_CDN_BASE ?? DEFAULT_CDN).replace(/\/$/, '');
 
   private assertConfigured() {
-    if (!this.publicKey || !this.secretKey) {
-      throw new ServiceUnavailableException('Document storage is not configured. Set UPLOADCARE_PUBLIC_KEY and UPLOADCARE_SECRET_KEY.');
-    }
+    if (!this.publicKey || !this.secretKey) throw new ServiceUnavailableException('Document storage is not configured. Set UPLOADCARE_PUBLIC_KEY and UPLOADCARE_SECRET_KEY.');
   }
 
   async upload(input: { buffer: Buffer; fileName: string; contentType: string }): Promise<StoredDocument> {
@@ -25,41 +23,38 @@ export class UploadcareDocumentStorage implements DocumentStorage {
     form.append('UPLOADCARE_PUB_KEY', this.publicKey);
     form.append('UPLOADCARE_STORE', 'auto');
     form.append('file', new Blob([new Uint8Array(input.buffer)], { type: input.contentType }), input.fileName);
-
     const response = await fetch(UPLOADCARE_UPLOAD, { method: 'POST', body: form });
     const body = await this.readJson(response, 'Uploadcare upload failed');
     const key = String(body?.file ?? '');
     if (!key) throw new ServiceUnavailableException('Uploadcare did not return a file identifier');
-    return { key, provider: 'uploadcare', url: `${this.cdnBase}/${key}/` };
+    return { key, provider: 'uploadcare', url: `${this.cdnBase}/${key}/`, fileName: input.fileName, contentType: input.contentType, sizeBytes: input.buffer.length };
   }
 
   async register(uuid: string): Promise<StoredDocument> {
     this.assertConfigured();
     const key = String(uuid ?? '').trim();
     if (!key) throw new ServiceUnavailableException('Uploadcare file identifier is required');
-
     const method = 'GET';
     const date = new Date().toUTCString();
     const uri = `/files/${encodeURIComponent(key)}/`;
     const signature = createHmac('sha1', this.secretKey).update([method, '', '', date, uri].join('\n')).digest('hex');
-    const response = await fetch(`${UPLOADCARE_API}${uri}`, {
-      method,
-      headers: { Accept: UPLOADCARE_ACCEPT, Date: date, Authorization: `Uploadcare ${this.publicKey}:${signature}` },
-    });
-    await this.readJson(response, 'Uploadcare file verification failed');
-    return { key, provider: 'uploadcare', url: `${this.cdnBase}/${key}/` };
+    const response = await fetch(`${UPLOADCARE_API}${uri}`, { method, headers: { Accept: UPLOADCARE_ACCEPT, Date: date, Authorization: `Uploadcare ${this.publicKey}:${signature}` } });
+    const body = await this.readJson(response, 'Uploadcare file verification failed');
+    return {
+      key,
+      provider: 'uploadcare',
+      url: `${this.cdnBase}/${key}/`,
+      fileName: String(body?.original_filename ?? body?.filename ?? '').trim() || undefined,
+      contentType: String(body?.mime_type ?? body?.content_type ?? '').trim().toLowerCase() || undefined,
+      sizeBytes: Number.isFinite(Number(body?.size)) ? Number(body.size) : undefined,
+    };
   }
 
   async download(key: string) {
     this.assertConfigured();
     const response = await fetch(`${this.cdnBase}/${encodeURIComponent(key)}/`);
-    if (!response.ok) {
-      throw new ServiceUnavailableException(`Stored document could not be downloaded from Uploadcare (${response.status})`);
-    }
-    return {
-      buffer: Buffer.from(await response.arrayBuffer()),
-      contentType: response.headers.get('content-type') ?? undefined,
-    };
+    if (!response.ok) throw new ServiceUnavailableException(`Stored document could not be downloaded from Uploadcare (${response.status})`);
+    return { buffer: Buffer.from(await response.arrayBuffer()), contentType: response.headers.get('content-type') ?? undefined };
   }
 
   async remove(key: string) {
@@ -68,10 +63,7 @@ export class UploadcareDocumentStorage implements DocumentStorage {
     const date = new Date().toUTCString();
     const uri = `/files/${encodeURIComponent(key)}/`;
     const signature = createHmac('sha1', this.secretKey).update([method, '', '', date, uri].join('\n')).digest('hex');
-    const response = await fetch(`${UPLOADCARE_API}${uri}`, {
-      method,
-      headers: { Accept: UPLOADCARE_ACCEPT, Date: date, Authorization: `Uploadcare ${this.publicKey}:${signature}` },
-    });
+    const response = await fetch(`${UPLOADCARE_API}${uri}`, { method, headers: { Accept: UPLOADCARE_ACCEPT, Date: date, Authorization: `Uploadcare ${this.publicKey}:${signature}` } });
     if (!response.ok && response.status !== 404) await this.readJson(response, 'Uploadcare delete failed');
   }
 

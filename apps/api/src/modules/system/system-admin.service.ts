@@ -48,7 +48,7 @@ export class SystemAdminService {
     await this.db.tenant.create({ _id: tenantId, name, slug, primaryEmail: email, status: TenantStatus.ACTIVE, createdAt: now, updatedAt: now });
     await this.db.company.create({ _id: companyId, tenantId: String(tenantId), name, code: slug.slice(0, 12).toUpperCase(), createdAt: now, updatedAt: now });
     await this.db.role.create({ _id: roleId, tenantId: String(tenantId), companyId: String(companyId), name: 'Tenant Admin', isSystem: true, permissions: rolePermissions, createdAt: now, updatedAt: now });
-    await this.db.user.create({ tenantId: String(tenantId), companyId: String(companyId), accountType: UserAccountType.TENANT, email, passwordHash, firstName: name.split(/\s+/)[0] || 'Tenant', lastName: name.split(/\s+/).slice(1).join(' ') || 'Admin', isActive: true, forcePasswordReset: true, roleIds: [String(roleId)], backupCodesHash: [], createdAt: now, updatedAt: now });
+    await this.db.user.create({ tenantId: String(tenantId), companyId: String(companyId), accountType: UserAccountType.TENANT, email, passwordHash, firstName: name.split(/\s+/)[0] || 'Tenant', lastName: name.split(/\s+/).slice(1).join(' ') || 'Admin', isActive: true, forcePasswordReset: true, authVersion: 0, roleIds: [String(roleId)], backupCodesHash: [], createdAt: now, updatedAt: now });
     const subscription = await this.subscriptions.assign(String(tenantId), String(plan._id), 'active', undefined, input.actorUserId);
     await this.db.auditEvent.create({ tenantId: String(tenantId), actorUserId: input.actorUserId, action: 'tenant.created', targetType: 'tenant', targetId: String(tenantId), metadata: { name, slug, email, planId: String(plan._id) }, result: 'success', occurredAt: now });
     return { tenant: { id: String(tenantId), name, slug, primaryEmail: email, status: TenantStatus.ACTIVE, logoUrl: null }, subscription, credentials: { email, temporaryPassword: password, mustChangePassword: true } };
@@ -59,7 +59,7 @@ export class SystemAdminService {
     const tenant = await this.db.tenant.findById(tenantId).lean(); if (!tenant) throw new NotFoundException('Tenant not found');
     const user = await this.db.user.findOne({ tenantId, accountType: UserAccountType.TENANT }).sort({ createdAt: 1 }).lean(); if (!user) throw new NotFoundException('Tenant administrator not found');
     const password = this.generateTemporaryPassword(); const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
-    await this.db.user.updateOne({ _id: user._id }, { $set: { passwordHash, forcePasswordReset: true, accessTokenHash: undefined, accessTokenIssuedAt: undefined, updatedAt: new Date() } });
+    await this.db.user.updateOne({ _id: user._id }, { $set: { passwordHash, forcePasswordReset: true, accessTokenHash: undefined, accessTokenIssuedAt: undefined, updatedAt: new Date() }, $inc: { authVersion: 1 } });
     await this.db.session.updateMany({ userId: String(user._id), revokedAt: { $exists: false } }, { $set: { revokedAt: new Date(), revokedReason: 'platform_password_reset' } });
     await this.db.auditEvent.create({ tenantId, actorUserId, action: 'tenant.password_reset', targetType: 'user', targetId: String(user._id), metadata: { email: user.email }, result: 'success', occurredAt: new Date() });
     return { tenantId, email: user.email, temporaryPassword: password, mustChangePassword: true };
@@ -71,7 +71,7 @@ export class SystemAdminService {
     else {
       await this.db.tenant.updateOne({ _id: tenantId }, { $set: { status: TenantStatus.SUSPENDED, suspendedAt: new Date(), suspendedBy: actorUserId, suspensionReason: reason?.trim() || 'Suspended by platform administrator' } });
       const tenantUsers = await this.db.user.find({ tenantId, accountType: 'TENANT' }).select({ _id: 1 }).lean(); const userIds = tenantUsers.map((user: any) => String(user._id));
-      if (userIds.length) await this.db.session.updateMany({ userId: { $in: userIds }, revokedAt: { $exists: false } }, { $set: { revokedAt: new Date(), revokedReason: 'tenant_suspended' } });
+      if (userIds.length) await this.db.session.updateMany({ userId: { $in: userIds }, revokedAt: { $exists: false } }, { $set: { revokedAt: new Date(), revokedReason: 'tenant_suspended' }, $inc: { authVersion: 1 } });
     }
     await this.db.auditEvent.create({ tenantId, actorUserId, action: active ? 'tenant.activated' : 'tenant.suspended', targetType: 'tenant', targetId: tenantId, metadata: { reason: reason ?? null }, result: 'success', occurredAt: new Date() });
     return { ok: true, tenantId, status: active ? TenantStatus.ACTIVE : TenantStatus.SUSPENDED, actorUserId: actorUserId ?? null };
@@ -81,7 +81,7 @@ export class SystemAdminService {
     if (!Types.ObjectId.isValid(tenantId)) throw new BadRequestException('Invalid tenant id');
     const tenant = await this.db.tenant.findById(tenantId).lean(); if (!tenant) throw new NotFoundException('Tenant not found');
     const set: Record<string, unknown> = {};
-    for (const key of ['name', 'primaryEmail', 'phone', 'website', 'logoFileId', 'logoUrl']) { const value = input[key as keyof typeof input]; if (value !== undefined) set[key] = typeof value === 'string' ? value.trim() : value; }
+    for (const key of ['name', 'phone', 'website', 'logoFileId', 'logoUrl']) { const value = input[key as keyof typeof input]; if (value !== undefined) set[key] = typeof value === 'string' ? value.trim() : value; }
     if (set.name) await this.db.company.updateMany({ tenantId }, { $set: { name: set.name } });
     const updated = await this.db.tenant.findByIdAndUpdate(tenantId, { $set: set }, { new: true }).lean();
     await this.db.auditEvent.create({ tenantId, actorUserId, action: 'tenant.branding_updated', targetType: 'tenant', targetId: tenantId, metadata: { changed: Object.keys(set) }, result: 'success', occurredAt: new Date() });
@@ -107,7 +107,8 @@ export class SystemAdminService {
     const normalized = [...new Set((roleIds ?? []).map(String))]; const validRoleIds = normalized.filter((id) => Types.ObjectId.isValid(id)).map((id) => new Types.ObjectId(id)); if (normalized.length !== validRoleIds.length) throw new BadRequestException('Invalid role id');
     const roles = await this.db.role.find({ _id: { $in: validRoleIds }, 'permissions.permissionKey': { $regex: '^platform:' } }).lean(); if (roles.length !== normalized.length) throw new BadRequestException('One or more roles are not platform roles');
     if (!roles.some((role: any) => (role.permissions ?? []).some((p: any) => p.permissionKey === 'platform:console:access'))) throw new BadRequestException('At least one selected role must grant platform console access');
-    await this.db.user.updateOne({ _id: user._id }, { $set: { roleIds: normalized, updatedAt: new Date() } }); return { ok: true, userId, roleIds: normalized, actorUserId: actorUserId ?? null };
+    await this.db.user.updateOne({ _id: user._id }, { $set: { roleIds: normalized, updatedAt: new Date() }, $inc: { authVersion: 1 } });
+    return { ok: true, userId, roleIds: normalized, actorUserId: actorUserId ?? null };
   }
 
   async audit() { const events = await this.db.auditEvent.find({}).sort({ occurredAt: -1, createdAt: -1 }).limit(250).lean(); return events.map((e: any) => ({ id: String(e._id), tenantId: e.tenantId ?? null, actorUserId: e.actorUserId ?? null, action: e.action, resourceType: e.resourceType, resourceId: e.resourceId ?? null, result: e.result, route: e.route ?? null, method: e.method ?? null, statusCode: e.statusCode ?? null, ipAddress: e.ipAddress ?? null, occurredAt: e.occurredAt ?? e.createdAt })); }

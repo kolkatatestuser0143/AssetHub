@@ -9,6 +9,9 @@
     "db:seed": "ts-node db/seed.ts",
     "db:migrate:indexes": "ts-node db/migrations/ensure-multitenant-indexes.ts",
     "db:migrate:sites": "ts-node db/migrations/migrate-business-units-to-sites.ts",
+    "db:migrate:primary-login": "ts-node db/migrations/backfill-primary-login-users.ts",
+    "db:migrate:session-security": "ts-node db/migrations/backfill-session-security-fields.ts",
+    "db:migrate:subscriptions": "ts-node db/migrations/normalize-active-subscriptions.ts",
     "test": "jest",
     "test:security": "jest --config jest.security.config.js --runInBand"
   },

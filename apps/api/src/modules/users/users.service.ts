@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 import { AuthContext } from '../../common/guards/tenant-context.guard';
@@ -56,24 +56,7 @@ export class UsersService extends TenantScopedRepository {
     }
     const currentUserCount = await this.db.user.countDocuments({ tenantId: auth.tenantId, accountType: 'TENANT' });
     await this.entitlements.requireWithinLimit(auth.tenantId, 'max_users', currentUserCount, 1);
-    const doc = await this.db.user.create({
-      tenantId: auth.tenantId,
-      companyId,
-      employeeId,
-      email,
-      firstName: input.firstName.trim(),
-      lastName: input.lastName.trim(),
-      jobTitle: input.jobTitle?.trim() || undefined,
-      phone: input.phone?.trim() || undefined,
-      departmentId: input.departmentId || undefined,
-      locationId: input.locationId || undefined,
-      isActive: true,
-      forcePasswordReset: true,
-      roleIds: [],
-      accountType: 'TENANT',
-      mfaMethod: 'NONE',
-      backupCodesHash: [],
-    });
+    const doc = await this.db.user.create({ tenantId: auth.tenantId, companyId, employeeId, email, firstName: input.firstName.trim(), lastName: input.lastName.trim(), jobTitle: input.jobTitle?.trim() || undefined, phone: input.phone?.trim() || undefined, departmentId: input.departmentId || undefined, locationId: input.locationId || undefined, isActive: true, forcePasswordReset: true, roleIds: [], accountType: 'TENANT', mfaMethod: 'NONE', backupCodesHash: [] });
     return this.safe(doc.toObject());
   }
 
@@ -81,7 +64,12 @@ export class UsersService extends TenantScopedRepository {
     if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found');
     const current = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
     if (!current) throw new NotFoundException('User not found');
+    const tenant = await this.db.tenant.findById(auth.tenantId).select({ primaryUserId: 1 }).lean();
+    const isPrimaryLoginUser = String(tenant?.primaryUserId ?? '') === String(current._id);
     const email = input.email?.trim().toLowerCase();
+    if (isPrimaryLoginUser && email !== undefined && email !== current.email) {
+      throw new ForbiddenException('The primary login email is managed by the AssetHub System Administrator');
+    }
     if (email && email !== current.email) {
       const duplicate = await this.db.user.findOne({ _id: { $ne: userId }, tenantId: auth.tenantId, email }).lean();
       if (duplicate) throw new ConflictException('A user with this email already exists');
@@ -110,40 +98,18 @@ export class UsersService extends TenantScopedRepository {
     const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
     if (!user) throw new NotFoundException('User not found');
     if (!user.isActive) throw new ConflictException('Cannot send access email to an inactive user');
-
     const token = await this.invites.createInternalToken(String(user._id));
     const appUrl = (process.env.WEB_APP_URL ?? 'http://localhost:3000').replace(/\/$/, '');
     const setupUrl = `${appUrl}/accept-invite?token=${encodeURIComponent(token.rawToken)}`;
-    const result = await this.mail.sendTenantAccessEmail({
-      to: user.email,
-      firstName: user.firstName,
-      action,
-      setupUrl,
-      expiresAt: token.expiresAt,
-    });
-
-    return {
-      ok: true,
-      action,
-      email: user.email,
-      emailSent: result.sent,
-      emailConfigured: this.mail.isEnabled(),
-      setupUrl: result.sent ? undefined : setupUrl,
-      expiresAt: token.expiresAt,
-    };
+    const result = await this.mail.sendTenantAccessEmail({ to: user.email, firstName: user.firstName, action, setupUrl, expiresAt: token.expiresAt });
+    return { ok: true, action, email: user.email, emailSent: result.sent, emailConfigured: this.mail.isEnabled(), setupUrl: result.sent ? undefined : setupUrl, expiresAt: token.expiresAt };
   }
 
   async setActive(auth: AuthContext, userId: string, active: boolean) {
     if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found');
-    const doc = await this.db.user.findOneAndUpdate(
-      { _id: userId, ...this.scope(auth), accountType: 'TENANT' },
-      { $set: { isActive: active } },
-      { new: true },
-    ).lean();
+    const doc = await this.db.user.findOneAndUpdate({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }, { $set: { isActive: active }, $inc: { authVersion: 1 } }, { new: true }).lean();
     if (!doc) throw new NotFoundException('User not found');
-    if (!active) {
-      await this.db.session.updateMany({ userId: String(doc._id), revokedAt: { $exists: false } }, { $set: { revokedAt: new Date(), revokedReason: 'admin_deactivated' } });
-    }
+    if (!active) await this.db.session.updateMany({ userId: String(doc._id), revokedAt: { $exists: false } }, { $set: { revokedAt: new Date(), revokedReason: 'admin_deactivated' } });
     return this.safe(doc);
   }
 
@@ -151,7 +117,7 @@ export class UsersService extends TenantScopedRepository {
     const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
     if (!user) throw new NotFoundException('User not found');
     const docs = await this.db.session.find({ userId: String(user._id) }).sort({ lastSeenAt: -1, createdAt: -1 }).lean();
-    return toDtoArray(docs).map((session: any) => { delete session.refreshTokenHash; return session; });
+    return toDtoArray(docs).map((session: any) => { delete session.refreshTokenHash; delete session.familyId; delete session.parentTokenHash; return session; });
   }
 
   async loginHistory(auth: AuthContext, userId: string) {
