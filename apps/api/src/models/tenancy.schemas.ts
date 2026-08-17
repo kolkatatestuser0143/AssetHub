@@ -15,6 +15,7 @@ export class Tenant {
   @Prop({ required: true }) name!: string;
   @Prop({ required: true, unique: true }) slug!: string;
   @Prop({ enum: TenantStatus, default: TenantStatus.ACTIVE, index: true }) status!: TenantStatus;
+  @Prop({ sparse: true }) primaryUserId?: string;
   @Prop() primaryEmail?: string;
   @Prop() phone?: string;
   @Prop() website?: string;
@@ -28,6 +29,7 @@ export class Tenant {
 }
 
 export const TenantSchema = SchemaFactory.createForClass(Tenant);
+TenantSchema.index({ primaryUserId: 1 }, { unique: true, sparse: true });
 
 export const CompanyModelName = 'Company';
 export type CompanyDocument = HydratedDocument<Company>;

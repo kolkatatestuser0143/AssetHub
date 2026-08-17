@@ -9,6 +9,9 @@
     "db:seed": "ts-node db/seed.ts",
     "db:migrate:indexes": "ts-node db/migrations/ensure-multitenant-indexes.ts",
     "db:migrate:sites": "ts-node db/migrations/migrate-business-units-to-sites.ts",
+    "db:migrate:primary-login": "ts-node db/migrations/backfill-primary-login-users.ts",
+    "db:migrate:session-security": "ts-node db/migrations/backfill-session-security-fields.ts",
+    "db:migrate:subscriptions": "ts-node db/migrations/normalize-active-subscriptions.ts",
     "test": "jest",
     "test:security": "jest --config jest.security.config.js --runInBand"
   },
@@ -20,7 +23,7 @@
     "@nestjs/platform-express": "^10.4.0",
     "@nestjs/swagger": "^7.4.0",
     "@nestjs/throttler": "^6.2.1",
-    "@node-saml/node-saml": "^4.0.0",
+    "@node-saml/node-saml": "^4.0.5",
     "argon2": "^0.40.3",
     "bullmq": "^5.12.0",
     "class-transformer": "^0.5.1",
@@ -40,6 +43,7 @@
     "@types/jest": "^29.5.12",
     "@types/node": "^22.5.0",
     "@types/nodemailer": "^7.0.5",
+    "jest": "^29.7.0",
     "ts-jest": "^29.2.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.4"

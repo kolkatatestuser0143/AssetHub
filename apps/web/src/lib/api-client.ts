@@ -4,40 +4,48 @@ let refreshing: Promise<void> | null = null;
 export function setAccessToken(_token: string | null) {}
 export function getAccessToken() { return null; }
 
+function csrfToken(): string | undefined {
+  if (typeof document === 'undefined') return undefined;
+  const match = document.cookie.split('; ').find((entry) => entry.startsWith('assethub_csrf='));
+  return match ? decodeURIComponent(match.slice('assethub_csrf='.length)) : undefined;
+}
+
+function isMutating(method: string | undefined) {
+  return ['POST', 'PUT', 'PATCH', 'DELETE'].includes((method ?? 'GET').toUpperCase());
+}
+
 async function expireTenantSession() {
   if (typeof window === 'undefined') return;
   sessionStorage.removeItem('itam_refresh_token');
   sessionStorage.removeItem('itam_access_token');
-  if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/system/')) {
-    window.location.href = '/login';
-  }
+  if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/system/')) window.location.href = '/login';
 }
 
 async function refreshSession() {
   if (refreshing) return refreshing;
   refreshing = fetch(`${API_BASE}/auth/refresh`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Auth-Scope': 'tenant' },
+    headers: { 'Content-Type': 'application/json', ...(csrfToken() ? { 'X-CSRF-Token': csrfToken()! } : {}) },
     credentials: 'include',
   }).then(async (res) => {
     if (!res.ok) {
       await expireTenantSession();
       throw new Error('Session expired');
     }
-  }).finally(() => {
-    refreshing = null;
-  });
+  }).finally(() => { refreshing = null; });
   return refreshing;
 }
 
-function shouldRefreshOn401(path: string) {
-  return path !== '/auth/refresh' && path !== '/auth/login' && path !== '/auth/system/login';
-}
+function shouldRefreshOn401(path: string) { return path !== '/auth/refresh' && path !== '/auth/login' && path !== '/auth/system/login'; }
 
 function buildHeaders(options: RequestInit) {
   const headers = new Headers(options.headers);
   if (options.body instanceof FormData) headers.delete('Content-Type');
   else if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  if (isMutating(options.method)) {
+    const token = csrfToken();
+    if (token && !headers.has('X-CSRF-Token')) headers.set('X-CSRF-Token', token);
+  }
   return headers;
 }
 
@@ -93,14 +101,12 @@ export async function login(email: string, password: string) {
   return apiFetch('/auth/login', { method: 'POST', headers, body: JSON.stringify({ email, password }) });
 }
 
-export async function systemLogin(email: string, password: string) {
-  return apiFetch('/auth/system/login', { method: 'POST', body: JSON.stringify({ email, password }) });
-}
+export async function systemLogin(email: string, password: string) { return apiFetch('/auth/system/login', { method: 'POST', body: JSON.stringify({ email, password }) }); }
 
 export async function logout() {
   if (typeof window === 'undefined') return;
   try {
-    await fetch(`${API_BASE}/auth/logout`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Auth-Scope': 'tenant' }, credentials: 'include' });
+    await fetch(`${API_BASE}/auth/logout`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Auth-Scope': 'tenant', ...(csrfToken() ? { 'X-CSRF-Token': csrfToken()! } : {}) }, credentials: 'include' });
   } catch {}
   sessionStorage.removeItem('itam_refresh_token');
   sessionStorage.removeItem('itam_access_token');

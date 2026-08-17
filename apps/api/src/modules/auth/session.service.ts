@@ -14,7 +14,7 @@ const DEFAULT_REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export class SessionService {
   constructor(private readonly db: MongooseDatabaseService, private readonly jwt: JwtService, private readonly entitlements: EntitlementService) {}
 
-  async issueSession(userId: string, ip: string, userAgent: string, system = false) {
+  async issueSession(userId: string, ip: string, userAgent: string, system = false, familyId?: string, parentTokenHash?: string) {
     const rawUser = await this.db.findByIdOrThrow<any>(this.db.user, userId, 'User');
     const normalizedUserId = String(rawUser._id ?? rawUser.id);
     if (system && rawUser.accountType !== UserAccountType.SYSTEM) throw new UnauthorizedException('System session requires a system account');
@@ -41,9 +41,25 @@ export class SessionService {
       ? { permissions: await this.resolveSystemPermissions(rawUser.roleIds ?? []), crossCompany: false }
       : await this.resolveTenantAccess(rawUser.tenantId, rawUser.companyId, rawUser.roleIds ?? []);
     const rawRefreshToken = crypto.randomBytes(48).toString('hex');
-    const session = await this.db.session.create({ userId: normalizedUserId, refreshTokenHash: this.hashToken(rawRefreshToken), ipAddress: ip, userAgent, lastSeenAt: new Date(), expiresAt: new Date(Date.now() + refreshTokenTtlMs) });
+    const tokenFamilyId = familyId ?? crypto.randomUUID();
+    const session = await this.db.session.create({
+      userId: normalizedUserId,
+      refreshTokenHash: this.hashToken(rawRefreshToken),
+      familyId: tokenFamilyId,
+      parentTokenHash,
+      ipAddress: ip,
+      userAgent,
+      lastSeenAt: new Date(),
+      expiresAt: new Date(Date.now() + refreshTokenTtlMs),
+    });
     const sessionId = String(session._id);
-    const claims: Record<string, any> = { sub: normalizedUserId, sessionId, permissions: access.permissions, accountType: rawUser.accountType };
+    const claims: Record<string, any> = {
+      sub: normalizedUserId,
+      sessionId,
+      permissions: access.permissions,
+      accountType: rawUser.accountType,
+      authVersion: Number(rawUser.authVersion ?? 0),
+    };
     if (system) claims.systemAdmin = true;
     else {
       claims.tenantId = rawUser.tenantId;
@@ -64,7 +80,40 @@ export class SessionService {
     await this.db.session.updateOne({ _id: sessionId, userId, revokedAt: { $exists: false } }, { $set: { revokedAt: new Date(), revokedReason: reason } });
   }
 
-  async findByRefreshToken(rawRefreshToken: string) { const doc = await this.db.session.findOne({ refreshTokenHash: this.hashToken(rawRefreshToken) }).lean(); return doc ? toDto(doc) : null; }
+  async revokeFamily(familyId: string, reason: string) {
+    if (!familyId) return;
+    await this.db.session.updateMany({ familyId, revokedAt: { $exists: false } }, { $set: { revokedAt: new Date(), revokedReason: reason } });
+  }
+
+  async rotateRefreshToken(rawRefreshToken: string, ip: string, userAgent: string) {
+    const hash = this.hashToken(rawRefreshToken);
+    const existing = await this.db.session.findOne({ refreshTokenHash: hash }).lean();
+    if (!existing) throw new UnauthorizedException('Invalid refresh token');
+    if (existing.revokedAt) {
+      await this.revokeFamily(String(existing.familyId), 'refresh_token_reuse_detected');
+      throw new UnauthorizedException('Refresh token reuse detected');
+    }
+    if (existing.expiresAt < new Date()) throw new UnauthorizedException('Refresh token expired');
+
+    const consumed = await this.db.session.findOneAndUpdate(
+      { _id: existing._id, refreshTokenHash: hash, revokedAt: { $exists: false } },
+      { $set: { revokedAt: new Date(), revokedReason: 'rotated' } },
+      { new: true },
+    ).lean();
+    if (!consumed) {
+      await this.revokeFamily(String(existing.familyId), 'refresh_token_reuse_detected');
+      throw new UnauthorizedException('Refresh token reuse detected');
+    }
+
+    const system = await this.isSystemUser(String(existing.userId));
+    return this.issueSession(String(existing.userId), ip, userAgent, system, String(existing.familyId), hash);
+  }
+
+  async findByRefreshToken(rawRefreshToken: string) {
+    const doc = await this.db.session.findOne({ refreshTokenHash: this.hashToken(rawRefreshToken) }).lean();
+    return doc ? toDto(doc) : null;
+  }
+
   hashToken(raw: string): string { return crypto.createHash('sha256').update(raw).digest('hex'); }
 
   private async resolveTenantAccess(tenantId: string, companyId: string, roleIds: string[]): Promise<{ permissions: string[]; crossCompany: boolean }> {
