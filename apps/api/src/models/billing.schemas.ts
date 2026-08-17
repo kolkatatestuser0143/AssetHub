@@ -8,7 +8,7 @@ export type PlanDocument = HydratedDocument<Plan>;
 export class Plan {
   @Prop({ required: true, unique: true }) name!: string;
   @Prop({ required: true, enum: ['trial', 'starter', 'professional', 'enterprise', 'restricted'], default: 'starter' }) themePreset!: 'trial' | 'starter' | 'professional' | 'enterprise' | 'restricted';
-  @Prop({ type: Object }) features?: Record<string, unknown>; // feature flags + limits
+  @Prop({ type: Object }) features?: Record<string, unknown>;
   @Prop({ default: true, index: true }) isActive!: boolean;
 }
 
@@ -21,13 +21,18 @@ export type SubscriptionDocument = HydratedDocument<Subscription>;
 export class Subscription {
   @Prop({ required: true, index: true }) tenantId!: string;
   @Prop({ required: true }) planId!: string;
-  @Prop({ required: true }) status!: string; // "active" | "trialing" | "past_due" | "canceled" | "revoked"
+  @Prop({ required: true }) status!: string;
   @Prop({ default: Date.now }) startedAt!: Date;
   @Prop() endsAt?: Date;
   @Prop() graceUntil?: Date;
 }
 
 export const SubscriptionSchema = SchemaFactory.createForClass(Subscription);
+SubscriptionSchema.index({ tenantId: 1, status: 1 });
+SubscriptionSchema.index(
+  { tenantId: 1 },
+  { unique: true, partialFilterExpression: { status: { $in: ['active', 'trialing', 'past_due'] } } },
+);
 
 export const EntitlementModelName = 'Entitlement';
 export type EntitlementDocument = HydratedDocument<Entitlement>;
@@ -35,7 +40,7 @@ export type EntitlementDocument = HydratedDocument<Entitlement>;
 @Schema({ collection: 'entitlements', timestamps: true, versionKey: false })
 export class Entitlement {
   @Prop({ required: true, index: true }) subscriptionId!: string;
-  @Prop({ required: true }) key!: string; // "sso_enabled" | "max_assets" ...
+  @Prop({ required: true }) key!: string;
   @Prop({ type: Object, required: true }) value!: unknown;
   @Prop({ enum: ['plan', 'override'], default: 'plan', index: true }) source!: 'plan' | 'override';
 }
