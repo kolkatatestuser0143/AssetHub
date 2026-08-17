@@ -7,6 +7,7 @@ import { EntitlementService } from '../billing/entitlement.service';
 import { DOCUMENT_STORAGE, DocumentStorage } from './document-storage';
 
 const ALLOWED_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/vnd.ms-excel']);
+const ALLOWED_DOCUMENT_TYPES = new Set(['INVOICE', 'PURCHASE_ORDER', 'WARRANTY_CERTIFICATE', 'PHOTO', 'DISPOSAL_RECORD', 'OTHER']);
 const PLATFORM_MAX_FILE_BYTES = 25 * 1024 * 1024;
 
 @Injectable()
@@ -21,50 +22,51 @@ export class AssetDocumentsService extends TenantScopedRepository {
   async registerUpload(auth: AuthContext, assetId: string, input: { uuid: string; fileName: string; contentType: string; sizeBytes: number; documentType?: string }) {
     await this.requireAsset(auth, assetId);
     const requestedFileName = String(input.fileName ?? '').trim();
-    if (!input.uuid || !requestedFileName) throw new BadRequestException('Valid uploaded file metadata is required');
+    const requestedContentType = String(input.contentType ?? '').trim().toLowerCase();
+    const requestedSize = Number(input.sizeBytes);
+    if (!input.uuid || !requestedFileName || !ALLOWED_TYPES.has(requestedContentType) || !Number.isFinite(requestedSize) || requestedSize <= 0) throw new BadRequestException('Valid uploaded file metadata is required');
+    this.assertDocumentType(input.documentType);
 
     const stored = await this.storage.register(input.uuid);
     const fileName = String(stored.fileName ?? requestedFileName).trim();
     const contentType = String(stored.contentType ?? '').trim().toLowerCase();
     const sizeBytes = Number(stored.sizeBytes);
-    if (!fileName || !contentType || !Number.isFinite(sizeBytes) || sizeBytes <= 0) {
-      await this.storage.remove(stored.key).catch(() => undefined);
-      throw new BadRequestException('Uploadcare did not return complete file metadata');
-    }
-    if (!ALLOWED_TYPES.has(contentType)) { await this.storage.remove(stored.key).catch(() => undefined); throw new BadRequestException('Unsupported document type'); }
-    if (sizeBytes > PLATFORM_MAX_FILE_BYTES) { await this.storage.remove(stored.key).catch(() => undefined); throw new BadRequestException('Document exceeds the 25 MB platform limit'); }
-    const maxFileMb = await this.entitlements.getNumber(auth.tenantId, 'max_asset_document_size_mb');
-    const maxFileBytes = Math.min(PLATFORM_MAX_FILE_BYTES, maxFileMb === null ? PLATFORM_MAX_FILE_BYTES : maxFileMb * 1024 * 1024);
-    if (sizeBytes > maxFileBytes) { await this.storage.remove(stored.key).catch(() => undefined); throw new BadRequestException(`Document exceeds the ${Math.floor(maxFileBytes / (1024 * 1024))} MB size limit`); }
-    await this.assertStorageLimits(auth.tenantId, sizeBytes);
-
     try {
+      if (!fileName || !contentType || !Number.isFinite(sizeBytes) || sizeBytes <= 0) throw new BadRequestException('Uploadcare did not return complete file metadata');
+      if (contentType !== requestedContentType || sizeBytes !== requestedSize) throw new BadRequestException('Uploaded file metadata does not match the verified Uploadcare file');
+      if (!ALLOWED_TYPES.has(contentType)) throw new BadRequestException('Unsupported document type');
+      if (sizeBytes > PLATFORM_MAX_FILE_BYTES) throw new BadRequestException('Document exceeds the 25 MB platform limit');
+      const maxFileMb = await this.entitlements.getNumber(auth.tenantId, 'max_asset_document_size_mb');
+      const maxFileBytes = Math.min(PLATFORM_MAX_FILE_BYTES, maxFileMb === null ? PLATFORM_MAX_FILE_BYTES : maxFileMb * 1024 * 1024);
+      if (sizeBytes > maxFileBytes) throw new BadRequestException(`Document exceeds the ${Math.floor(maxFileBytes / (1024 * 1024))} MB size limit`);
+      await this.assertStorageLimits(auth.tenantId, sizeBytes);
       const doc = await this.db.assetDocument.create({ tenantId: auth.tenantId, companyId: auth.companyId, assetId, s3Key: stored.key, storageProvider: stored.provider, fileName, contentType, sizeBytes, ...(input.documentType ? { documentType: input.documentType.trim() } : {}) });
+      await this.audit(auth, 'asset.document_uploaded', assetId, String(doc._id), { provider: stored.provider, fileName, contentType, sizeBytes });
       return toDto(doc.toObject());
-    } catch (error) {
-      await this.storage.remove(stored.key).catch(() => undefined);
-      throw error;
-    }
+    } catch (error) { await this.storage.remove(stored.key).catch(() => undefined); throw error; }
   }
 
   async upload(auth: AuthContext, assetId: string, file: any, documentType?: string) {
     await this.requireAsset(auth, assetId);
     if (!file?.buffer?.length) throw new BadRequestException('Document file is required');
-    if (!ALLOWED_TYPES.has(file.mimetype)) throw new BadRequestException('Unsupported document type');
+    if (!ALLOWED_TYPES.has(String(file.mimetype).toLowerCase())) throw new BadRequestException('Unsupported document type');
+    this.assertDocumentType(documentType);
     const maxFileMb = await this.entitlements.getNumber(auth.tenantId, 'max_asset_document_size_mb');
     const maxFileBytes = Math.min(PLATFORM_MAX_FILE_BYTES, maxFileMb === null ? PLATFORM_MAX_FILE_BYTES : maxFileMb * 1024 * 1024);
     if (Number(file.size) > maxFileBytes) throw new BadRequestException(`Document exceeds the ${Math.floor(maxFileBytes / (1024 * 1024))} MB size limit`);
     await this.assertStorageLimits(auth.tenantId, Number(file.size));
-    const fileName = String(file.originalname ?? 'document');
-    const stored = await this.storage.upload({ buffer: file.buffer, fileName, contentType: String(file.mimetype ?? 'application/octet-stream') });
+    const fileName = String(file.originalname ?? 'document').replace(/[\r\n]/g, '').trim() || 'document';
+    const stored = await this.storage.upload({ buffer: file.buffer, fileName, contentType: String(file.mimetype).toLowerCase() });
     try {
-      const doc = await this.db.assetDocument.create({ tenantId: auth.tenantId, companyId: auth.companyId, assetId, s3Key: stored.key, storageProvider: stored.provider, fileName: stored.fileName ?? fileName, contentType: stored.contentType ?? String(file.mimetype ?? 'application/octet-stream'), sizeBytes: stored.sizeBytes ?? Number(file.size ?? file.buffer.length), ...(documentType ? { documentType: documentType.trim() } : {}) });
+      const doc = await this.db.assetDocument.create({ tenantId: auth.tenantId, companyId: auth.companyId, assetId, s3Key: stored.key, storageProvider: stored.provider, fileName: stored.fileName ?? fileName, contentType: stored.contentType ?? String(file.mimetype).toLowerCase(), sizeBytes: stored.sizeBytes ?? Number(file.size ?? file.buffer.length), ...(documentType ? { documentType: documentType.trim() } : {}) });
+      await this.audit(auth, 'asset.document_uploaded', assetId, String(doc._id), { provider: stored.provider, fileName: doc.fileName, contentType: doc.contentType, sizeBytes: doc.sizeBytes });
       return toDto(doc.toObject());
     } catch (error) { await this.storage.remove(stored.key).catch(() => undefined); throw error; }
   }
 
   async storeGeneratedPdf(auth: AuthContext, assetId: string, fileName: string, buffer: Buffer, documentType = 'ACKNOWLEDGEMENT') {
     await this.requireAsset(auth, assetId);
+    this.assertDocumentType(documentType, true);
     if (!buffer.length) throw new BadRequestException('Generated document is empty');
     const maxFileMb = await this.entitlements.getNumber(auth.tenantId, 'max_asset_document_size_mb');
     const maxFileBytes = Math.min(PLATFORM_MAX_FILE_BYTES, maxFileMb === null ? PLATFORM_MAX_FILE_BYTES : maxFileMb * 1024 * 1024);
@@ -73,6 +75,7 @@ export class AssetDocumentsService extends TenantScopedRepository {
     const stored = await this.storage.upload({ buffer, fileName, contentType: 'application/pdf' });
     try {
       const doc = await this.db.assetDocument.create({ tenantId: auth.tenantId, companyId: auth.companyId, assetId, s3Key: stored.key, storageProvider: stored.provider, fileName: stored.fileName ?? fileName, contentType: stored.contentType ?? 'application/pdf', sizeBytes: stored.sizeBytes ?? buffer.length, documentType });
+      await this.audit(auth, 'asset.document_generated', assetId, String(doc._id), { documentType, fileName: doc.fileName, sizeBytes: doc.sizeBytes });
       return toDto(doc.toObject());
     } catch (error) { await this.storage.remove(stored.key).catch(() => undefined); throw error; }
   }
@@ -82,6 +85,7 @@ export class AssetDocumentsService extends TenantScopedRepository {
     const doc = await this.db.assetDocument.findOne({ _id: documentId, tenantId: auth.tenantId, companyId: auth.companyId, assetId }).lean();
     if (!doc) throw new NotFoundException('Document not found');
     const stored = await this.storage.download(doc.s3Key);
+    await this.audit(auth, 'asset.document_downloaded', assetId, documentId, { fileName: doc.fileName, sizeBytes: doc.sizeBytes });
     return { buffer: stored.buffer, fileName: doc.fileName, contentType: doc.contentType || stored.contentType || 'application/octet-stream' };
   }
 
@@ -91,6 +95,7 @@ export class AssetDocumentsService extends TenantScopedRepository {
     if (!doc) throw new NotFoundException('Document not found');
     await this.storage.remove(doc.s3Key);
     await this.db.assetDocument.deleteOne({ _id: documentId, tenantId: auth.tenantId, companyId: auth.companyId, assetId });
+    await this.audit(auth, 'asset.document_deleted', assetId, documentId, { fileName: doc.fileName, sizeBytes: doc.sizeBytes });
     return { ok: true };
   }
 
@@ -101,6 +106,16 @@ export class AssetDocumentsService extends TenantScopedRepository {
     const currentBytes = Number(storageRows[0]?.bytes ?? 0);
     const maxStorageGb = await this.entitlements.getNumber(tenantId, 'max_storage_gb');
     if (maxStorageGb !== null && currentBytes + incomingBytes > maxStorageGb * 1024 * 1024 * 1024) throw new ConflictException(`Tenant storage limit reached: max_storage_gb (${maxStorageGb})`);
+  }
+
+  private assertDocumentType(documentType?: string, generated = false) {
+    if (!documentType) return;
+    if (generated && documentType === 'ACKNOWLEDGEMENT') return;
+    if (!ALLOWED_DOCUMENT_TYPES.has(documentType.trim().toUpperCase())) throw new BadRequestException('Invalid document type');
+  }
+
+  private async audit(auth: AuthContext, action: string, assetId: string, targetId: string, metadata: Record<string, unknown>) {
+    await this.db.auditEvent.create({ tenantId: auth.tenantId, actorUserId: auth.userId, action, targetType: 'asset_document', targetId, metadata: { assetId, ...metadata }, result: 'success', occurredAt: new Date() });
   }
 
   private async requireAsset(auth: AuthContext, assetId: string) {
