@@ -15,7 +15,7 @@ export class Tenant {
   @Prop({ required: true }) name!: string;
   @Prop({ required: true, unique: true }) slug!: string;
   @Prop({ enum: TenantStatus, default: TenantStatus.ACTIVE, index: true }) status!: TenantStatus;
-  @Prop({ index: true, sparse: true }) primaryUserId?: string;
+  @Prop({ sparse: true }) primaryUserId?: string;
   @Prop() primaryEmail?: string;
   @Prop() phone?: string;
   @Prop() website?: string;
