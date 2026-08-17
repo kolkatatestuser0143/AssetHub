@@ -55,7 +55,7 @@ jobs:
           done
           docker exec assethub-mongo-ci mongosh --quiet --eval "rs.status().myState"
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
       - name: Build API
         run: pnpm build:api
       - name: Run API tests
