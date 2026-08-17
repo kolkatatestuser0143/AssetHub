@@ -11,6 +11,7 @@ import { AuthContext } from '../../common/guards/tenant-context.guard';
 import { ScimDeprovisionPolicy } from '../../common/enums';
 import { toDtoArray } from '../../common/mongoose.utils';
 import { EntitlementService } from '../billing/entitlement.service';
+import { IdentitySecretCryptoService } from './identity-secret-crypto.service';
 
 @Injectable()
 export class IdentityService {
@@ -20,6 +21,7 @@ export class IdentityService {
     private readonly provisioning: ProvisioningService,
     private readonly sessions: SessionService,
     private readonly entitlements: EntitlementService,
+    private readonly secretCrypto: IdentitySecretCryptoService,
   ) {}
 
   async listConfigs(auth: AuthContext, companyId: string) {
@@ -28,7 +30,7 @@ export class IdentityService {
     const docs = await this.db.identityProviderConfig.find({ companyId }).sort({ createdAt: -1 }).lean();
     return docs.map((doc: any) => ({
       id: String(doc._id), companyId: doc.companyId, protocol: doc.protocol, name: doc.name,
-      isEnabled: doc.isEnabled, configKeys: Object.keys(doc.config ?? {}),
+      isEnabled: doc.isEnabled, configKeys: Object.keys(this.secretCrypto.decrypt(doc.config ?? {}).config),
       attributeMapping: doc.attributeMapping ?? {}, createdAt: doc.createdAt, updatedAt: doc.updatedAt,
     }));
   }
@@ -38,7 +40,8 @@ export class IdentityService {
     await this.entitlements.requireFeature(auth.tenantId, 'sso_enabled');
     const exists = await this.db.identityProviderConfig.findOne({ companyId, name: input.name.trim() }).lean();
     if (exists) throw new ConflictException('An identity provider with this name already exists');
-    const doc = await this.db.identityProviderConfig.create({ companyId, protocol: input.protocol, name: input.name.trim(), config: input.config, attributeMapping: input.attributeMapping, isEnabled: true });
+    const encryptedConfig = this.secretCrypto.encrypt(input.config);
+    const doc = await this.db.identityProviderConfig.create({ companyId, protocol: input.protocol, name: input.name.trim(), config: encryptedConfig, attributeMapping: input.attributeMapping, isEnabled: true });
     return { id: String(doc._id), companyId: doc.companyId, protocol: doc.protocol, name: doc.name, isEnabled: doc.isEnabled };
   }
 
@@ -111,7 +114,11 @@ export class IdentityService {
   private async buildProvider(companyId: string, idpConfigId: string): Promise<IdentityProvider> {
     const config = await this.db.identityProviderConfig.findOne({ _id: idpConfigId, companyId, isEnabled: true }).lean();
     if (!config) throw new NotFoundException('Identity provider not configured or disabled');
-    const mergedConfig = { ...(config.config ?? {}), attributeMapping: config.attributeMapping ?? {} };
+    const decrypted = this.secretCrypto.decrypt((config.config ?? {}) as Record<string, unknown>);
+    if (!decrypted.encrypted) {
+      await this.db.identityProviderConfig.updateOne({ _id: config._id, companyId }, { $set: { config: this.secretCrypto.encrypt(decrypted.config), updatedAt: new Date() } });
+    }
+    const mergedConfig = { ...decrypted.config, attributeMapping: config.attributeMapping ?? {} };
     if (config.protocol === 'OIDC') return new OidcProvider(mergedConfig as never, companyId, this.cache);
     if (config.protocol === 'SAML') return new SamlProvider(mergedConfig as never, companyId, this.cache);
     throw new NotFoundException(`Unsupported protocol: ${config.protocol}`);
