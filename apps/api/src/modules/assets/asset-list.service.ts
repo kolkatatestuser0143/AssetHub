@@ -33,8 +33,9 @@ export class AssetListService extends TenantScopedRepository {
     if (query) {
       const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const regex = new RegExp(escaped, 'i');
-      const assetTypeFilter = auth.crossCompany ? {} : { companyId: auth.companyId };
-      const matchingTypes = await this.db.assetType.find(assetTypeFilter).find({ name: regex }).select({ _id: 1 }).lean();
+      const assetTypeFilter: Record<string, unknown> = {};
+      if (!auth.crossCompany) assetTypeFilter.companyId = auth.companyId;
+      const matchingTypes = await this.db.assetType.find({ ...assetTypeFilter, name: regex }).select({ _id: 1 }).lean();
       filter.$or = [
         { assetNumber: regex },
         { status: regex },
