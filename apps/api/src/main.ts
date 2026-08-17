@@ -10,6 +10,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { RequestContextInterceptor } from './common/request-context.interceptor';
+import { ProductionExceptionFilter } from './common/filters/production-exception.filter';
 import { csrfMiddleware } from './common/security/csrf.middleware';
 
 function configuredOrigins(): string[] { return (process.env.WEB_ORIGINS ?? process.env.WEB_ORIGIN ?? 'http://localhost:3000').split(',').map((value) => value.trim().replace(/\/$/, '')).filter(Boolean); }
@@ -22,6 +23,7 @@ async function bootstrap() {
   app.use(csrfMiddleware);
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, transformOptions: { enableImplicitConversion: true } }));
   app.useGlobalInterceptors(new RequestContextInterceptor());
+  app.useGlobalFilters(new ProductionExceptionFilter());
   app.setGlobalPrefix('api/v1');
   const swaggerEnabled = process.env.SWAGGER_ENABLED === 'true' || process.env.NODE_ENV !== 'production';
   if (swaggerEnabled) { const config = new DocumentBuilder().setTitle('ITAM SaaS API').setDescription('Enterprise IT Asset Management API').setVersion('0.1.0').addBearerAuth().build(); SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config)); }
