@@ -13,11 +13,12 @@ async function main() {
     while (await cursor.hasNext()) {
       const session = await cursor.next();
       if (!session) continue;
-      await sessions.updateOne(
-        { _id: session._id, familyId: { $exists: false } },
-        { $set: { familyId: crypto.randomUUID() } },
+      const familyId = String(session.familyId ?? '').trim() || crypto.randomUUID();
+      const result = await sessions.updateOne(
+        { _id: session._id, $or: [{ familyId: { $exists: false } }, { familyId: null }] },
+        { $set: { familyId } },
       );
-      updated += 1;
+      if (result.modifiedCount > 0) updated += 1;
     }
     console.log(`Backfilled ${updated} session family identifiers.`);
   } finally {
