@@ -32,6 +32,7 @@ export class User {
 
   @Prop({ default: true }) isActive!: boolean;
   @Prop({ default: false }) forcePasswordReset!: boolean;
+  @Prop({ default: 0, index: true }) authVersion!: number;
   @Prop({ index: true }) accessTokenHash?: string;
   @Prop() accessTokenIssuedAt?: Date;
   @Prop() accessTokenExpiresAt?: Date;
@@ -54,6 +55,8 @@ export type SessionDocument = HydratedDocument<Session>;
 export class Session {
   @Prop({ required: true, index: true }) userId!: string;
   @Prop({ required: true, unique: true }) refreshTokenHash!: string;
+  @Prop({ required: true, index: true }) familyId!: string;
+  @Prop({ index: true }) parentTokenHash?: string;
   @Prop() ipAddress?: string;
   @Prop() userAgent?: string;
   @Prop() approxLocation?: string;
@@ -65,6 +68,7 @@ export class Session {
 
 export const SessionSchema = SchemaFactory.createForClass(Session);
 SessionSchema.index({ userId: 1, revokedAt: 1, expiresAt: 1 });
+SessionSchema.index({ familyId: 1, revokedAt: 1 });
 
 export const LoginHistoryModelName = 'LoginHistory';
 export type LoginHistoryDocument = HydratedDocument<LoginHistory>;
