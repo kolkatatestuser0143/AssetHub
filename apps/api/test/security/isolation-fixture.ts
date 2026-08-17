@@ -17,7 +17,43 @@ export async function connectTestDb(): Promise<TestDb> {
   const userModel = connection.models[UserModelName] ?? connection.model(UserModelName, UserSchema);
   const assetTypeModel = connection.models[AssetTypeModelName] ?? connection.model(AssetTypeModelName, AssetTypeSchema);
   const assetModel = connection.models[AssetModelName] ?? connection.model(AssetModelName, AssetSchema);
-  const db = new MongooseDatabaseService(tenantModel, companyModel, null as any, null as any, null as any, null as any, userModel, null as any, null as any, null as any, null as any, assetTypeModel, assetModel, null as any, null as any, null as any, null as any, null as any, null as any, null as any, null as any, null as any, null as any, null as any, null as any, null as any, null as any, null as any);
+
+  const db = new MongooseDatabaseService(
+    tenantModel,
+    companyModel,
+    null as any, // plant
+    null as any, // location
+    null as any, // department
+    userModel,
+    null as any, // session
+    null as any, // loginHistory
+    null as any, // permission
+    null as any, // role
+    assetTypeModel,
+    assetModel,
+    null as any, // assetAuditEvent
+    null as any, // assetAssignment
+    null as any, // assetTransfer
+    null as any, // assetMaintenance
+    null as any, // vendor
+    null as any, // warranty
+    null as any, // customFieldDefinition
+    null as any, // assetCustomFieldValue
+    null as any, // assetDocument
+    null as any, // identityProviderConfig
+    null as any, // scimToken
+    null as any, // scimSyncLog
+    null as any, // integrationInstance
+    null as any, // plan
+    null as any, // subscription
+    null as any, // entitlement
+    null as any, // auditEvent
+    null as any, // platformAdminNote
+    null as any, // assetReportTemplate
+    null as any, // assetAcknowledgementTemplate
+    null as any, // assetAcknowledgement
+  );
+
   Object.assign(db, { tenant: tenantModel, company: companyModel, user: userModel, assetType: assetTypeModel, asset: assetModel });
   const collection = (name: string) => connection.collection(name);
   return {
