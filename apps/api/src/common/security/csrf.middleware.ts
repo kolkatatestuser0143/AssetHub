@@ -34,6 +34,7 @@ function isTrustedBrowserOrigin(value: string): boolean {
   if (!value || value === 'null') return false;
   const configured = configuredOrigins();
   if (configured.includes(value.replace(/\/$/, ''))) return true;
+  if (process.env.NODE_ENV !== 'production' && /^https?:\/\/(localhost|127\.0\.0\.1)(?::\d+)?$/i.test(value)) return true;
 
   let origin: URL;
   try {
@@ -80,8 +81,6 @@ export function csrfMiddleware(req: any, res: any, next: () => void) {
   if (!token || token.length < 32) token = crypto.randomBytes(32).toString('hex');
   const csrfCookie = `${CSRF_COOKIE}=${encodeURIComponent(token)}${cookieOptions()}`;
 
-  // Controllers such as auth/login also set Set-Cookie. Wrap the response
-  // setter so our non-HttpOnly CSRF cookie is never overwritten by them.
   const originalSetHeader = res.setHeader.bind(res);
   res.setHeader = (name: string, value: unknown) => {
     if (String(name).toLowerCase() === 'set-cookie') {
