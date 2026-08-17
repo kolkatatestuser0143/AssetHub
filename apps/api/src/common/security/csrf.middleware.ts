@@ -29,41 +29,34 @@ function constantTimeEqual(left: string, right: string): boolean {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-function isMutating(method: string): boolean {
-  return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method.toUpperCase());
-}
+function isMutating(method: string): boolean { return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method.toUpperCase()); }
 
 function hasAuthenticationCookie(req: any): boolean {
   const cookies = parseCookies(req?.headers?.cookie);
-  return Boolean(
-    cookies.assethub_tenant_access ||
-    cookies.assethub_tenant_refresh ||
-    cookies.assethub_system_access ||
-    cookies.assethub_system_refresh,
-  );
+  return Boolean(cookies.assethub_tenant_access || cookies.assethub_tenant_refresh || cookies.assethub_system_access || cookies.assethub_system_refresh);
 }
 
-/**
- * Protects cookie-authenticated state-changing requests from same-site and
- * cross-site CSRF. The token cookie is deliberately readable by the web app;
- * authentication cookies remain HttpOnly.
- */
 export function csrfMiddleware(req: any, res: any, next: () => void) {
   const cookies = parseCookies(req?.headers?.cookie);
   let token = cookies[CSRF_COOKIE];
   if (!token || token.length < 32) token = crypto.randomBytes(32).toString('hex');
-
-  const existing = res.getHeader?.('Set-Cookie');
   const csrfCookie = `${CSRF_COOKIE}=${encodeURIComponent(token)}${cookieOptions()}`;
-  const setCookies = Array.isArray(existing) ? [...existing] : existing ? [existing] : [];
-  if (!setCookies.some((value: string) => value.startsWith(`${CSRF_COOKIE}=`))) setCookies.push(csrfCookie);
-  res.setHeader('Set-Cookie', setCookies);
+
+  // Controllers such as auth/login also set Set-Cookie. Wrap the response
+  // setter so our non-HttpOnly CSRF cookie is never overwritten by them.
+  const originalSetHeader = res.setHeader.bind(res);
+  res.setHeader = (name: string, value: unknown) => {
+    if (String(name).toLowerCase() === 'set-cookie') {
+      const values = Array.isArray(value) ? [...value] : [value];
+      if (!values.some((item: unknown) => String(item).startsWith(`${CSRF_COOKIE}=`))) values.push(csrfCookie);
+      return originalSetHeader(name, values);
+    }
+    return originalSetHeader(name, value);
+  };
 
   if (isMutating(req?.method ?? '') && hasAuthenticationCookie(req)) {
     const supplied = String(req?.headers?.[CSRF_HEADER] ?? '');
-    if (!supplied || !constantTimeEqual(token, supplied)) {
-      throw new ForbiddenException('CSRF validation failed');
-    }
+    if (!supplied || !constantTimeEqual(token, supplied)) throw new ForbiddenException('CSRF validation failed');
   }
 
   next();
