@@ -19,13 +19,19 @@ describe('csrfMiddleware', () => {
 
   it('rejects an authenticated mutation without the token', () => {
     const res = response();
-    expect(() => csrfMiddleware({ method: 'POST', headers: { cookie: 'assethub_tenant_access=access' } }, res, () => undefined)).toThrow(ForbiddenException);
+    expect(() => csrfMiddleware({ method: 'POST', headers: { cookie: 'assethub_tenant_access=access', origin: 'http://localhost:3000' } }, res, () => undefined)).toThrow(ForbiddenException);
   });
 
-  it('accepts an authenticated mutation with the matching token', () => {
+  it('rejects an authenticated mutation from an untrusted origin even with a matching token', () => {
     const token = 'a'.repeat(64);
     const res = response();
-    csrfMiddleware({ method: 'POST', headers: { cookie: `assethub_csrf=${token}; assethub_tenant_access=access`, 'x-csrf-token': token } }, res, () => undefined);
+    expect(() => csrfMiddleware({ method: 'POST', headers: { cookie: `assethub_csrf=${token}; assethub_tenant_access=access`, origin: 'https://attacker.example', 'x-csrf-token': token } }, res, () => undefined)).toThrow(ForbiddenException);
+  });
+
+  it('accepts an authenticated mutation with a matching token and trusted development origin', () => {
+    const token = 'a'.repeat(64);
+    const res = response();
+    csrfMiddleware({ method: 'POST', headers: { cookie: `assethub_csrf=${token}; assethub_tenant_access=access`, origin: 'http://localhost:3000', 'x-csrf-token': token } }, res, () => undefined);
     expect(String(res.headers.get('Set-Cookie'))).toContain(`assethub_csrf=${token}`);
   });
 });
