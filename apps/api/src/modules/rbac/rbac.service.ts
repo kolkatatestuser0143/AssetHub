@@ -33,10 +33,20 @@ export class RbacService extends TenantScopedRepository {
     if (!Types.ObjectId.isValid(roleId) || !Types.ObjectId.isValid(userId)) throw new Error('Invalid roleId or userId');
     const role = await this.db.role.findOne({ _id: roleId, ...this.scope(auth) }).lean();
     if (!role) throw new NotFoundException('Role not found in your scope');
-    const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth) }).lean();
+    const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
     if (!user) throw new NotFoundException('User not found in your scope');
-    if (!auth.crossCompany && role.companyId !== auth.companyId) throw new ForbiddenException('Role out of scope for this user');
-    const doc = await this.db.user.findOneAndUpdate({ _id: userId, ...this.scope(auth), roleIds: { $ne: roleId } }, { $push: { roleIds: roleId }, $inc: { authVersion: 1 } }, { new: true }).lean();
+
+    // A cross-company administrator may manage users across the tenant, but
+    // a company-scoped role must never be attached to a user from another
+    // company. Only tenant-global roles (companyId null/missing) can cross
+    // company boundaries.
+    const roleCompanyId = role.companyId == null ? null : String(role.companyId);
+    const userCompanyId = user.companyId == null ? null : String(user.companyId);
+    if (roleCompanyId !== null && roleCompanyId !== userCompanyId) {
+      throw new ForbiddenException('Role belongs to a different company');
+    }
+
+    const doc = await this.db.user.findOneAndUpdate({ _id: userId, ...this.scope(auth), roleIds: { $ne: roleId }, accountType: 'TENANT' }, { $push: { roleIds: roleId }, $inc: { authVersion: 1 } }, { new: true }).lean();
     if (!doc) throw new Error('Role already assigned');
     return toDto(doc);
   }
@@ -48,8 +58,14 @@ export class RbacService extends TenantScopedRepository {
     if (!role) throw new NotFoundException('Role not found in your scope');
     const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
     if (!user) throw new NotFoundException('User not found in your scope');
-    if (!auth.crossCompany && role.companyId !== auth.companyId) throw new ForbiddenException('Role out of scope for this user');
-    const doc = await this.db.user.findOneAndUpdate({ _id: userId, ...this.scope(auth), roleIds: roleId }, { $pull: { roleIds: roleId }, $inc: { authVersion: 1 } }, { new: true }).lean();
+
+    const roleCompanyId = role.companyId == null ? null : String(role.companyId);
+    const userCompanyId = user.companyId == null ? null : String(user.companyId);
+    if (roleCompanyId !== null && roleCompanyId !== userCompanyId) {
+      throw new ForbiddenException('Role belongs to a different company');
+    }
+
+    const doc = await this.db.user.findOneAndUpdate({ _id: userId, ...this.scope(auth), roleIds: roleId, accountType: 'TENANT' }, { $pull: { roleIds: roleId }, $inc: { authVersion: 1 } }, { new: true }).lean();
     if (!doc) throw new Error('Role is not assigned to this user');
     return toDto(doc);
   }
