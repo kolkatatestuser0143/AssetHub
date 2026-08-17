@@ -23,6 +23,44 @@ function cookieOptions() {
   return `${domain}; Path=/api/v1; Max-Age=86400; SameSite=Lax${secure}`;
 }
 
+function configuredOrigins(): string[] {
+  return (process.env.WEB_ORIGINS ?? process.env.WEB_ORIGIN ?? '')
+    .split(',')
+    .map((value) => value.trim().replace(/\/$/, ''))
+    .filter(Boolean);
+}
+
+function isTrustedBrowserOrigin(value: string): boolean {
+  if (!value || value === 'null') return false;
+  const configured = configuredOrigins();
+  if (configured.includes(value.replace(/\/$/, ''))) return true;
+
+  let origin: URL;
+  try {
+    origin = new URL(value);
+  } catch {
+    return false;
+  }
+  if (!['http:', 'https:'].includes(origin.protocol)) return false;
+
+  const root = (process.env.TENANT_ROOT_DOMAIN ?? process.env.NEXT_PUBLIC_TENANT_ROOT_DOMAIN ?? '').trim().replace(/^\.+|\.+$/g, '').toLowerCase();
+  if (!root || origin.hostname.toLowerCase() === root) return false;
+
+  // Tenant web origins are deliberately limited to one DNS label under the
+  // configured root. This avoids accepting arbitrary attacker-controlled
+  // domains that merely contain the root string.
+  return origin.hostname.toLowerCase().endsWith(`.${root}`)
+    && origin.hostname.split('.').length === root.split('.').length + 1;
+}
+
+function browserOrigin(req: any): string | undefined {
+  const origin = String(req?.headers?.origin ?? '').trim();
+  if (origin) return origin;
+  const referer = String(req?.headers?.referer ?? '').trim();
+  if (!referer) return undefined;
+  try { return new URL(referer).origin; } catch { return undefined; }
+}
+
 function constantTimeEqual(left: string, right: string): boolean {
   const a = Buffer.from(left);
   const b = Buffer.from(right);
@@ -55,8 +93,10 @@ export function csrfMiddleware(req: any, res: any, next: () => void) {
   };
 
   if (isMutating(req?.method ?? '') && hasAuthenticationCookie(req)) {
+    const origin = browserOrigin(req);
+    if (!origin || !isTrustedBrowserOrigin(origin)) throw new ForbiddenException('CSRF origin validation failed');
     const supplied = String(req?.headers?.[CSRF_HEADER] ?? '');
-    if (!supplied || !constantTimeEqual(token, supplied)) throw new ForbiddenException('CSRF validation failed');
+    if (!supplied || !constantTimeEqual(token, supplied)) throw new ForbiddenException('CSRF token validation failed');
   }
 
   next();
