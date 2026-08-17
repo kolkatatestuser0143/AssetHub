@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [mango, agent-hardening]
+  pull_request:
+    branches: [mango]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      JWT_ACCESS_SECRET: ci-only-long-random-secret-change-me
+      MONGODB_URI: mongodb://127.0.0.1:27017/itam_ci
+      MONGODB_DB: itam_ci
+      IDP_CONFIG_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build:api
+      - run: pnpm test:api -- --runInBand
+      - run: pnpm test:security
