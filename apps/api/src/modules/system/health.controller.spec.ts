@@ -6,11 +6,20 @@ describe('HealthController', () => {
     expect(controller.live()).toEqual(expect.objectContaining({ status: 'ok' }));
   });
 
-  it('reports readiness only when MongoDB and Redis are healthy', async () => {
+  it('returns HTTP 200 when dependencies are ready', async () => {
     const controller = new HealthController({ readyState: 1 } as any);
     jest.spyOn(controller as any, 'redisStatus').mockResolvedValue(true);
-    await expect(controller.ready()).resolves.toEqual(expect.objectContaining({ status: 'ready' }));
+    const response = { status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() } as any;
+    await controller.ready(response);
+    expect(response.status).toHaveBeenCalledWith(200);
+  });
+
+  it('returns HTTP 503 when a dependency is unavailable', async () => {
+    const controller = new HealthController({ readyState: 1 } as any);
     jest.spyOn(controller as any, 'redisStatus').mockResolvedValue(false);
-    await expect(controller.ready()).resolves.toEqual(expect.objectContaining({ status: 'not_ready', statusCode: 503 }));
+    const response = { status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() } as any;
+    await controller.ready(response);
+    expect(response.status).toHaveBeenCalledWith(503);
+    expect(response.json).toHaveBeenCalledWith(expect.objectContaining({ status: 'not_ready' }));
   });
 });
