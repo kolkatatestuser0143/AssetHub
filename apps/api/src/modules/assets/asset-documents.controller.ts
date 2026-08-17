@@ -29,30 +29,19 @@ export class AssetDocumentsController {
 
   @Post('uploadcare')
   @RequirePermission('asset:write')
-  registerUploadcare(@Param('assetId') assetId: string, @Body() dto: RegisterUploadcareDocumentDto, @Req() req: any) {
-    return this.documents.registerUpload(req.authContext, assetId, dto);
-  }
+  registerUploadcare(@Param('assetId') assetId: string, @Body() dto: RegisterUploadcareDocumentDto, @Req() req: any) { return this.documents.registerUpload(req.authContext, assetId, dto); }
 
   @Post()
   @RequirePermission('asset:write')
-  @UseInterceptors(FileInterceptor('file', {
-    limits: { fileSize: MAX_FILE_BYTES },
-    fileFilter: (_req, file, callback) => {
-      if (!ALLOWED_TYPES.has(file.mimetype)) { callback(new BadRequestException('Unsupported document type'), false); return; }
-      callback(null, true);
-    },
-  }))
-  upload(@Param('assetId') assetId: string, @UploadedFile() file: any, @Query('documentType') documentType: string | undefined, @Req() req: any) {
-    if (!file) throw new BadRequestException('Multipart field "file" is required');
-    return this.documents.upload(req.authContext, assetId, file, documentType);
-  }
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_FILE_BYTES }, fileFilter: (_req, file, callback) => { if (!ALLOWED_TYPES.has(String(file.mimetype).toLowerCase())) { callback(new BadRequestException('Unsupported document type'), false); return; } callback(null, true); } }))
+  upload(@Param('assetId') assetId: string, @UploadedFile() file: any, @Query('documentType') documentType: string | undefined, @Req() req: any) { if (!file) throw new BadRequestException('Multipart field "file" is required'); return this.documents.upload(req.authContext, assetId, file, documentType); }
 
   @Get(':documentId/download')
   @RequirePermission('asset:read')
   async download(@Param('assetId') assetId: string, @Param('documentId') documentId: string, @Res() res: any, @Req() req: any) {
     const result = await this.documents.download(req.authContext, assetId, documentId);
+    const safeFileName = String(result.fileName ?? 'document').replace(/[\r\n\\\"]/g, '').replace(/[\/]/g, '_').trim() || 'document';
     res.setHeader('Content-Type', result.contentType);
-    const safeFileName = result.fileName.replace(/[\r\n\"]/g, '');
     res.setHeader('Content-Disposition', `attachment; filename="${safeFileName}"`);
     res.setHeader('Content-Length', String(result.buffer.length));
     res.end(result.buffer);
