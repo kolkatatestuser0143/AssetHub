@@ -33,7 +33,9 @@ export class AssetListService extends TenantScopedRepository {
     if (query) {
       const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const regex = new RegExp(escaped, 'i');
-      const matchingTypes = await this.db.assetType.find({ companyId: auth.companyId, name: regex }).select({ _id: 1 }).lean();
+      const assetTypeFilter: Record<string, unknown> = {};
+      if (!auth.crossCompany) assetTypeFilter.companyId = auth.companyId;
+      const matchingTypes = await this.db.assetType.find({ ...assetTypeFilter, name: regex }).select({ _id: 1 }).lean();
       filter.$or = [
         { assetNumber: regex },
         { status: regex },
@@ -47,8 +49,10 @@ export class AssetListService extends TenantScopedRepository {
     ]);
 
     const typeIds = [...new Set(rows.map((row: any) => String(row.assetTypeId)).filter(Boolean))];
+    const typeFilter: Record<string, unknown> = { _id: { $in: typeIds } };
+    if (!auth.crossCompany) typeFilter.companyId = auth.companyId;
     const types = typeIds.length
-      ? await this.db.assetType.find({ _id: { $in: typeIds }, companyId: auth.companyId }).select({ _id: 1, name: 1 }).lean()
+      ? await this.db.assetType.find(typeFilter).select({ _id: 1, name: 1 }).lean()
       : [];
     const typeById = new Map(types.map((type: any) => [String(type._id), type]));
 
