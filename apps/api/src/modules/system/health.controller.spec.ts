@@ -1,7 +1,7 @@
 import { HealthController } from './health.controller';
 
 describe('HealthController', () => {
-  it('reports live without checking dependencies', async () => {
+  it('reports live without checking dependencies', () => {
     const controller = new HealthController({ readyState: 0 } as any);
     expect(controller.live()).toEqual(expect.objectContaining({ status: 'ok' }));
   });
