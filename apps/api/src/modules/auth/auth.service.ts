@@ -52,14 +52,17 @@ export class AuthService {
     if (!user.forcePasswordReset && !currentPassword) throw new BadRequestException('Current password is required');
     if (await argon2.verify(user.passwordHash, newPassword)) throw new BadRequestException('New password must be different from the current password');
     const passwordHash = await this.hashPassword(newPassword);
-    await this.db.user.updateOne({ _id: user._id }, { $set: { passwordHash, forcePasswordReset: false, updatedAt: new Date() } });
+    await this.db.user.updateOne({ _id: user._id }, { $set: { passwordHash, forcePasswordReset: false, updatedAt: new Date() }, $inc: { authVersion: 1 } });
     await this.db.session.updateMany({ userId: String(user._id), revokedAt: { $exists: false } }, { $set: { revokedAt: new Date(), revokedReason: 'password_changed' } });
     await this.db.auditEvent.create({ tenantId: user.tenantId, companyId: user.companyId, actorUserId: String(user._id), action: 'auth.password_changed', targetType: 'user', targetId: String(user._id), result: 'success', occurredAt: new Date() });
     const session = await this.sessions.issueSession(String(user._id), ip, userAgent, false);
     return { ok: true, mustChangePassword: false, ...session };
   }
 
-  async refresh(rawRefreshToken: string, ip: string, userAgent: string) { const session = await this.sessions.findByRefreshToken(rawRefreshToken); if (!session || session.revokedAt || session.expiresAt < new Date()) throw new UnauthorizedException('Invalid refresh token'); await this.sessions.revokeSession(session.id, session.userId, 'rotated'); return this.sessions.issueSession(session.userId, ip, userAgent, await this.sessions.isSystemUser(session.userId)); }
+  async refresh(rawRefreshToken: string, ip: string, userAgent: string) {
+    return this.sessions.rotateRefreshToken(rawRefreshToken, ip, userAgent);
+  }
+
   async logout(sessionId: string, userId: string) { await this.sessions.revokeSession(sessionId, userId, 'user_logout'); }
   async logoutByRefreshToken(rawRefreshToken: string) { const session = await this.sessions.findByRefreshToken(rawRefreshToken); if (session && !session.revokedAt) await this.sessions.revokeSession(session.id, session.userId, 'user_logout'); }
   private async resolveSystemPermissions(roleIds: string[]): Promise<string[]> { if (!roleIds.length) return []; const normalizedIds = roleIds.map((id) => String(id)); const objectIds = normalizedIds.filter((id) => Types.ObjectId.isValid(id)).map((id) => new Types.ObjectId(id)); const filters: Record<string, unknown>[] = [{ _id: { $in: normalizedIds } }]; if (objectIds.length) filters.push({ _id: { $in: objectIds } }); const roles = await this.db.role.find({ $or: filters }).lean(); const perms = new Set<string>(); for (const role of roles) for (const permission of role.permissions ?? []) if (permission.permissionKey) perms.add(permission.permissionKey); return [...perms]; }
