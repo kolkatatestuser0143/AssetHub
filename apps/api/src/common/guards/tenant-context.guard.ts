@@ -34,12 +34,12 @@ export class TenantContextGuard implements CanActivate {
       if (!user || user.isActive === false) throw new UnauthorizedException('Tenant account is inactive');
       if (Number(payload.authVersion ?? 0) !== Number(user.authVersion ?? 0)) throw new UnauthorizedException('Session is no longer valid');
       const tenant = await this.db.tenant.findById(payload.tenantId).select({ status: 1 }).lean();
-      if (!tenant) throw new UnauthorizedException('Tenant is unavailable');
-      // Existing tenants created before TenantStatus was introduced may not
-      // have a status field. Treat a missing status as the historical default
-      // (active), while still blocking explicit suspended/archived tenants.
-      if (tenant.status === TenantStatus.SUSPENDED) throw new UnauthorizedException('Tenant is suspended');
-      if (tenant.status === TenantStatus.ARCHIVED) throw new UnauthorizedException('Tenant is archived');
+      if (!tenant) throw new UnauthorizedException('Tenant account is unavailable');
+      if (tenant.status !== TenantStatus.ACTIVE) {
+        if (tenant.status === TenantStatus.SUSPENDED) throw new UnauthorizedException('This tenant is suspended. Please contact your system administrator.');
+        if (tenant.status === TenantStatus.ARCHIVED) throw new UnauthorizedException('This tenant is archived and cannot be accessed.');
+        throw new UnauthorizedException('This tenant account is unavailable. Please contact your system administrator.');
+      }
 
       req.authContext = {
         userId: payload.sub,
