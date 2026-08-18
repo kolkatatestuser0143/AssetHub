@@ -56,8 +56,8 @@ export type SiteDocument = HydratedDocument<Site>;
 
 @Schema({ collection: 'plants', timestamps: true, versionKey: false })
 export class Site {
-  @Prop({ required: true, index: true }) type!: SiteType;
   @Prop({ required: true, index: true }) companyId!: string;
+  @Prop({ required: true, enum: SiteType, default: SiteType.PLANT }) type!: SiteType;
   @Prop({ required: true }) name!: string;
 }
 
