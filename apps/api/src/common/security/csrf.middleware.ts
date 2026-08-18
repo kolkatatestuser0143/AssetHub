@@ -16,13 +16,28 @@ function parseCookies(header?: string): Record<string, string> {
   }, {});
 }
 
-function cookieOptions() {
+function cookieDomain(): string {
   const root = (process.env.TENANT_ROOT_DOMAIN ?? process.env.NEXT_PUBLIC_TENANT_ROOT_DOMAIN ?? '').trim().replace(/^\.+|\.+$/g, '');
-  const domain = root && !/^(localhost|127\.0\.0\.1)$/i.test(root) ? `; Domain=.${root}` : '';
+  return root && !/^(localhost|127\.0\.0\.1)$/i.test(root) ? `; Domain=.${root}` : '';
+}
+
+function cookieOptions() {
+  const domain = cookieDomain();
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
   // The CSRF token is intentionally readable by the web app so it can be
   // echoed in X-CSRF-Token for authenticated state-changing requests.
   return `${domain}; Path=/; Max-Age=86400; SameSite=Lax${secure}`;
+}
+
+function legacyCookieCleanup() {
+  // Older builds used Path=/api/v1. Keep removing that legacy cookie so the
+  // browser cannot retain two same-name CSRF cookies and send/read different
+  // values depending on request path.
+  const domain = cookieDomain();
+  return [
+    `${CSRF_COOKIE}=;${domain}; Path=/api/v1; Max-Age=0; SameSite=Lax`,
+    `${CSRF_COOKIE}=;${domain}; Path=/api/v1/auth; Max-Age=0; SameSite=Lax`,
+  ];
 }
 
 function configuredOrigins(): string[] {
@@ -85,6 +100,9 @@ export function csrfMiddleware(req: any, res: any, next: () => void) {
     if (String(name).toLowerCase() === 'set-cookie') {
       const values = Array.isArray(value) ? [...value] : [value];
       if (!values.some((item: unknown) => String(item).startsWith(`${CSRF_COOKIE}=`))) values.push(csrfCookie);
+      for (const cleanup of legacyCookieCleanup()) {
+        if (!values.some((item: unknown) => String(item).startsWith(`${CSRF_COOKIE}=`) && String(item).includes('Max-Age=0'))) values.push(cleanup);
+      }
       return originalSetHeader(name, values);
     }
     return originalSetHeader(name, value);
