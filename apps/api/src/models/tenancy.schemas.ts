@@ -14,7 +14,7 @@ export enum TenantStatus {
 export class Tenant {
   @Prop({ required: true }) name!: string;
   @Prop({ required: true, unique: true }) slug!: string;
-  @Prop({ enum: TenantStatus, default: TenantStatus.ACTIVE, index: true }) status!: TenantStatus;
+  @Prop({ required: true, enum: TenantStatus, default: TenantStatus.ACTIVE, index: true }) status!: TenantStatus;
   @Prop({ sparse: true }) primaryUserId?: string;
   @Prop() primaryEmail?: string;
   @Prop() phone?: string;
@@ -56,8 +56,8 @@ export type SiteDocument = HydratedDocument<Site>;
 
 @Schema({ collection: 'plants', timestamps: true, versionKey: false })
 export class Site {
+  @Prop({ required: true, index: true }) type!: SiteType;
   @Prop({ required: true, index: true }) companyId!: string;
-  @Prop({ required: true, enum: SiteType, default: SiteType.PLANT }) type!: SiteType;
   @Prop({ required: true }) name!: string;
 }
 
