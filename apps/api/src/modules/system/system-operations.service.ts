@@ -7,14 +7,13 @@ const QUEUE_NAME = 'assethub-maintenance';
 @Injectable()
 export class SystemOperationsService {
   private connection() {
-    return new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', { maxRetriesPerRequest: null, lazyConnect: true });
+    return new IORedis(process.env.REDIS_URL || 'redis://localhost:6379', { maxRetriesPerRequest: null });
   }
 
   async jobs() {
     const connection = this.connection();
     const queue = new Queue(QUEUE_NAME, { connection });
     try {
-      await connection.connect();
       const [counts, jobs] = await Promise.all([
         queue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed', 'paused'),
         queue.getJobs(['waiting', 'active', 'failed', 'delayed'], 0, 49, true),
@@ -44,7 +43,6 @@ export class SystemOperationsService {
     const connection = this.connection();
     const queue = new Queue(QUEUE_NAME, { connection });
     try {
-      await connection.connect();
       await connection.ping();
       const counts = await queue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed', 'paused');
       return { status: 'healthy', latencyMs: Date.now() - started, redis: 'healthy', queue: QUEUE_NAME, counts };
