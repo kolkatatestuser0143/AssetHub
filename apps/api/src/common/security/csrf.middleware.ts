@@ -30,9 +30,8 @@ function cookieOptions() {
 }
 
 function legacyCookieCleanup() {
-  // Older builds used Path=/api/v1. Keep removing that legacy cookie so the
-  // browser cannot retain two same-name CSRF cookies and send/read different
-  // values depending on request path.
+  // Older builds used narrower paths. Remove those cookies so the browser
+  // cannot retain two same-name CSRF cookies and send/read different values.
   const domain = cookieDomain();
   return [
     `${CSRF_COOKIE}=;${domain}; Path=/api/v1; Max-Age=0; SameSite=Lax`,
@@ -99,9 +98,9 @@ export function csrfMiddleware(req: any, res: any, next: () => void) {
   res.setHeader = (name: string, value: unknown) => {
     if (String(name).toLowerCase() === 'set-cookie') {
       const values = Array.isArray(value) ? [...value] : [value];
-      if (!values.some((item: unknown) => String(item).startsWith(`${CSRF_COOKIE}=`))) values.push(csrfCookie);
+      if (!values.some((item: unknown) => String(item).startsWith(`${CSRF_COOKIE}=`) && !String(item).includes('Max-Age=0'))) values.push(csrfCookie);
       for (const cleanup of legacyCookieCleanup()) {
-        if (!values.some((item: unknown) => String(item).startsWith(`${CSRF_COOKIE}=`) && String(item).includes('Max-Age=0'))) values.push(cleanup);
+        if (!values.some((item: unknown) => String(item) === cleanup)) values.push(cleanup);
       }
       return originalSetHeader(name, values);
     }
