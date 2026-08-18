@@ -21,7 +21,12 @@ export class AuthService {
     const slug = tenantSlug?.trim().toLowerCase();
     if (slug) {
       const tenant = await this.db.tenant.findOne({ slug }).select({ _id: 1, status: 1 }).lean();
-      if (!tenant || tenant.status !== TenantStatus.ACTIVE) throw new UnauthorizedException('Tenant is unavailable');
+      if (!tenant) throw new UnauthorizedException('Tenant is unavailable');
+      // Tenants created before TenantStatus was introduced may not have a
+      // status field. Preserve the historical active default while blocking
+      // explicitly suspended or archived tenants.
+      if (tenant.status === TenantStatus.SUSPENDED) throw new UnauthorizedException('Tenant is suspended');
+      if (tenant.status === TenantStatus.ARCHIVED) throw new UnauthorizedException('Tenant is archived');
       userDoc = await this.db.user.findOne({ email: normalizedEmail, accountType: UserAccountType.TENANT, tenantId: String(tenant._id) }).lean();
     } else {
       if (process.env.REQUIRE_TENANT_HOST === 'true' && process.env.NODE_ENV === 'production') throw new UnauthorizedException('Tenant login domain is required');
