@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState, type ComponentType } from 'react';
-import { AlertTriangle, ArrowRight, Boxes, CheckCircle2, Clock3, History, RefreshCw, Search, Wrench } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, ArrowRight, Boxes, CheckCircle2, Clock3, History, RefreshCw, Search, Wrench, type LucideIcon } from 'lucide-react';
 import { apiFetch } from '../../../../lib/api-client';
 import { StatusBadge } from '../../../../components/ui';
 
@@ -22,7 +22,7 @@ type PageResponse = {
 type Metric = {
   title: string;
   value: number;
-  Icon: ComponentType<{ size?: number; className?: string }>;
+  Icon: LucideIcon;
   hint: string;
 };
 
