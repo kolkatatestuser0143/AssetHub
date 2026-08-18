@@ -80,6 +80,7 @@ function constantTimeEqual(left: string, right: string): boolean {
 
 function isMutating(method: string): boolean { return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method.toUpperCase()); }
 function isAuthenticationTransition(path: string): boolean { return path === '/auth/login' || path === '/auth/system/login'; }
+function isSessionRefresh(path: string): boolean { return path === '/auth/refresh'; }
 function hasAuthenticationCookie(req: any): boolean {
   const cookies = parseCookies(req?.headers?.cookie);
   return Boolean(cookies.assethub_tenant_access?.length || cookies.assethub_tenant_refresh?.length || cookies.assethub_system_access?.length || cookies.assethub_system_refresh?.length);
@@ -106,10 +107,15 @@ export function csrfMiddleware(req: any, res: any, next: () => void) {
     const path = String(req?.originalUrl ?? req?.url ?? '').split('?')[0].replace(/^\/api\/v1/, '') || '/';
     const origin = browserOrigin(req);
 
-    // Login starts a new authentication state. Validate the browser origin,
-    // but do not require a token from a stale authentication session.
     if (isAuthenticationTransition(path)) {
       if (origin && !isTrustedBrowserOrigin(origin)) throw new ForbiddenException('CSRF origin validation failed');
+      return next();
+    }
+
+    if (isSessionRefresh(path)) {
+      // Refresh rotates an HttpOnly refresh token. A trusted Origin check
+      // prevents cross-site requests without depending on a stale CSRF token.
+      if (!origin || !isTrustedBrowserOrigin(origin)) throw new ForbiddenException('CSRF origin validation failed');
       return next();
     }
 
