@@ -20,7 +20,9 @@ function cookieOptions() {
   const root = (process.env.TENANT_ROOT_DOMAIN ?? process.env.NEXT_PUBLIC_TENANT_ROOT_DOMAIN ?? '').trim().replace(/^\.+|\.+$/g, '');
   const domain = root && !/^(localhost|127\.0\.0\.1)$/i.test(root) ? `; Domain=.${root}` : '';
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-  return `${domain}; Path=/api/v1; Max-Age=86400; SameSite=Lax${secure}`;
+  // The CSRF token is intentionally readable by the web app so it can be
+  // echoed in X-CSRF-Token for authenticated state-changing requests.
+  return `${domain}; Path=/; Max-Age=86400; SameSite=Lax${secure}`;
 }
 
 function configuredOrigins(): string[] {
@@ -47,9 +49,6 @@ function isTrustedBrowserOrigin(value: string): boolean {
   const root = (process.env.TENANT_ROOT_DOMAIN ?? process.env.NEXT_PUBLIC_TENANT_ROOT_DOMAIN ?? '').trim().replace(/^\.+|\.+$/g, '').toLowerCase();
   if (!root || origin.hostname.toLowerCase() === root) return false;
 
-  // Tenant web origins are deliberately limited to one DNS label under the
-  // configured root. This avoids accepting arbitrary attacker-controlled
-  // domains that merely contain the root string.
   return origin.hostname.toLowerCase().endsWith(`.${root}`)
     && origin.hostname.split('.').length === root.split('.').length + 1;
 }
