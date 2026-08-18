@@ -2,14 +2,18 @@
 
 import Link from 'next/link';
 import { AlertCircle, CheckCircle2, Info, Loader2, Plus, RefreshCw, Search, TriangleAlert, X } from 'lucide-react';
-import { type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { type ButtonHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react';
 
 export function PageHeader({ title, description, action, actionHref }: { title: string; description?: string; action?: string; actionHref?: string }) {
   return <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between page-section-enter"><div className="min-w-0"><h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">{title}</h1>{description ? <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">{description}</p> : null}</div>{action ? actionHref ? <Link href={actionHref} className="btn-primary ui-interactive shrink-0"><Plus size={16}/>{action}</Link> : <button type="button" className="btn-primary ui-interactive shrink-0"><Plus size={16}/>{action}</button> : null}</div>;
 }
 
+export function Select({ className = '', ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
+  return <select {...props} className={`field ui-interactive ${className}`} />;
+}
+
 export function Toolbar({ placeholder = 'Search…' }: { placeholder?: string }) {
-  return <div className="panel mb-4 flex flex-col gap-3 p-3 sm:flex-row ui-surface-enter"><label className="flex min-h-11 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-sm transition focus-within:border-[var(--theme-focus)] focus-within:ring-4 focus-within:ring-[color-mix(in_srgb,var(--theme-focus)_10%,transparent)]"><Search size={16} className="shrink-0 text-slate-400"/><input className="w-full bg-transparent py-2 text-sm outline-none placeholder:text-slate-400" placeholder={placeholder}/></label><select className="field min-h-11 sm:w-44"><option>All statuses</option><option>Active</option><option>Inactive</option></select><button type="button" className="btn-secondary ui-interactive">Filters</button></div>;
+  return <div className="panel mb-4 flex flex-col gap-3 p-3 sm:flex-row ui-surface-enter"><label className="flex min-h-11 flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-sm transition focus-within:border-[var(--theme-focus)] focus-within:ring-4 focus-within:ring-[color-mix(in_srgb,var(--theme-focus)_10%,transparent)]"><Search size={16} className="shrink-0 text-slate-400"/><input className="w-full bg-transparent py-2 text-sm outline-none placeholder:text-slate-400" placeholder={placeholder}/></label><Select className="min-h-11 sm:w-44"><option>All statuses</option><option>Active</option><option>Inactive</option></Select><button type="button" className="btn-secondary ui-interactive">Filters</button></div>;
 }
 
 export function Button({ children, className = '', loading = false, variant = 'primary', size = 'md', icon, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { loading?: boolean; variant?: 'primary' | 'secondary' | 'ghost' | 'danger'; size?: 'sm' | 'md' | 'lg'; icon?: ReactNode }) {
