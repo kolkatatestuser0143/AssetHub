@@ -21,28 +21,30 @@ export class AuthService {
     const slug = tenantSlug?.trim().toLowerCase();
     if (slug) {
       const tenant = await this.db.tenant.findOne({ slug }).select({ _id: 1, status: 1 }).lean();
-      if (!tenant) throw new UnauthorizedException('Tenant is unavailable');
-      // Tenants created before TenantStatus was introduced may not have a
-      // status field. Preserve the historical active default while blocking
-      // explicitly suspended or archived tenants.
-      if (tenant.status === TenantStatus.SUSPENDED) throw new UnauthorizedException('Tenant is suspended');
-      if (tenant.status === TenantStatus.ARCHIVED) throw new UnauthorizedException('Tenant is archived');
+      if (!tenant) throw new UnauthorizedException('This tenant account is unavailable. Please contact your system administrator.');
+      if (tenant.status !== TenantStatus.ACTIVE) {
+        if (tenant.status === TenantStatus.SUSPENDED) throw new UnauthorizedException('This tenant is suspended. Please contact your system administrator.');
+        if (tenant.status === TenantStatus.ARCHIVED) throw new UnauthorizedException('This tenant is archived and cannot be accessed.');
+        throw new UnauthorizedException('This tenant account is unavailable. Please contact your system administrator.');
+      }
       userDoc = await this.db.user.findOne({ email: normalizedEmail, accountType: UserAccountType.TENANT, tenantId: String(tenant._id) }).lean();
     } else {
       if (process.env.REQUIRE_TENANT_HOST === 'true' && process.env.NODE_ENV === 'production') throw new UnauthorizedException('Tenant login domain is required');
       userDoc = await this.db.user.findOne({ email: normalizedEmail, accountType: UserAccountType.TENANT }).lean();
     }
     const user = userDoc ? toDto(userDoc) : null;
-    if (user?.lockedUntil && new Date(user.lockedUntil).getTime() > Date.now()) {
-      await this.recordLoginAttempt(user.id, false, ip, userAgent, 'account_locked');
-      throw new UnauthorizedException('Account temporarily locked. Try again later.');
-    }
-    if (!user || !user.passwordHash || !(await argon2.verify(user.passwordHash, password))) {
-      await this.recordLoginAttempt(user?.id ?? null, false, ip, userAgent, 'invalid_credentials');
-      if (user?.id) await this.registerFailedLogin(user.id);
-      throw new UnauthorizedException('Invalid email or password');
-    }
+    if (user?.lockedUntil && new Date(user.lockedUntil).getTime() > Date.now()) { await this.recordLoginAttempt(user.id, false, ip, userAgent, 'account_locked'); throw new UnauthorizedException('Account temporarily locked. Try again later.'); }
+    if (!user || !user.passwordHash || !(await argon2.verify(user.passwordHash, password))) { await this.recordLoginAttempt(user?.id ?? null, false, ip, userAgent, 'invalid_credentials'); if (user?.id) await this.registerFailedLogin(user.id); throw new UnauthorizedException('Invalid email or password'); }
     if (!user.isActive) { await this.recordLoginAttempt(user.id, false, ip, userAgent, 'account_inactive'); throw new UnauthorizedException('Account is inactive'); }
+    if (user.tenantId) {
+      const tenant = await this.db.tenant.findById(user.tenantId).select({ status: 1 }).lean();
+      if (!tenant) throw new UnauthorizedException('This tenant account is unavailable. Please contact your system administrator.');
+      if (tenant.status !== TenantStatus.ACTIVE) {
+        if (tenant.status === TenantStatus.SUSPENDED) throw new UnauthorizedException('This tenant is suspended. Please contact your system administrator.');
+        if (tenant.status === TenantStatus.ARCHIVED) throw new UnauthorizedException('This tenant is archived and cannot be accessed.');
+        throw new UnauthorizedException('This tenant account is unavailable. Please contact your system administrator.');
+      }
+    }
     await this.clearFailedLogins(user.id);
     await this.recordLoginAttempt(user.id, true, ip, userAgent, null);
     return this.sessions.issueSession(user.id, ip, userAgent, false);
@@ -53,16 +55,11 @@ export class AuthService {
     const userDoc = await this.db.user.findOne({ email: normalizedEmail, accountType: UserAccountType.SYSTEM }).lean();
     const user = userDoc ? toDto(userDoc) : null;
     if (user?.lockedUntil && new Date(user.lockedUntil).getTime() > Date.now()) { await this.recordLoginAttempt(user.id, false, ip, userAgent, 'account_locked'); throw new UnauthorizedException('Account temporarily locked. Try again later.'); }
-    if (!user || !user.passwordHash || !(await argon2.verify(user.passwordHash, password))) {
-      await this.recordLoginAttempt(user?.id ?? null, false, ip, userAgent, 'invalid_system_credentials');
-      if (user?.id) await this.registerFailedLogin(user.id);
-      throw new UnauthorizedException('Invalid system administrator credentials');
-    }
+    if (!user || !user.passwordHash || !(await argon2.verify(user.passwordHash, password))) { await this.recordLoginAttempt(user?.id ?? null, false, ip, userAgent, 'invalid_system_credentials'); if (user?.id) await this.registerFailedLogin(user.id); throw new UnauthorizedException('Invalid system administrator credentials'); }
     if (!user.isActive) { await this.recordLoginAttempt(user.id, false, ip, userAgent, 'account_inactive'); throw new UnauthorizedException('System administrator account is inactive'); }
     const permissions = await this.resolveSystemPermissions(user.roleIds ?? []);
     if (!permissions.includes('platform:console:access')) { await this.recordLoginAttempt(user.id, false, ip, userAgent, 'missing_console_permission'); throw new UnauthorizedException('Account is not permitted to access the system console'); }
-    await this.clearFailedLogins(user.id);
-    await this.recordLoginAttempt(user.id, true, ip, userAgent, null);
+    await this.clearFailedLogins(user.id); await this.recordLoginAttempt(user.id, true, ip, userAgent, null);
     return this.sessions.issueSession(user.id, ip, userAgent, true);
   }
 
@@ -86,19 +83,7 @@ export class AuthService {
   async logout(sessionId: string, userId: string) { await this.sessions.revokeSession(sessionId, userId, 'user_logout'); }
   async logoutByRefreshToken(rawRefreshToken: string) { const session = await this.sessions.findByRefreshToken(rawRefreshToken); if (session && !session.revokedAt) await this.sessions.revokeSession(session.id, session.userId, 'user_logout'); }
 
-  private async registerFailedLogin(userId: string) {
-    const now = new Date();
-    const user = await this.db.user.findById(userId).select({ failedLoginAttempts: 1, lockedUntil: 1 }).lean();
-    if (!user) return;
-    if (user.lockedUntil && new Date(user.lockedUntil).getTime() <= now.getTime()) {
-      await this.db.user.updateOne({ _id: userId }, { $set: { failedLoginAttempts: 1 }, $unset: { lockedUntil: 1 } });
-      return;
-    }
-    const attempts = Number(user.failedLoginAttempts ?? 0) + 1;
-    if (attempts >= MAX_FAILED_LOGINS) await this.db.user.updateOne({ _id: userId }, { $set: { failedLoginAttempts: attempts, lockedUntil: new Date(now.getTime() + LOCKOUT_MS) } });
-    else await this.db.user.updateOne({ _id: userId }, { $set: { failedLoginAttempts: attempts } });
-  }
-
+  private async registerFailedLogin(userId: string) { const now = new Date(); const user = await this.db.user.findById(userId).select({ failedLoginAttempts: 1, lockedUntil: 1 }).lean(); if (!user) return; if (user.lockedUntil && new Date(user.lockedUntil).getTime() <= now.getTime()) { await this.db.user.updateOne({ _id: userId }, { $set: { failedLoginAttempts: 1 }, $unset: { lockedUntil: 1 } }); return; } const attempts = Number(user.failedLoginAttempts ?? 0) + 1; if (attempts >= MAX_FAILED_LOGINS) await this.db.user.updateOne({ _id: userId }, { $set: { failedLoginAttempts: attempts, lockedUntil: new Date(now.getTime() + LOCKOUT_MS) } }); else await this.db.user.updateOne({ _id: userId }, { $set: { failedLoginAttempts: attempts } }); }
   private async clearFailedLogins(userId: string) { await this.db.user.updateOne({ _id: userId }, { $set: { failedLoginAttempts: 0 }, $unset: { lockedUntil: 1 } }); }
   private async resolveSystemPermissions(roleIds: string[]): Promise<string[]> { if (!roleIds.length) return []; const normalizedIds = roleIds.map((id) => String(id)); const objectIds = normalizedIds.filter((id) => Types.ObjectId.isValid(id)).map((id) => new Types.ObjectId(id)); const filters: Record<string, unknown>[] = [{ _id: { $in: normalizedIds } }]; if (objectIds.length) filters.push({ _id: { $in: objectIds } }); const roles = await this.db.role.find({ $or: filters }).lean(); const perms = new Set<string>(); for (const role of roles) for (const permission of role.permissions ?? []) if (permission.permissionKey) perms.add(permission.permissionKey); return [...perms]; }
   private async recordLoginAttempt(userId: string | null, success: boolean, ip: string, userAgent: string, reason: string | null) { if (!userId) return; await this.db.loginHistory.create({ userId, success, ipAddress: ip, userAgent, reason: reason ?? undefined, occurredAt: new Date() }); }
