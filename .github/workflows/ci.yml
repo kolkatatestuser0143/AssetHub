@@ -2,9 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [mango, agent/production-hardening]
+    branches: [mango, production-release-gate]
   pull_request:
-    branches: [mango]
+    branches: [mango, production-release-gate]
+  workflow_dispatch:
 
 jobs:
   build-and-test:
@@ -41,23 +42,21 @@ jobs:
           set -euo pipefail
           docker run -d --name assethub-mongo-ci -p 27017:27017 mongo:7 mongod --replSet rs0 --bind_ip_all
           for i in {1..60}; do
-            if docker exec assethub-mongo-ci mongosh --quiet --eval "db.adminCommand({ping:1}).ok" | grep -q 1; then
-              break
-            fi
+            if docker exec assethub-mongo-ci mongosh --quiet --eval "db.adminCommand({ping:1}).ok" | grep -q 1; then break; fi
             sleep 2
           done
           docker exec assethub-mongo-ci mongosh --quiet --eval "rs.initiate({_id:'rs0',members:[{_id:0,host:'127.0.0.1:27017'}]})" || true
           for i in {1..60}; do
-            if docker exec assethub-mongo-ci mongosh --quiet --eval "rs.status().myState" | grep -q 1; then
-              break
-            fi
+            if docker exec assethub-mongo-ci mongosh --quiet --eval "rs.status().myState" | grep -q 1; then break; fi
             sleep 2
           done
           docker exec assethub-mongo-ci mongosh --quiet --eval "rs.status().myState"
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
       - name: Build API
         run: pnpm build:api
+      - name: Build web
+        run: pnpm --filter web build
       - name: Run API tests
         run: pnpm --filter api exec jest --runInBand
       - name: Run security tests

@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, HttpCode, HttpStatus, ServiceUnavailableException } from '@nestjs/common';
 import { InjectConnection } from '@nestjs/mongoose';
 import { Connection } from 'mongoose';
 import IORedis from 'ioredis';
@@ -23,8 +23,11 @@ export class HealthController {
   async ready() {
     const mongo = this.mongo.readyState === 1;
     const redis = await this.redisStatus();
-    if (!mongo || !redis) return { statusCode: HttpStatus.SERVICE_UNAVAILABLE, status: 'not_ready', checks: { mongodb: mongo ? 'healthy' : 'unhealthy', redis: redis ? 'healthy' : 'unhealthy' } };
-    return { status: 'ready', checks: { mongodb: 'healthy', redis: 'healthy' } };
+    const checks = { mongodb: mongo ? 'healthy' : 'unhealthy', redis: redis ? 'healthy' : 'unhealthy' };
+    if (!mongo || !redis) {
+      throw new ServiceUnavailableException({ status: 'not_ready', checks });
+    }
+    return { status: 'ready', checks };
   }
 
   private async redisStatus() {

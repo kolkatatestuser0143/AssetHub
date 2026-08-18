@@ -1,16 +1,16 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ComponentType } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { ArrowRight, Boxes, CheckCircle2, ClipboardCheck, ClipboardList, History, Plus, RefreshCw, Search, UserRoundCheck, UserRoundX, X, type LucideIcon } from 'lucide-react';
 import { apiFetch } from '../../../lib/api-client';
-import { ArrowRight, Boxes, CheckCircle2, ClipboardCheck, ClipboardList, History, Plus, RefreshCw, Search, UserRoundCheck, UserRoundX, X } from 'lucide-react';
 import { StatusBadge, Button, EmptyState } from '../../../components/ui';
 
 type Asset = { id: string; assetNumber: string; status: string; condition?: string; assetType?: { name: string } };
 type User = { id: string; email: string; firstName: string; lastName: string; isActive: boolean };
 type Assignment = { id: string; assetId: string; userId?: string; assignedAt: string; returnedAt?: string; notes?: string; conditionAtReturn?: string; active: boolean; asset?: Asset | null; user?: User | null };
 const RETURN_CONDITIONS = ['NEW','GOOD','FAIR','DAMAGED','NEEDS_INSPECTION'];
-type Metric = { label: string; value: number; desc: string; iconClass: string; Icon: ComponentType<{ size?: number; className?: string }> };
+type Metric = { label: string; value: number; desc: string; iconClass: string; Icon: LucideIcon };
 
 function getUserFacingError(error: unknown, fallback: string) {
   const message = error instanceof Error ? error.message : '';
@@ -29,7 +29,6 @@ export default function AssignmentsPage() {
 
   async function load(){setLoading(true);setError(null);try{const [assetData,userData,assignmentData]=await Promise.all([apiFetch('/assets?status=IN_STOCK&page=1&pageSize=100'),apiFetch('/users'),apiFetch('/assets/assignments')]);setAssets(Array.isArray(assetData?.items)?assetData.items:[]);setUsers(Array.isArray(userData)?userData:[]);setAssignments(Array.isArray(assignmentData)?assignmentData:[]);}catch(err:unknown){setError(getUserFacingError(err,'Unable to load assignment data.'));}finally{setLoading(false);}}
   useEffect(()=>{void load();},[]);
-
   const activeAssignments=useMemo(()=>assignments.filter(item=>item.active),[assignments]);
   const returnedAssignments=useMemo(()=>assignments.filter(item=>!item.active),[assignments]);
   const activeAssetIds=useMemo(()=>new Set(activeAssignments.map(item=>item.assetId)),[activeAssignments]);
@@ -42,10 +41,8 @@ export default function AssignmentsPage() {
     {label:'Returned',value:returnedAssignments.length,desc:'Closed custody records',iconClass:'text-slate-600 bg-slate-100',Icon:UserRoundX},
     {label:'Total records',value:assignments.length,desc:'Complete assignment history',iconClass:'text-violet-600 bg-violet-50',Icon:History},
   ];
-
   async function assign(){if(!assetId||!userId)return;setSubmitting(true);setError(null);setSuccess(null);try{await apiFetch(`/assets/${assetId}/assign`,{method:'POST',body:JSON.stringify({userId,notes:notes.trim()||undefined})});setAssetId('');setUserId('');setNotes('');setShowAssign(false);setSuccess('Asset assigned successfully.');await load();}catch(err:unknown){setError(getUserFacingError(err,'Unable to assign asset. Refresh the list and try again.'));await load();}finally{setSubmitting(false);}}
   async function unassign(){if(!returning)return;setSubmitting(true);setError(null);setSuccess(null);try{await apiFetch(`/assets/${returning.assetId}/unassign`,{method:'POST',body:JSON.stringify({condition:returnCondition,notes:returnNotes.trim()||undefined})});setSuccess('Asset returned successfully and custody has been closed.');setReturning(null);setReturnNotes('');setReturnCondition('GOOD');await load();}catch(err:unknown){setError(getUserFacingError(err,'Unable to return asset. Please refresh the list and try again.'));}finally{setSubmitting(false);}}
-
   return <div className="mx-auto max-w-[1450px] space-y-6">
     <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--theme-link)]">Operations · Custody</p><h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">Asset custody</h1><p className="mt-2 max-w-2xl text-sm text-slate-500">One workflow for issuing, acknowledging, returning and auditing physical asset ownership.</p></div><div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={() => void load()} loading={loading} icon={<RefreshCw size={16}/>}>Refresh</Button><Button onClick={()=>setShowAssign(v=>!v)} icon={showAssign?<X size={16}/>:<Plus size={16}/>}>{showAssign?'Close':'Assign asset'}</Button></div></header>
     {success&&<div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800" role="status"><div className="flex items-center gap-2 font-semibold"><CheckCircle2 size={17}/> {success}</div></div>}
