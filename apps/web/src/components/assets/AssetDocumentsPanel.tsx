@@ -12,101 +12,20 @@ const UPLOADCARE_PUBLIC_KEY = process.env.NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY ?? '
 const UPLOADCARE_CDN_CNAME = process.env.NEXT_PUBLIC_UPLOADCARE_CDN_CNAME || 'https://2dz1x345xl.ucarecd.net/';
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001/api/v1';
 
-function formatBytes(value?: number) {
-  if (!value) return '—';
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-}
+function formatBytes(value?: number) { if (!value) return '—'; if (value < 1024) return `${value} B`; if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`; return `${(value / (1024 * 1024)).toFixed(1)} MB`; }
 function label(value?: string) { return (value ?? 'OTHER').replaceAll('_', ' '); }
 function isImage(document: DocumentItem) { return document.contentType?.startsWith('image/') || document.documentType === 'PHOTO'; }
 
 export default function AssetDocumentsPanel({ assetId }: { assetId: string }) {
-  const [documents, setDocuments] = useState<DocumentItem[]>([]);
-  const [documentType, setDocumentType] = useState('OTHER');
-  const [filter, setFilter] = useState('ALL');
-  const [loading, setLoading] = useState(true);
-  const [registering, setRegistering] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState<string | null>(null);
+  const [documents, setDocuments] = useState<DocumentItem[]>([]); const [documentType, setDocumentType] = useState('OTHER'); const [filter, setFilter] = useState('ALL'); const [loading, setLoading] = useState(true); const [registering, setRegistering] = useState(false); const [error, setError] = useState<string | null>(null); const [message, setMessage] = useState<string | null>(null); const [deleting, setDeleting] = useState<string | null>(null);
+  async function load(){setLoading(true);setError(null);try{const data=await apiFetch(`/assets/${assetId}/documents`);setDocuments(Array.isArray(data)?data:[]);}catch(err:any){setError(err?.message??'Unable to load asset documents.');}finally{setLoading(false);}}
+  useEffect(()=>{void load();},[assetId]);
+  async function registerUpload(entry:any){if(!entry||entry.status!=='success')return;const file=entry.fileInfo??entry;const uuid=String(entry.uuid??file.uuid??'').trim();const fileName=String(entry.name??entry.fileName??file.name??file.filename??'').trim();const contentType=String(entry.mimeType??entry.contentType??file.mimeType??file.mime_type??'application/octet-stream');const sizeBytes=Number(entry.size??file.size??0);if(!uuid||!fileName){setError('The upload completed, but AssetHub did not receive the required file information.');return;}setRegistering(true);setError(null);setMessage(null);try{const data=await apiFetch(`/assets/${assetId}/documents/uploadcare`,{method:'POST',body:JSON.stringify({uuid,fileName,contentType,sizeBytes,documentType})});setDocuments(current=>[data,...current.filter(item=>item.id!==data.id)]);setMessage(`${fileName} was attached successfully.`);}catch(err:any){setError(err?.message??'The file uploaded, but AssetHub could not attach it to this asset.');}finally{setRegistering(false);}}
+  async function download(document:DocumentItem){setError(null);try{const response=await fetch(`${API_BASE}/assets/${assetId}/documents/${document.id}/download`,{credentials:'include'});if(!response.ok){const body=await response.json().catch(()=>({}));throw new Error(body.message??'Unable to download document.');}const blob=await response.blob();const url=URL.createObjectURL(blob);const anchor=window.document.createElement('a');anchor.href=url;anchor.download=document.fileName;anchor.click();URL.revokeObjectURL(url);}catch(err:any){setError(err?.message??'Unable to download document.');}}
+  async function remove(document:DocumentItem){if(!window.confirm(`Delete “${document.fileName}”? This removes the document attachment from the asset.`))return;setDeleting(document.id);setError(null);setMessage(null);try{await apiFetch(`/assets/${assetId}/documents/${document.id}`,{method:'DELETE'});setDocuments(current=>current.filter(item=>item.id!==document.id));setMessage('Document deleted.');}catch(err:any){setError(err?.message??'Unable to delete document.');}finally{setDeleting(null);}}
+  const counts=useMemo(()=>DOCUMENT_TYPES.reduce<Record<string,number>>((acc,type)=>{acc[type]=documents.filter(item=>(item.documentType??'OTHER')===type).length;return acc;},{}),[documents]);
+  const filtered=filter==='ALL'?documents:documents.filter(item=>(item.documentType??'OTHER')===filter);
+  const uploadcareProps = { pubkey: UPLOADCARE_PUBLIC_KEY, cdnCname: UPLOADCARE_CDN_CNAME, sourceList: 'local, camera, dropbox, gdrive', dynamicButton: true, dynamicButtonViewMode: 'plain' as const, className: 'assethub-uploadcare', multiple: false, maxLocalFileSizeBytes: 25 * 1024 * 1024, onChange: (event: any) => { const entries = Array.isArray(event?.allEntries) ? event.allEntries.filter((entry: any) => entry.status === 'success') : []; const latest = entries.at(-1); if (latest) void registerUpload(latest); }, onFileUploadFailed: (event: any) => setError(event?.errors?.[0]?.message ?? 'Upload failed. Please check the file type and size.') };
 
-  async function load() {
-    setLoading(true); setError(null);
-    try { const data = await apiFetch(`/assets/${assetId}/documents`); setDocuments(Array.isArray(data) ? data : []); }
-    catch (err: any) { setError(err?.message ?? 'Unable to load asset documents.'); }
-    finally { setLoading(false); }
-  }
-  useEffect(() => { void load(); }, [assetId]);
-
-  async function registerUpload(entry: any) {
-    if (!entry || entry.status !== 'success') return;
-    const file = entry.fileInfo ?? entry;
-    const uuid = String(entry.uuid ?? file.uuid ?? '').trim();
-    const fileName = String(entry.name ?? entry.fileName ?? file.name ?? file.filename ?? '').trim();
-    const contentType = String(entry.mimeType ?? entry.contentType ?? file.mimeType ?? file.mime_type ?? 'application/octet-stream');
-    const sizeBytes = Number(entry.size ?? file.size ?? 0);
-    if (!uuid || !fileName) { setError('The upload completed, but AssetHub did not receive the required file information.'); return; }
-    setRegistering(true); setError(null); setMessage(null);
-    try {
-      const data = await apiFetch(`/assets/${assetId}/documents/uploadcare`, { method: 'POST', body: JSON.stringify({ uuid, fileName, contentType, sizeBytes, documentType }) });
-      setDocuments((current) => [data, ...current.filter((item) => item.id !== data.id)]); setMessage(`${fileName} was attached successfully.`);
-    } catch (err: any) { setError(err?.message ?? 'The file uploaded, but AssetHub could not attach it to this asset.'); }
-    finally { setRegistering(false); }
-  }
-
-  async function download(document: DocumentItem) {
-    setError(null);
-    try {
-      const response = await fetch(`${API_BASE}/assets/${assetId}/documents/${document.id}/download`, { credentials: 'include' });
-      if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.message ?? 'Unable to download document.'); }
-      const blob = await response.blob(); const url = URL.createObjectURL(blob); const anchor = window.document.createElement('a'); anchor.href = url; anchor.download = document.fileName; anchor.click(); URL.revokeObjectURL(url);
-    } catch (err: any) { setError(err?.message ?? 'Unable to download document.'); }
-  }
-
-  async function remove(document: DocumentItem) {
-    if (!window.confirm(`Delete “${document.fileName}”? This removes the document attachment from the asset.`)) return;
-    setDeleting(document.id); setError(null); setMessage(null);
-    try { await apiFetch(`/assets/${assetId}/documents/${document.id}`, { method: 'DELETE' }); setDocuments((current) => current.filter((item) => item.id !== document.id)); setMessage('Document deleted.'); }
-    catch (err: any) { setError(err?.message ?? 'Unable to delete document.'); }
-    finally { setDeleting(null); }
-  }
-
-  const counts = useMemo(() => DOCUMENT_TYPES.reduce<Record<string, number>>((acc, type) => { acc[type] = documents.filter((item) => (item.documentType ?? 'OTHER') === type).length; return acc; }, {}), [documents]);
-  const filtered = filter === 'ALL' ? documents : documents.filter((item) => (item.documentType ?? 'OTHER') === filter);
-
-  return (
-    <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-100 p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div><div className="flex items-center gap-2 font-semibold text-slate-900"><FileText size={18} className="text-[var(--theme-primary)]" />Asset documents & evidence</div><p className="mt-1 max-w-2xl text-sm text-slate-500">Keep invoices, purchase orders, warranty certificates, photos, disposal records and other evidence with the asset.</p></div>
-          <button type="button" onClick={() => void load()} disabled={loading} className="ui-interactive inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"><RefreshCw size={15} className={loading ? 'animate-spin' : ''} />Refresh</button>
-        </div>
-        <div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7">
-          <button type="button" onClick={() => setFilter('ALL')} className={`rounded-xl border px-3 py-2 text-left text-xs font-semibold ${filter === 'ALL' ? 'border-[var(--theme-primary)] bg-[var(--theme-primary-soft)] text-[var(--theme-primary)]' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>All <span className="float-right">{documents.length}</span></button>
-          {DOCUMENT_TYPES.map((type) => <button key={type} type="button" onClick={() => setFilter(type)} className={`rounded-xl border px-3 py-2 text-left text-xs font-semibold ${filter === type ? 'border-[var(--theme-primary)] bg-[var(--theme-primary-soft)] text-[var(--theme-primary)]' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>{label(type)} <span className="float-right">{counts[type] ?? 0}</span></button>)}
-        </div>
-      </div>
-
-      <div className="p-6">
-        <div className="grid gap-4 lg:grid-cols-[190px_1fr]">
-          <select value={documentType} onChange={(event) => setDocumentType(event.target.value)} className="field h-11">{DOCUMENT_TYPES.map((type) => <option key={type} value={type}>{label(type)}</option>)}</select>
-          <div className="overflow-hidden rounded-2xl border border-[var(--theme-primary)]/15 bg-[var(--theme-primary-soft)]/40 p-2">
-            {UPLOADCARE_PUBLIC_KEY ? <FileUploaderRegular pubkey={UPLOADCARE_PUBLIC_KEY} cdnCname={UPLOADCARE_CDN_CNAME} sourceList="local, camera, dropbox, gdrive" dynamicButton dynamicButtonViewMode="plain" className="assethub-uploadcare" multiple={false} maxLocalFileSizeBytes={25 * 1024 * 1024} onChange={(event: any) => { const entries = Array.isArray(event?.allEntries) ? event.allEntries.filter((entry: any) => entry.status === 'success') : []; const latest = entries.at(-1); if (latest) void registerUpload(latest); }} onFileUploadFailed={(event: any) => setError(event?.errors?.[0]?.message ?? 'Upload failed. Please check the file type and size.')} /> : <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"><UploadCloud size={18} className="mt-0.5 shrink-0" /><span>Uploadcare is not configured. Set <code>NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY</code> in the web environment.</span></div>}
-          </div>
-        </div>
-        {registering && <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">Finalizing document attachment…</div>}
-        {error && <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</div>}
-        {message && <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700" role="status">{message}</div>}
-
-        <div className="mt-6 space-y-3">
-          {loading ? [1,2,3].map((item) => <div key={item} className="h-16 animate-pulse rounded-xl bg-slate-100" />) : filtered.length === 0 ? <div className="rounded-2xl border border-dashed border-slate-200 px-6 py-12 text-center"><div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-slate-100 text-slate-400"><FileText size={24} /></div><p className="mt-3 text-sm font-semibold text-slate-800">{documents.length === 0 ? 'No evidence attached yet' : `No ${label(filter).toLowerCase()} files`}</p><p className="mt-1 text-xs text-slate-500">{documents.length === 0 ? 'Upload invoices, warranty records, photos or other evidence above.' : 'Choose another document category or upload a new file.'}</p></div> : filtered.map((document) => <article key={document.id} className="group flex flex-col gap-4 rounded-2xl border border-slate-200 p-4 transition hover:-translate-y-0.5 hover:border-[var(--theme-primary)]/30 hover:shadow-sm md:flex-row md:items-center">
-            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--theme-primary-soft)] text-[var(--theme-primary)]">{isImage(document) ? <ImageIcon size={20} /> : <FileText size={20} />}</div>
-            <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold text-slate-900">{document.fileName}</p><span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{label(document.documentType)}</span></div><p className="mt-1 text-xs text-slate-500">{formatBytes(document.sizeBytes)} · {document.contentType ?? 'Unknown type'} · Added {document.createdAt ? new Date(document.createdAt).toLocaleString() : '—'}</p></div>
-            <div className="flex shrink-0 gap-2"><button type="button" onClick={() => void download(document)} className="ui-interactive inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"><Download size={14} />Download</button><button type="button" onClick={() => void remove(document)} disabled={deleting === document.id} className="ui-interactive inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 size={14} />{deleting === document.id ? 'Deleting…' : 'Delete'}</button></div>
-          </article>)}
-        </div>
-      </div>
-    </section>
-  );
+  return <section className="rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-100 p-6"><div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div><div className="flex items-center gap-2 font-semibold text-slate-900"><FileText size={18} className="text-[var(--theme-primary)]"/>Asset documents & evidence</div><p className="mt-1 max-w-2xl text-sm text-slate-500">Keep invoices, purchase orders, warranty certificates, photos, disposal records and other evidence with the asset.</p></div><button type="button" onClick={()=>void load()} disabled={loading} className="ui-interactive inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"><RefreshCw size={15} className={loading?'animate-spin':''}/>Refresh</button></div><div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7"><button type="button" onClick={()=>setFilter('ALL')} className={`rounded-xl border px-3 py-2 text-left text-xs font-semibold ${filter==='ALL'?'border-[var(--theme-primary)] bg-[var(--theme-primary-soft)] text-[var(--theme-primary)]':'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>All <span className="float-right">{documents.length}</span></button>{DOCUMENT_TYPES.map(type=><button key={type} type="button" onClick={()=>setFilter(type)} className={`rounded-xl border px-3 py-2 text-left text-xs font-semibold ${filter===type?'border-[var(--theme-primary)] bg-[var(--theme-primary-soft)] text-[var(--theme-primary)]':'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>{label(type)} <span className="float-right">{counts[type]??0}</span></button>)}</div></div><div className="p-6"><div className="grid gap-4 lg:grid-cols-[190px_1fr]"><select value={documentType} onChange={event=>setDocumentType(event.target.value)} className="field h-11">{DOCUMENT_TYPES.map(type=><option key={type} value={type}>{label(type)}</option>)}</select><div className="overflow-hidden rounded-2xl border border-[var(--theme-primary)]/15 bg-[var(--theme-primary-soft)]/40 p-2">{UPLOADCARE_PUBLIC_KEY?<FileUploaderRegular {...uploadcareProps}/>:<div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"><UploadCloud size={18} className="mt-0.5 shrink-0"/><span>Uploadcare is not configured. Set <code>NEXT_PUBLIC_UPLOADCARE_PUBLIC_KEY</code> in the web environment.</span></div>}</div></div>{registering&&<div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">Finalizing document attachment…</div>}{error&&<div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">{error}</div>}{message&&<div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700" role="status">{message}</div>}<div className="mt-6 space-y-3">{loading?[1,2,3].map(item=><div key={item} className="h-16 animate-pulse rounded-xl bg-slate-100"/>):filtered.length===0?<div className="rounded-2xl border border-dashed border-slate-200 px-6 py-12 text-center"><div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-slate-100 text-slate-400"><FileText size={24}/></div><p className="mt-3 text-sm font-semibold text-slate-800">{documents.length===0?'No evidence attached yet':`No ${label(filter).toLowerCase()} files`}</p><p className="mt-1 text-xs text-slate-500">{documents.length===0?'Upload invoices, warranty records, photos or other evidence above.':'Choose another document category or upload a new file.'}</p></div>:filtered.map(document=><article key={document.id} className="group flex flex-col gap-4 rounded-2xl border border-slate-200 p-4 transition hover:-translate-y-0.5 hover:border-[var(--theme-primary)]/30 hover:shadow-sm md:flex-row md:items-center"><div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--theme-primary-soft)] text-[var(--theme-primary)]">{isImage(document)?<ImageIcon size={20}/>:<FileText size={20}/>}</div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold text-slate-900">{document.fileName}</p><span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">{label(document.documentType)}</span></div><p className="mt-1 text-xs text-slate-500">{formatBytes(document.sizeBytes)} · {document.contentType??'Unknown type'} · Added {document.createdAt?new Date(document.createdAt).toLocaleString():'—'}</p></div><div className="flex shrink-0 gap-2"><button type="button" onClick={()=>void download(document)} className="ui-interactive inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"><Download size={14}/>Download</button><button type="button" onClick={()=>void remove(document)} disabled={deleting===document.id} className="ui-interactive inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 size={14}/>{deleting===document.id?'Deleting…':'Delete'}</button></div></article>)}</div></div></section>;
 }
