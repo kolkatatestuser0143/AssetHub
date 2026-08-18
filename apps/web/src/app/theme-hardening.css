@@ -1,0 +1,81 @@
+/* AssetHub theme hardening layer.
+   Brand/interaction colours come from the active license/system theme.
+   Semantic feedback colours intentionally remain state-based. */
+
+:root {
+  --theme-surface: #ffffff;
+  --theme-surface-muted: #f8fafc;
+  --theme-border: #e2e8f0;
+  --theme-border-strong: #cbd5e1;
+  --theme-text: #0f172a;
+  --theme-text-muted: #64748b;
+}
+
+.field {
+  min-height: 42px;
+  width: 100%;
+  border: 1px solid var(--theme-border);
+  border-radius: .75rem;
+  background: var(--theme-surface);
+  color: var(--theme-text);
+  padding: .625rem .875rem;
+  box-shadow: 0 1px 2px rgba(15,23,42,.03);
+  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+
+.field:hover:not(:disabled) {
+  border-color: var(--theme-border-strong);
+}
+
+.field:focus {
+  border-color: var(--theme-focus);
+  outline: none;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--theme-focus) 10%, transparent);
+}
+
+.field:disabled {
+  cursor: not-allowed;
+  opacity: .6;
+  background: var(--theme-surface-muted);
+}
+
+.field option:checked {
+  background: var(--theme-primary);
+  color: #fff;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--theme-primary-soft);
+  border-color: color-mix(in srgb, var(--theme-primary) 28%, var(--theme-border));
+  color: var(--theme-link);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--theme-primary-soft);
+  color: var(--theme-link);
+}
+
+.icon-button:hover:not(:disabled) {
+  background: var(--theme-primary-soft);
+  color: var(--theme-link);
+}
+
+.badge-info {
+  background: var(--theme-primary-soft);
+  color: var(--theme-link);
+}
+
+.panel {
+  background: var(--theme-surface);
+}
+
+/* Branded focus/selection treatment for all native controls. */
+:where(input, select, textarea):focus-visible {
+  border-color: var(--theme-focus);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--theme-focus) 10%, transparent);
+}
+
+::selection {
+  background: var(--theme-primary-soft);
+  color: var(--theme-link);
+}
