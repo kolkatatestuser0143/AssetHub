@@ -4,14 +4,19 @@ import { ForbiddenException } from '@nestjs/common';
 export const CSRF_COOKIE = 'assethub_csrf';
 export const CSRF_HEADER = 'x-csrf-token';
 
-function parseCookies(header?: string): Record<string, string> {
+function parseCookies(header?: string): Record<string, string[]> {
   if (!header) return {};
-  return header.split(';').reduce<Record<string, string>>((acc, part) => {
+  return header.split(';').reduce<Record<string, string[]>>((acc, part) => {
     const index = part.indexOf('=');
     if (index <= 0) return acc;
     const key = part.slice(0, index).trim();
     const value = part.slice(index + 1).trim();
-    if (key) acc[key] = decodeURIComponent(value);
+    if (!key) return acc;
+    try {
+      (acc[key] ??= []).push(decodeURIComponent(value));
+    } catch {
+      (acc[key] ??= []).push(value);
+    }
     return acc;
   }, {});
 }
@@ -24,18 +29,14 @@ function cookieDomain(): string {
 function cookieOptions() {
   const domain = cookieDomain();
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-  // The CSRF token is intentionally readable by the web app so it can be
-  // echoed in X-CSRF-Token for authenticated state-changing requests.
   return `${domain}; Path=/; Max-Age=86400; SameSite=Lax${secure}`;
 }
 
 function legacyCookieCleanup() {
-  // Older builds used narrower paths. Remove those cookies so the browser
-  // cannot retain two same-name CSRF cookies and send/read different values.
   const domain = cookieDomain();
   return [
-    `${CSRF_COOKIE}=;${domain}; Path=/api/v1; Max-Age=0; SameSite=Lax`,
-    `${CSRF_COOKIE}=;${domain}; Path=/api/v1/auth; Max-Age=0; SameSite=Lax`,
+    `${CSRF_COOKIE}=;${domain} Path=/api/v1; Max-Age=0; SameSite=Lax`,
+    `${CSRF_COOKIE}=;${domain} Path=/api/v1/auth; Max-Age=0; SameSite=Lax`,
   ];
 }
 
@@ -53,11 +54,7 @@ function isTrustedBrowserOrigin(value: string): boolean {
   if (process.env.NODE_ENV !== 'production' && /^https?:\/\/(localhost|127\.0\.0\.1)(?::\d+)?$/i.test(value)) return true;
 
   let origin: URL;
-  try {
-    origin = new URL(value);
-  } catch {
-    return false;
-  }
+  try { origin = new URL(value); } catch { return false; }
   if (!['http:', 'https:'].includes(origin.protocol)) return false;
 
   const root = (process.env.TENANT_ROOT_DOMAIN ?? process.env.NEXT_PUBLIC_TENANT_ROOT_DOMAIN ?? '').trim().replace(/^\.+|\.+$/g, '').toLowerCase();
@@ -82,16 +79,16 @@ function constantTimeEqual(left: string, right: string): boolean {
 }
 
 function isMutating(method: string): boolean { return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method.toUpperCase()); }
-
+function isAuthenticationTransition(path: string): boolean { return path === '/auth/login' || path === '/auth/system/login'; }
 function hasAuthenticationCookie(req: any): boolean {
   const cookies = parseCookies(req?.headers?.cookie);
-  return Boolean(cookies.assethub_tenant_access || cookies.assethub_tenant_refresh || cookies.assethub_system_access || cookies.assethub_system_refresh);
+  return Boolean(cookies.assethub_tenant_access?.length || cookies.assethub_tenant_refresh?.length || cookies.assethub_system_access?.length || cookies.assethub_system_refresh?.length);
 }
 
 export function csrfMiddleware(req: any, res: any, next: () => void) {
   const cookies = parseCookies(req?.headers?.cookie);
-  let token = cookies[CSRF_COOKIE];
-  if (!token || token.length < 32) token = crypto.randomBytes(32).toString('hex');
+  const csrfTokens = cookies[CSRF_COOKIE] ?? [];
+  const token = csrfTokens.find((value) => value.length >= 32) ?? crypto.randomBytes(32).toString('hex');
   const csrfCookie = `${CSRF_COOKIE}=${encodeURIComponent(token)}${cookieOptions()}`;
 
   const originalSetHeader = res.setHeader.bind(res);
@@ -99,19 +96,28 @@ export function csrfMiddleware(req: any, res: any, next: () => void) {
     if (String(name).toLowerCase() === 'set-cookie') {
       const values = Array.isArray(value) ? [...value] : [value];
       if (!values.some((item: unknown) => String(item).startsWith(`${CSRF_COOKIE}=`) && !String(item).includes('Max-Age=0'))) values.push(csrfCookie);
-      for (const cleanup of legacyCookieCleanup()) {
-        if (!values.some((item: unknown) => String(item) === cleanup)) values.push(cleanup);
-      }
+      for (const cleanup of legacyCookieCleanup()) if (!values.some((item: unknown) => String(item) === cleanup)) values.push(cleanup);
       return originalSetHeader(name, values);
     }
     return originalSetHeader(name, value);
   };
 
-  if (isMutating(req?.method ?? '') && hasAuthenticationCookie(req)) {
+  if (isMutating(req?.method ?? '')) {
+    const path = String(req?.originalUrl ?? req?.url ?? '').split('?')[0].replace(/^\/api\/v1/, '') || '/';
     const origin = browserOrigin(req);
-    if (!origin || !isTrustedBrowserOrigin(origin)) throw new ForbiddenException('CSRF origin validation failed');
-    const supplied = String(req?.headers?.[CSRF_HEADER] ?? '');
-    if (!supplied || !constantTimeEqual(token, supplied)) throw new ForbiddenException('CSRF token validation failed');
+
+    // Login starts a new authentication state. Validate the browser origin,
+    // but do not require a token from a stale authentication session.
+    if (isAuthenticationTransition(path)) {
+      if (origin && !isTrustedBrowserOrigin(origin)) throw new ForbiddenException('CSRF origin validation failed');
+      return next();
+    }
+
+    if (hasAuthenticationCookie(req)) {
+      if (!origin || !isTrustedBrowserOrigin(origin)) throw new ForbiddenException('CSRF origin validation failed');
+      const supplied = String(req?.headers?.[CSRF_HEADER] ?? '');
+      if (!supplied || !csrfTokens.some((candidate) => constantTimeEqual(candidate, supplied))) throw new ForbiddenException('CSRF token validation failed');
+    }
   }
 
   next();
