@@ -19,19 +19,37 @@ describe('csrfMiddleware', () => {
 
   it('rejects an authenticated mutation without the token', () => {
     const res = response();
-    expect(() => csrfMiddleware({ method: 'POST', headers: { cookie: 'assethub_tenant_access=access', origin: 'http://localhost:3000' } }, res, () => undefined)).toThrow(ForbiddenException);
+    expect(() => csrfMiddleware({ method: 'POST', originalUrl: '/api/v1/assets', headers: { cookie: 'assethub_tenant_access=access', origin: 'http://localhost:3000' } }, res, () => undefined)).toThrow(ForbiddenException);
   });
 
   it('rejects an authenticated mutation from an untrusted origin even with a matching token', () => {
     const token = 'a'.repeat(64);
     const res = response();
-    expect(() => csrfMiddleware({ method: 'POST', headers: { cookie: `assethub_csrf=${token}; assethub_tenant_access=access`, origin: 'https://attacker.example', 'x-csrf-token': token } }, res, () => undefined)).toThrow(ForbiddenException);
+    expect(() => csrfMiddleware({ method: 'POST', originalUrl: '/api/v1/assets', headers: { cookie: `assethub_csrf=${token}; assethub_tenant_access=access`, origin: 'https://attacker.example', 'x-csrf-token': token } }, res, () => undefined)).toThrow(ForbiddenException);
   });
 
   it('accepts an authenticated mutation with a matching token and trusted development origin', () => {
     const token = 'a'.repeat(64);
     const res = response();
-    csrfMiddleware({ method: 'POST', headers: { cookie: `assethub_csrf=${token}; assethub_tenant_access=access`, origin: 'http://localhost:3000', 'x-csrf-token': token } }, res, () => undefined);
+    csrfMiddleware({ method: 'POST', originalUrl: '/api/v1/assets', headers: { cookie: `assethub_csrf=${token}; assethub_tenant_access=access`, origin: 'http://localhost:3000', 'x-csrf-token': token } }, res, () => undefined);
     expect(String(res.headers.get('Set-Cookie'))).toContain(`assethub_csrf=${token}`);
+  });
+
+  it('allows tenant login even when a stale authentication cookie exists', () => {
+    const res = response();
+    expect(() => csrfMiddleware({ method: 'POST', originalUrl: '/api/v1/auth/login', headers: { cookie: 'assethub_tenant_access=stale', origin: 'http://localhost:3000' } }, res, () => undefined)).not.toThrow();
+  });
+
+  it('allows system login even when a stale authentication cookie exists', () => {
+    const res = response();
+    expect(() => csrfMiddleware({ method: 'POST', originalUrl: '/api/v1/auth/system/login', headers: { cookie: 'assethub_system_access=stale', origin: 'http://localhost:3000' } }, res, () => undefined)).not.toThrow();
+  });
+
+  it('accepts a matching token when legacy and canonical CSRF cookies coexist', () => {
+    const canonical = 'b'.repeat(64);
+    const legacy = 'a'.repeat(64);
+    const res = response();
+    csrfMiddleware({ method: 'POST', originalUrl: '/api/v1/assets', headers: { cookie: `assethub_csrf=${legacy}; assethub_csrf=${canonical}; assethub_tenant_access=access`, origin: 'http://localhost:3000', 'x-csrf-token': canonical } }, res, () => undefined);
+    expect(String(res.headers.get('Set-Cookie'))).toContain(`assethub_csrf=${canonical}`);
   });
 });
