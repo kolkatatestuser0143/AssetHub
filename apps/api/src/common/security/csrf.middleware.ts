@@ -35,8 +35,8 @@ function cookieOptions() {
 function legacyCookieCleanup() {
   const domain = cookieDomain();
   return [
-    `${CSRF_COOKIE}=;${domain} Path=/api/v1; Max-Age=0; SameSite=Lax`,
-    `${CSRF_COOKIE}=;${domain} Path=/api/v1/auth; Max-Age=0; SameSite=Lax`,
+    `${CSRF_COOKIE}=;${domain}; Path=/api/v1; Max-Age=0; SameSite=Lax`,
+    `${CSRF_COOKIE}=;${domain}; Path=/api/v1/auth; Max-Age=0; SameSite=Lax`,
   ];
 }
 
