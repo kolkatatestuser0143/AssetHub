@@ -6,12 +6,14 @@ export const UserModelName = 'User';
 export type UserDocument = HydratedDocument<User>;
 
 export enum UserAccountType { TENANT = 'TENANT', SYSTEM = 'SYSTEM' }
+export enum UserAdminLevel { EMPLOYEE = 'EMPLOYEE', COMPANY_ADMIN = 'COMPANY_ADMIN', TENANT_ADMIN = 'TENANT_ADMIN' }
 
 @Schema({ collection: 'users', timestamps: true, versionKey: false })
 export class User {
   @Prop({ required: true, enum: UserAccountType, default: UserAccountType.TENANT, index: true }) accountType!: UserAccountType;
   @Prop({ required: true }) tenantId!: string;
   @Prop({ required: true, index: true }) companyId!: string;
+  @Prop({ required: true, enum: UserAdminLevel, default: UserAdminLevel.EMPLOYEE, index: true }) adminLevel!: UserAdminLevel;
   @Prop({ index: true, sparse: true }) employeeId?: string;
   @Prop({ required: true, unique: true }) email!: string;
   @Prop() passwordHash?: string;
@@ -39,6 +41,7 @@ export class User {
 export const UserSchema = SchemaFactory.createForClass(User);
 UserSchema.index({ companyId: 1, externalScimId: 1 }, { unique: true, sparse: true });
 UserSchema.index({ tenantId: 1, companyId: 1, employeeId: 1 }, { unique: true, sparse: true });
+UserSchema.index({ tenantId: 1, adminLevel: 1, isActive: 1 });
 UserSchema.index({ accountType: 1, accessTokenHash: 1 }, { sparse: true });
 UserSchema.index({ accessTokenExpiresAt: 1 }, { expireAfterSeconds: 0, sparse: true });
 
