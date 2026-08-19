@@ -33,7 +33,7 @@ export function Sidebar({ groups, variant = 'tenant', mobileOpen = false, onMobi
     {footer ? <div className="shrink-0 border-t border-white/10 p-3">{footer}</div> : null}
   </aside>;
   return <>
-    <div className="fixed inset-y-0 left-0 hidden h-screen w-64 lg:block">{content}</div>
-    {mobileOpen ? <div className="ui-mobile-nav-backdrop fixed inset-0 z-50 bg-slate-950/70 lg:hidden" onClick={onMobileClose}><div className="ui-mobile-nav-panel h-screen w-72" onClick={(e) => e.stopPropagation()}>{content}</div></div> : null}
+    <div className="fixed inset-y-0 left-0 z-50 hidden h-screen w-64 lg:block">{content}</div>
+    {mobileOpen ? <div className="ui-mobile-nav-backdrop fixed inset-0 z-[60] bg-slate-950/70 lg:hidden" onClick={onMobileClose}><div className="ui-mobile-nav-panel relative z-[61] h-screen w-72">{content}</div></div> : null}
   </>;
 }
