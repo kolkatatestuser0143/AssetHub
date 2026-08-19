@@ -12,7 +12,7 @@ class ConditionDto { @IsIn(Object.values(AssetCondition)) condition!: AssetCondi
 class TransitionDto { @IsIn(Object.values(AssetLifecycleState)) toState: AssetLifecycleState; @IsString() @IsOptional() reason?: string; }
 class VendorDto { @IsString() name: string; @IsOptional() @IsString() contact?: string; }
 class ImportCsvDto { @IsString() csv: string; }
-class ExcelReportQueryDto { @IsOptional() @IsString() status?: string; @IsOptional() @IsString() companyId?: string; @IsOptional() @IsString() assetTypeId?: string; @IsOptional() @IsString() locationId?: string; @IsOptional() @IsISO8601() fromDate?: string; @IsOptional() @IsISO8601() toDate?: string; }
+class ExcelReportQueryDto { @IsOptional() @IsString() status?: string; @IsOptional() @IsString() companyId?: string; @IsOptional() @IsString() assetTypeId?: string; @IsOptional() @IsString() locationId?: string; @IsOptional() @IsString() departmentId?: string; @IsOptional() @IsISO8601() fromDate?: string; @IsOptional() @IsISO8601() toDate?: string; }
 class AssetListQueryDto { @IsOptional() @IsString() q?: string; @IsOptional() @IsString() status?: string; @IsOptional() @IsString() assetTypeId?: string; @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number; @IsOptional() @Type(() => Number) @IsInt() @Min(1) pageSize?: number; @IsOptional() @IsString() sortBy?: string; @IsOptional() @IsIn(['asc', 'desc']) sortDir?: 'asc' | 'desc'; }
 class TransferDto { @IsOptional() @IsString() toUserId?: string; @IsOptional() @IsString() toLocationId?: string; @IsOptional() @IsString() toDepartmentId?: string; @IsOptional() @IsString() reason?: string; @IsOptional() @IsString() note?: string; }
 class TransferStatusDto { @IsIn(['PENDING', 'APPROVED', 'COMPLETED', 'REJECTED', 'CANCELLED']) status!: 'PENDING' | 'APPROVED' | 'COMPLETED' | 'REJECTED' | 'CANCELLED'; }
@@ -115,6 +115,5 @@ export class AssetsController {
   @Get(':assetId/assignment/history') @RequirePermission('asset:read') history(@Param('assetId') assetId: string, @Req() req: any) { return this.assets.listAssignmentHistory(req.authContext, assetId); }
   @Get(':assetId/lifecycle') @RequirePermission('asset:read') lifecycle(@Param('assetId') assetId: string, @Req() req: any) { return this.assets.allowedLifecycleTransitions(req.authContext, assetId); }
   @Get(':assetId/timeline') @RequirePermission('asset:read') timelineView(@Param('assetId') assetId: string, @Req() req: any) { return this.timeline.get(req.authContext, assetId); }
-  @Post(':assetId/transition') @RequirePermission('asset:write') transition(@Param('assetId') assetId: string, @Body() dto: TransitionDto, @Req() req: any) { return this.assets.transition(req.authContext, assetId, dto.toState, dto.reason); }
-  @Post(':assetId/acknowledge') @RequirePermission('asset:write') acknowledge(@Param('assetId') assetId: string, @Body() dto: any, @Req() req: any) { return this.assets.acknowledge(req.authContext, assetId, dto); }
+  @Post(':assetId/transition') @RequirePermission('asset:write') transition(@Param('assetId') assetId: string, @Body() dto: TransitionDto, @Req() req: any) { return this.assets.transitionState(req.authContext, assetId, dto.toState, req.authContext.userId, dto.reason); }
 }
