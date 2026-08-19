@@ -29,6 +29,8 @@ export class SessionService {
         if (tenant.status === TenantStatus.ARCHIVED) throw new UnauthorizedException('This tenant is archived and cannot be accessed.');
         throw new UnauthorizedException('This tenant account is unavailable. Please contact your system administrator.');
       }
+      const company = await this.db.company.findOne({ _id: rawUser.companyId, tenantId: rawUser.tenantId }).select({ _id: 1 }).lean();
+      if (!company) throw new UnauthorizedException('Your tenant account is not assigned to a valid company. Please contact your tenant administrator.');
       const maxSessionDays = await this.entitlements.getNumber(rawUser.tenantId, 'session_max_days');
       if (maxSessionDays !== null) refreshTokenTtlMs = maxSessionDays * 24 * 60 * 60 * 1000;
       if (refreshTokenTtlMs <= 0) throw new ForbiddenException('Tenant session policy is invalid');
