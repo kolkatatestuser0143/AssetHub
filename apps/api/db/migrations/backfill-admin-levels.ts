@@ -1,3 +1,4 @@
+import '../../src/bootstrap-dns';
 import 'dotenv/config';
 import { config as loadEnv } from 'dotenv';
 import { resolve } from 'path';
