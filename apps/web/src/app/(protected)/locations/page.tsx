@@ -1,5 +1,7 @@
-import { redirect } from 'next/navigation';
+'use client';
+
+import OrganizationLevelPage from '../../../components/organization/OrganizationLevelPage';
 
 export default function LocationsPage() {
-  redirect('/companies');
+  return <OrganizationLevelPage level="locations" />;
 }
