@@ -12,11 +12,7 @@ function parseCookies(header?: string): Record<string, string[]> {
     const key = part.slice(0, index).trim();
     const value = part.slice(index + 1).trim();
     if (!key) return acc;
-    try {
-      (acc[key] ??= []).push(decodeURIComponent(value));
-    } catch {
-      (acc[key] ??= []).push(value);
-    }
+    try { (acc[key] ??= []).push(decodeURIComponent(value)); } catch { (acc[key] ??= []).push(value); }
     return acc;
   }, {});
 }
@@ -40,11 +36,14 @@ function legacyCookieCleanup() {
   ];
 }
 
+export function issueCsrfCookie(res: any, token = crypto.randomBytes(32).toString('hex')) {
+  const originalSetHeader = res.setHeader.bind(res);
+  originalSetHeader('Set-Cookie', [`${CSRF_COOKIE}=${encodeURIComponent(token)}${cookieOptions()}`, ...legacyCookieCleanup()]);
+  return token;
+}
+
 function configuredOrigins(): string[] {
-  return (process.env.WEB_ORIGINS ?? process.env.WEB_ORIGIN ?? '')
-    .split(',')
-    .map((value) => value.trim().replace(/\/$/, ''))
-    .filter(Boolean);
+  return (process.env.WEB_ORIGINS ?? process.env.WEB_ORIGIN ?? '').split(',').map((value) => value.trim().replace(/\/$/, '')).filter(Boolean);
 }
 
 function isTrustedBrowserOrigin(value: string): boolean {
@@ -52,16 +51,12 @@ function isTrustedBrowserOrigin(value: string): boolean {
   const configured = configuredOrigins();
   if (configured.includes(value.replace(/\/$/, ''))) return true;
   if (process.env.NODE_ENV !== 'production' && /^https?:\/\/(localhost|127\.0\.0\.1)(?::\d+)?$/i.test(value)) return true;
-
   let origin: URL;
   try { origin = new URL(value); } catch { return false; }
   if (!['http:', 'https:'].includes(origin.protocol)) return false;
-
   const root = (process.env.TENANT_ROOT_DOMAIN ?? process.env.NEXT_PUBLIC_TENANT_ROOT_DOMAIN ?? '').trim().replace(/^\.+|\.+$/g, '').toLowerCase();
   if (!root || origin.hostname.toLowerCase() === root) return false;
-
-  return origin.hostname.toLowerCase().endsWith(`.${root}`)
-    && origin.hostname.split('.').length === root.split('.').length + 1;
+  return origin.hostname.toLowerCase().endsWith(`.${root}`) && origin.hostname.split('.').length === root.split('.').length + 1;
 }
 
 function browserOrigin(req: any): string | undefined {
@@ -73,11 +68,9 @@ function browserOrigin(req: any): string | undefined {
 }
 
 function constantTimeEqual(left: string, right: string): boolean {
-  const a = Buffer.from(left);
-  const b = Buffer.from(right);
+  const a = Buffer.from(left); const b = Buffer.from(right);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
-
 function isMutating(method: string): boolean { return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method.toUpperCase()); }
 function isAuthenticationTransition(path: string): boolean { return path === '/auth/login' || path === '/auth/system/login'; }
 function isSessionRefresh(path: string): boolean { return path === '/auth/refresh'; }
@@ -91,7 +84,6 @@ export function csrfMiddleware(req: any, res: any, next: () => void) {
   const csrfTokens = cookies[CSRF_COOKIE] ?? [];
   const token = csrfTokens.find((value) => value.length >= 32) ?? crypto.randomBytes(32).toString('hex');
   const csrfCookie = `${CSRF_COOKIE}=${encodeURIComponent(token)}${cookieOptions()}`;
-
   const originalSetHeader = res.setHeader.bind(res);
   let csrfCookieSent = false;
 
@@ -116,31 +108,24 @@ export function csrfMiddleware(req: any, res: any, next: () => void) {
     return originalSetHeader(name, value);
   };
 
-  // Always establish a browser-readable token before the response is sent.
-  // This is required for the first forced password-change request immediately
-  // after login, where no previous CSRF cookie may exist yet.
   ensureCsrfCookie();
 
   if (isMutating(req?.method ?? '')) {
     const path = String(req?.originalUrl ?? req?.url ?? '').split('?')[0].replace(/^\/api\/v1/, '') || '/';
     const origin = browserOrigin(req);
-
     if (isAuthenticationTransition(path)) {
       if (origin && !isTrustedBrowserOrigin(origin)) throw new ForbiddenException('CSRF origin validation failed');
       return next();
     }
-
     if (isSessionRefresh(path)) {
       if (!origin || !isTrustedBrowserOrigin(origin)) throw new ForbiddenException('CSRF origin validation failed');
       return next();
     }
-
     if (hasAuthenticationCookie(req)) {
       if (!origin || !isTrustedBrowserOrigin(origin)) throw new ForbiddenException('CSRF origin validation failed');
       const supplied = String(req?.headers?.[CSRF_HEADER] ?? '');
       if (!supplied || !csrfTokens.some((candidate) => constantTimeEqual(candidate, supplied))) throw new ForbiddenException('CSRF token validation failed');
     }
   }
-
   next();
 }
