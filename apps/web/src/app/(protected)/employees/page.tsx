@@ -5,31 +5,25 @@ import { useEffect, useMemo, useState } from 'react';
 import { Search, RefreshCw, UserRound, ShieldCheck, Building2, ArrowUpRight } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { apiFetch } from '../../../lib/api-client';
+import CompanyScopeControl from '../../../components/company-scope-control';
 
 type AdminLevel = 'EMPLOYEE'|'COMPANY_ADMIN'|'TENANT_ADMIN';
 type Employee = { id:string; employeeId?:string; email:string; firstName:string; lastName:string; companyId?:string; jobTitle?:string; isActive:boolean; adminLevel?:AdminLevel };
 type Company = { id:string; name:string; code?:string };
-
 const LEVEL_LABEL: Record<AdminLevel,string> = { EMPLOYEE:'Employee', COMPANY_ADMIN:'Company Admin', TENANT_ADMIN:'Tenant Admin' };
 
 export default function EmployeesPage(){
-  const searchParams=useSearchParams();
-  const companyFilter=searchParams.get('companyId');
+  const searchParams=useSearchParams();const companyFilter=searchParams.get('companyId');
   const [employees,setEmployees]=useState<Employee[]>([]),[companies,setCompanies]=useState<Company[]>([]),[query,setQuery]=useState(''),[loading,setLoading]=useState(true),[error,setError]=useState<string|null>(null),[message,setMessage]=useState<string|null>(null),[busy,setBusy]=useState<string|null>(null);
-
-  async function load(){setLoading(true);setError(null);try{const [rows,org]=await Promise.all([apiFetch('/users/employees'),apiFetch('/companies/hierarchy')]);setEmployees(Array.isArray(rows)?rows:[]);setCompanies(Array.isArray(org)?org.map((c:any)=>({id:String(c.id),name:String(c.name),code:c.code?String(c.code):undefined})):[]);}catch(e:any){setError(e?.message??'Unable to load employees.');}finally{setLoading(false)}}
+  async function load(){setLoading(true);setError(null);try{const [rows,org]=await Promise.all([apiFetch('/users/employees'),apiFetch('/companies/hierarchy')]);setEmployees(Array.isArray(rows)?rows:[]);setCompanies(Array.isArray(org)?org.map((c:any)=>({id:String(c.id),name:String(c.name),code:c.code?String(c.code):undefined})):[])}catch(e:any){setError(e?.message??'Unable to load employees.')}finally{setLoading(false)}}
   useEffect(()=>{void load()},[]);
-
   const companyName=(id?:string)=>companies.find((c)=>c.id===id)?.name??(id||'Not assigned');
   const scoped=useMemo(()=>companyFilter&&companyFilter!=='all'?employees.filter((u)=>u.companyId===companyFilter):employees,[employees,companyFilter]);
   const filtered=useMemo(()=>{const q=query.trim().toLowerCase();return !q?scoped:scoped.filter((u)=>`${u.firstName} ${u.lastName} ${u.email} ${u.employeeId??''} ${u.jobTitle??''} ${companyName(u.companyId)}`.toLowerCase().includes(q))},[scoped,query,companies]);
-
   async function promote(user:Employee){if(!window.confirm(`Promote ${user.firstName} ${user.lastName} to Tenant Administrator?`))return;setBusy(user.id);setError(null);setMessage(null);try{await apiFetch(`/users/${user.id}/admin-level`,{method:'PATCH',body:JSON.stringify({adminLevel:'TENANT_ADMIN'})});setMessage(`${user.firstName} ${user.lastName} is now a Tenant Administrator.`);await load()}catch(e:any){setError(e?.message??'Unable to promote employee.')}finally{setBusy(null)}}
-
   const scopeText=companyFilter&&companyFilter!=='all'?companyName(companyFilter):'All companies';
-
   return <div className="mx-auto max-w-[1500px] space-y-6 page-section-enter">
-    <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--theme-link)]"><Users size={14}/>People & Organization</div><div className="mt-2 flex flex-wrap items-center gap-3"><h1 className="text-3xl font-bold tracking-tight text-slate-950">Employees</h1><span className="badge badge-neutral">{scoped.length} in scope</span></div><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Manage workforce identities. Company assignment and administrative authority are kept separate from ordinary employee access.</p></div><button onClick={()=>void load()} disabled={loading} className="btn-secondary ui-interactive"><RefreshCw size={15} className={loading?'animate-spin':''}/>Refresh</button></header>
+    <header className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--theme-link)]"><Users size={14}/>People & Organization</div><div className="mt-2 flex flex-wrap items-center gap-3"><h1 className="text-3xl font-bold tracking-tight text-slate-950">Employees</h1><span className="badge badge-neutral">{scoped.length} in scope</span><CompanyScopeControl/></div><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Manage workforce identities. Company assignment and administrative authority are kept separate from ordinary employee access.</p></div><button onClick={()=>void load()} disabled={loading} className="btn-secondary ui-interactive"><RefreshCw size={15} className={loading?'animate-spin':''}/>Refresh</button></header>
     <div className="grid gap-3 sm:grid-cols-3"><div className="panel p-4"><div className="text-xs font-medium text-slate-500">Current scope</div><div className="mt-1 flex items-center gap-2 font-semibold text-slate-900"><Building2 size={15} className="text-[var(--theme-link)]"/>{scopeText}</div></div><div className="panel p-4"><div className="text-xs font-medium text-slate-500">Active employees</div><div className="mt-1 text-xl font-bold text-slate-950">{scoped.filter((u)=>u.isActive).length}</div></div><div className="panel p-4"><div className="text-xs font-medium text-slate-500">Administrators in view</div><div className="mt-1 text-xl font-bold text-slate-950">{scoped.filter((u)=>u.adminLevel==='COMPANY_ADMIN').length}</div></div></div>
     {error?<div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"><b>Unable to complete the request</b><div className="mt-1">{error}</div></div>:null}{message?<div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div>:null}
     <section className="panel overflow-hidden"><div className="border-b border-slate-100 p-4 sm:p-5"><label className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-sm"><Search size={16} className="text-slate-400"/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search name, email, employee ID or company…" className="w-full bg-transparent py-2 text-sm outline-none"/></label></div>
