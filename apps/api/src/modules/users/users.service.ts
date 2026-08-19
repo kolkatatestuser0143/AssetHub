@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Types } from 'mongoose';
 import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 import { AuthContext } from '../../common/guards/tenant-context.guard';
@@ -7,6 +7,7 @@ import { toDto, toDtoArray } from '../../common/mongoose.utils';
 import { InviteService } from '../auth/invite.service';
 import { MailService } from '../../common/mail/mail.service';
 import { EntitlementService } from '../billing/entitlement.service';
+import { UserAdminLevel } from '../../models/user.schemas';
 
 @Injectable()
 export class UsersService extends TenantScopedRepository {
@@ -31,8 +32,10 @@ export class UsersService extends TenantScopedRepository {
     return dto;
   }
 
-  async list(auth: AuthContext) {
-    const docs = await this.db.user.find({ ...this.scope(auth), accountType: 'TENANT' }).sort({ lastName: 1, firstName: 1 }).lean();
+  async list(auth: AuthContext, adminLevel?: UserAdminLevel) {
+    const filter: Record<string, unknown> = { ...this.scope(auth), accountType: 'TENANT' };
+    if (adminLevel) filter.adminLevel = adminLevel;
+    const docs = await this.db.user.find(filter).sort({ lastName: 1, firstName: 1 }).lean();
     return toDtoArray(docs).map((u: any) => this.safe(u));
   }
 
@@ -56,7 +59,7 @@ export class UsersService extends TenantScopedRepository {
     }
     const currentUserCount = await this.db.user.countDocuments({ tenantId: auth.tenantId, accountType: 'TENANT' });
     await this.entitlements.requireWithinLimit(auth.tenantId, 'max_users', currentUserCount, 1);
-    const doc = await this.db.user.create({ tenantId: auth.tenantId, companyId, employeeId, email, firstName: input.firstName.trim(), lastName: input.lastName.trim(), jobTitle: input.jobTitle?.trim() || undefined, phone: input.phone?.trim() || undefined, departmentId: input.departmentId || undefined, locationId: input.locationId || undefined, isActive: true, forcePasswordReset: true, roleIds: [], accountType: 'TENANT', mfaMethod: 'NONE', backupCodesHash: [] });
+    const doc = await this.db.user.create({ tenantId: auth.tenantId, companyId, employeeId, email, firstName: input.firstName.trim(), lastName: input.lastName.trim(), jobTitle: input.jobTitle?.trim() || undefined, phone: input.phone?.trim() || undefined, departmentId: input.departmentId || undefined, locationId: input.locationId || undefined, isActive: true, forcePasswordReset: true, roleIds: [], accountType: 'TENANT', adminLevel: UserAdminLevel.EMPLOYEE, mfaMethod: 'NONE', backupCodesHash: [] });
     return this.safe(doc.toObject());
   }
 
@@ -93,6 +96,36 @@ export class UsersService extends TenantScopedRepository {
     return this.safe(doc);
   }
 
+  async changeAdminLevel(auth: AuthContext, userId: string, adminLevel: UserAdminLevel) {
+    if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found');
+    if (String(userId) === String(auth.userId)) throw new ForbiddenException('You cannot change your own administrative level');
+    if (![UserAdminLevel.EMPLOYEE, UserAdminLevel.COMPANY_ADMIN, UserAdminLevel.TENANT_ADMIN].includes(adminLevel)) throw new ConflictException('Invalid administrative level');
+    const target = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
+    if (!target) throw new NotFoundException('User not found');
+    if (target.adminLevel === UserAdminLevel.TENANT_ADMIN && adminLevel !== UserAdminLevel.TENANT_ADMIN) {
+      const count = await this.db.user.countDocuments({ tenantId: auth.tenantId, accountType: 'TENANT', adminLevel: UserAdminLevel.TENANT_ADMIN, isActive: true });
+      if (count <= 1) throw new ConflictException('The last active Tenant Admin cannot be demoted');
+    }
+
+    const patch: Record<string, unknown> = { adminLevel };
+    const rolePatch: Record<string, unknown> = {};
+    if (adminLevel === UserAdminLevel.TENANT_ADMIN) {
+      const role = await this.db.role.findOne({ tenantId: auth.tenantId, name: 'Tenant Admin', companyId: null }).lean();
+      if (!role) throw new NotFoundException('Tenant Admin role is not configured');
+      rolePatch.$addToSet = { roleIds: String(role._id) };
+    }
+
+    const update: Record<string, unknown> = { $set: patch, $inc: { authVersion: 1 } };
+    if (Object.keys(rolePatch).length) Object.assign(update, rolePatch);
+    if (adminLevel !== UserAdminLevel.TENANT_ADMIN) {
+      const tenantAdminRole = await this.db.role.findOne({ tenantId: auth.tenantId, name: 'Tenant Admin', companyId: null }).lean();
+      if (tenantAdminRole) update.$pull = { roleIds: String(tenantAdminRole._id) };
+    }
+    const updated = await this.db.user.findOneAndUpdate({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }, update, { new: true }).lean();
+    if (!updated) throw new NotFoundException('User not found');
+    return this.safe(updated);
+  }
+
   async sendAccessEmail(auth: AuthContext, userId: string, action: 'invite' | 'reset') {
     if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found');
     const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
@@ -107,6 +140,13 @@ export class UsersService extends TenantScopedRepository {
 
   async setActive(auth: AuthContext, userId: string, active: boolean) {
     if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found');
+    if (!active) {
+      const current = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
+      if (current?.adminLevel === UserAdminLevel.TENANT_ADMIN) {
+        const count = await this.db.user.countDocuments({ tenantId: auth.tenantId, accountType: 'TENANT', adminLevel: UserAdminLevel.TENANT_ADMIN, isActive: true });
+        if (count <= 1) throw new ConflictException('The last active Tenant Admin cannot be deactivated');
+      }
+    }
     const doc = await this.db.user.findOneAndUpdate({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }, { $set: { isActive: active }, $inc: { authVersion: 1 } }, { new: true }).lean();
     if (!doc) throw new NotFoundException('User not found');
     if (!active) await this.db.session.updateMany({ userId: String(doc._id), revokedAt: { $exists: false } }, { $set: { revokedAt: new Date(), revokedReason: 'admin_deactivated' } });
