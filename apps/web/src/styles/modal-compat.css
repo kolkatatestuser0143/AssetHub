@@ -1,0 +1,15 @@
+/* Legacy dialog compatibility: keep older page-specific dialogs consistent with the shared modal system. */
+[role='dialog'].fixed.inset-0,
+[role='alertdialog'].fixed.inset-0 {
+  z-index: 1000 !important;
+}
+
+body:has([role='dialog'].fixed.inset-0),
+body:has([role='alertdialog'].fixed.inset-0) {
+  overflow: hidden;
+}
+
+[role='dialog'].fixed.inset-0 > *:first-child,
+[role='alertdialog'].fixed.inset-0 > *:first-child {
+  max-height: calc(100vh - 2rem);
+}
