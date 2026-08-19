@@ -93,15 +93,33 @@ export function csrfMiddleware(req: any, res: any, next: () => void) {
   const csrfCookie = `${CSRF_COOKIE}=${encodeURIComponent(token)}${cookieOptions()}`;
 
   const originalSetHeader = res.setHeader.bind(res);
+  let csrfCookieSent = false;
+
+  const ensureCsrfCookie = () => {
+    if (csrfCookieSent) return;
+    const existing = res.getHeader?.('Set-Cookie');
+    const values = Array.isArray(existing) ? [...existing] : existing ? [existing] : [];
+    if (!values.some((item: unknown) => String(item).startsWith(`${CSRF_COOKIE}=`) && !String(item).includes('Max-Age=0'))) values.push(csrfCookie);
+    for (const cleanup of legacyCookieCleanup()) if (!values.some((item: unknown) => String(item) === cleanup)) values.push(cleanup);
+    originalSetHeader('Set-Cookie', values);
+    csrfCookieSent = true;
+  };
+
   res.setHeader = (name: string, value: unknown) => {
     if (String(name).toLowerCase() === 'set-cookie') {
       const values = Array.isArray(value) ? [...value] : [value];
       if (!values.some((item: unknown) => String(item).startsWith(`${CSRF_COOKIE}=`) && !String(item).includes('Max-Age=0'))) values.push(csrfCookie);
       for (const cleanup of legacyCookieCleanup()) if (!values.some((item: unknown) => String(item) === cleanup)) values.push(cleanup);
+      csrfCookieSent = true;
       return originalSetHeader(name, values);
     }
     return originalSetHeader(name, value);
   };
+
+  // Always establish a browser-readable token before the response is sent.
+  // This is required for the first forced password-change request immediately
+  // after login, where no previous CSRF cookie may exist yet.
+  ensureCsrfCookie();
 
   if (isMutating(req?.method ?? '')) {
     const path = String(req?.originalUrl ?? req?.url ?? '').split('?')[0].replace(/^\/api\/v1/, '') || '/';
@@ -113,8 +131,6 @@ export function csrfMiddleware(req: any, res: any, next: () => void) {
     }
 
     if (isSessionRefresh(path)) {
-      // Refresh rotates an HttpOnly refresh token. A trusted Origin check
-      // prevents cross-site requests without depending on a stale CSRF token.
       if (!origin || !isTrustedBrowserOrigin(origin)) throw new ForbiddenException('CSRF origin validation failed');
       return next();
     }
