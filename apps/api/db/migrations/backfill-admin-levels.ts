@@ -18,6 +18,8 @@ async function main() {
     const roles = db.collection('roles');
     const users = db.collection('users');
 
+    console.log('[ADMIN LEVELS] Applying Tenant Admin and Employee levels...');
+
     // Tenant Admin is tenant-wide by definition; Company Admin remains company-scoped.
     const tenantAdminRoles = await roles.find({ name: 'Tenant Admin' }).toArray();
     const tenantAdminRoleIds = tenantAdminRoles.map((role) => String(role._id));
@@ -38,7 +40,11 @@ async function main() {
       { $set: { adminLevel: UserAdminLevel.EMPLOYEE, updatedAt: new Date() } },
     );
 
-    console.log(`Admin-level backfill complete. Tenant Admin roles: ${tenantAdminRoleIds.length}`);
+    const tenantAdminUsers = await users.countDocuments({ accountType: 'TENANT', adminLevel: UserAdminLevel.TENANT_ADMIN, isActive: true });
+    const employeeUsers = await users.countDocuments({ accountType: 'TENANT', adminLevel: UserAdminLevel.EMPLOYEE, isActive: true });
+    console.log(`[ADMIN LEVELS] Active Tenant Admins: ${tenantAdminUsers}`);
+    console.log(`[ADMIN LEVELS] Active Employees: ${employeeUsers}`);
+    console.log(`[ADMIN LEVELS] Complete. Tenant Admin roles normalized: ${tenantAdminRoleIds.length}`);
   } finally {
     await connection.close();
   }
