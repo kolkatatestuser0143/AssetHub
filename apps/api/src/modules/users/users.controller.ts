@@ -18,7 +18,7 @@ class AdminLevelDto { @IsIn(Object.values(UserAdminLevel)) adminLevel!: UserAdmi
 export class UsersController {
   constructor(private readonly users: UsersService, private readonly userAssets: UserAsset360Service, private readonly db: MongooseDatabaseService) {}
   @Get('me') @RequirePermission('user:read') me(@Req() req: any) { return this.users.get(req.authContext, req.authContext.userId); }
-  @Get('tenant-admins') @RequirePermission('user:read') tenantAdmins(@Req() req: any) { return this.users.list(req.authContext, UserAdminLevel.TENANT_ADMIN); }
+  @Get('tenant-admins') @RequirePermission('user:read') tenantAdmins(@Req() req: any) { return this.users.listTenantAdmins(req.authContext); }
   @Get('employees') @RequirePermission('user:read') employees(@Req() req: any) { return this.users.list(req.authContext, UserAdminLevel.EMPLOYEE); }
   @Get() @RequirePermission('user:read') list(@Query('adminLevel') adminLevel: UserAdminLevel | undefined, @Req() req: any) { return this.users.list(req.authContext, adminLevel); }
   @Get(':userId/assets') @RequirePermission('asset:read') assets(@Param('userId') userId: string, @Req() req: any) { return this.userAssets.overview(req.authContext, userId); }
