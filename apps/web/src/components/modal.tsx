@@ -1,0 +1,158 @@
+'use client';
+
+import { useEffect, useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+
+export type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'full';
+export type ModalVariant = 'dialog' | 'drawer-right';
+
+const sizeClasses: Record<ModalSize, string> = {
+  sm: 'max-w-sm',
+  md: 'max-w-md',
+  lg: 'max-w-lg',
+  xl: 'max-w-xl',
+  '2xl': 'max-w-2xl',
+  full: 'max-w-none',
+};
+
+export function Modal({
+  open,
+  onClose,
+  title,
+  description,
+  children,
+  footer,
+  size = 'md',
+  variant = 'dialog',
+  closeOnBackdrop = true,
+  closeOnEscape = true,
+  labelledBy,
+  describedBy,
+  className = '',
+}: {
+  open: boolean;
+  onClose: () => void;
+  title?: ReactNode;
+  description?: ReactNode;
+  children: ReactNode;
+  footer?: ReactNode;
+  size?: ModalSize;
+  variant?: ModalVariant;
+  closeOnBackdrop?: boolean;
+  closeOnEscape?: boolean;
+  labelledBy?: string;
+  describedBy?: string;
+  className?: string;
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  const previousActiveRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    previousActiveRef.current = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const focusTarget = panelRef.current?.querySelector<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    );
+    window.setTimeout(() => (focusTarget ?? panelRef.current)?.focus(), 0);
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && closeOnEscape) {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab' || !panelRef.current) return;
+      const focusable = Array.from(panelRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      ));
+      if (focusable.length === 0) {
+        event.preventDefault();
+        panelRef.current.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onKeyDown);
+      previousActiveRef.current?.focus?.();
+    };
+  }, [open, closeOnBackdrop, closeOnEscape, onClose]);
+
+  if (!open || typeof document === 'undefined') return null;
+
+  const titleId = labelledBy ?? (title ? 'assethub-modal-title' : undefined);
+  const descriptionId = describedBy ?? (description ? 'assethub-modal-description' : undefined);
+  const backdropClass = variant === 'drawer-right'
+    ? 'ui-modal-backdrop fixed inset-0 z-[1000] bg-slate-950/45 backdrop-blur-sm'
+    : 'ui-modal-backdrop fixed inset-0 z-[1000] bg-slate-950/45 p-4 backdrop-blur-sm';
+
+  const panel = variant === 'drawer-right'
+    ? (
+      <div
+        className={backdropClass}
+        onMouseDown={(event) => {
+          if (closeOnBackdrop && event.target === event.currentTarget) onClose();
+        }}
+      >
+        <div
+          ref={panelRef}
+          tabIndex={-1}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          aria-describedby={descriptionId}
+          className={`ui-modal-panel ml-auto flex h-full w-full max-w-xl flex-col overflow-hidden bg-white shadow-2xl focus:outline-none ${className}`}
+        >
+          {title || description ? <div className="flex flex-shrink-0 items-start justify-between border-b border-slate-100 px-6 py-5"><div className="min-w-0"><h2 id={titleId} className="text-lg font-semibold text-slate-950">{title}</h2>{description ? <p id={descriptionId} className="mt-1 text-sm leading-6 text-slate-500">{description}</p> : null}</div><button type="button" className="icon-button ml-4 shrink-0" aria-label="Close" onClick={onClose}>×</button></div> : null}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</div>
+          {footer ? <div className="flex flex-shrink-0 justify-end gap-2 border-t border-slate-100 bg-white px-6 py-4">{footer}</div> : null}
+        </div>
+      </div>
+    )
+    : (
+      <div
+        className={backdropClass}
+        onMouseDown={(event) => {
+          if (closeOnBackdrop && event.target === event.currentTarget) onClose();
+        }}
+      >
+        <div
+          ref={panelRef}
+          tabIndex={-1}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          aria-describedby={descriptionId}
+          className={`ui-modal-panel mx-auto flex max-h-[calc(100vh-2rem)] w-full flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl focus:outline-none ${sizeClasses[size]} ${className}`}
+        >
+          {title || description ? <div className="flex flex-shrink-0 items-start justify-between border-b border-slate-100 px-5 py-4"><div className="min-w-0"><h2 id={titleId} className="text-base font-semibold text-slate-950">{title}</h2>{description ? <p id={descriptionId} className="mt-1 text-sm leading-6 text-slate-500">{description}</p> : null}</div><button type="button" className="icon-button ml-4 shrink-0" aria-label="Close" onClick={onClose}>×</button></div> : null}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</div>
+          {footer ? <div className="flex flex-shrink-0 justify-end gap-2 border-t border-slate-100 bg-white px-5 py-4">{footer}</div> : null}
+        </div>
+      </div>
+    );
+
+  return createPortal(panel, document.body);
+}
+
+export function ModalBody({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return <div className={`p-5 sm:p-6 ${className}`}>{children}</div>;
+}
+
+export function ModalFooter({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return <div className={`flex flex-col-reverse gap-2 sm:flex-row sm:justify-end ${className}`}>{children}</div>;
+}
