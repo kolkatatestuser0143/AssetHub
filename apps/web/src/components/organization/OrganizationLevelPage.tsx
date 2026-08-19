@@ -45,17 +45,11 @@ export default function OrganizationLevelPage({ level }: { level: Level }) {
     const result: Array<{ id: string; name: string; company: string; site?: string; location?: string; type?: string }> = [];
     for (const company of companies) {
       for (const site of company.sites ?? []) {
-        if (level === 'sites') {
-          result.push({ id: site.id, name: site.name, company: company.name, type: site.type });
-        }
+        if (level === 'sites') result.push({ id: site.id, name: site.name, company: company.name, type: site.type });
         for (const location of site.locations ?? []) {
-          if (level === 'locations') {
-            result.push({ id: location.id, name: location.name, company: company.name, site: site.name });
-          }
+          if (level === 'locations') result.push({ id: location.id, name: location.name, company: company.name, site: site.name });
           for (const department of location.departments ?? []) {
-            if (level === 'departments') {
-              result.push({ id: department.id, name: department.name, company: company.name, site: site.name, location: location.name });
-            }
+            if (level === 'departments') result.push({ id: department.id, name: department.name, company: company.name, site: site.name, location: location.name });
           }
         }
       }
@@ -64,18 +58,19 @@ export default function OrganizationLevelPage({ level }: { level: Level }) {
   }, [companies, level, query]);
 
   if (loading) return <LoadingState label={`Loading ${meta.title.toLowerCase()}…`} />;
-  if (error) return <ErrorState title={`Unable to load ${meta.title.toLowerCase()}`} message={error} actionLabel="Try again" onAction={() => void load()} />;
+  if (error) return <ErrorState title={`Unable to load ${meta.title.toLowerCase()}`} message={error} onRetry={() => void load()} />;
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
-      <PageHeader eyebrow="People & Organization" title={meta.title} description={meta.description} />
+      <PageHeader title={meta.title} description={meta.description} />
+      <p className="-mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--theme-link)]">People & Organization</p>
       <section className="panel overflow-hidden">
         <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="relative w-full max-w-md">
             <Search size={16} className="absolute left-3 top-2.5 text-slate-400" aria-hidden="true" />
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`Search ${meta.title.toLowerCase()}`} className="field h-10 w-full pl-9" aria-label={`Search ${meta.title.toLowerCase()}`} />
           </div>
-          <Badge variant="neutral">{rows.length} {meta.title.toLowerCase()}</Badge>
+          <Badge>{rows.length} {meta.title.toLowerCase()}</Badge>
         </div>
         {rows.length === 0 ? (
           <EmptyState title={query ? `No ${meta.title.toLowerCase()} match your search` : meta.emptyTitle} text={query ? 'Try a different search term.' : meta.emptyText} />
