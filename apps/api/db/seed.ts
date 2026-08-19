@@ -1,11 +1,10 @@
 import '../src/bootstrap-dns';
-import 'dotenv/config';
 import { config as loadEnv } from 'dotenv';
-loadEnv({ path: require('path').resolve(__dirname, '../../../.env') });
+loadEnv({ path: require('path').resolve(__dirname, '../../../.env'), override: true });
 
 import mongoose from 'mongoose';
 import * as argon2 from 'argon2';
-import { UserAccountType } from '../src/models/user.schemas';
+import { UserAccountType, UserAdminLevel } from '../src/models/user.schemas';
 import { TenantStatus } from '../src/models/tenancy.schemas';
 
 function getMongodbUri(): string {
@@ -106,7 +105,6 @@ function resolveSeedCredential(variableName: string, fallback: string): string {
   const devMode = process.env.SEED_DEV_MODE === 'true';
   if (!configured && !devMode) throw new Error(`${variableName} must be configured unless SEED_DEV_MODE=true`);
   if (configured && configured.length < 16) throw new Error(`${variableName} must be at least 16 characters`);
-  if (fallback.length < 16) throw new Error(`${variableName} fallback must be at least 16 characters`);
   return configured ?? fallback;
 }
 
@@ -118,6 +116,7 @@ async function upsertSeedUser(args: {
   tenantId: string;
   companyId: string;
   roleId: string;
+  adminLevel: UserAdminLevel;
   firstName: string;
   lastName: string;
   jobTitle: string;
@@ -133,6 +132,7 @@ async function upsertSeedUser(args: {
     accountType: args.accountType,
     tenantId: args.tenantId,
     companyId: args.companyId,
+    adminLevel: args.adminLevel,
     passwordHash,
     firstName: args.firstName,
     lastName: args.lastName,
@@ -241,7 +241,7 @@ async function main() {
     const vendors = db.collection('vendors');
     const assets = db.collection('assets');
 
-    await users.updateMany({ accountType: { $exists: false } }, { $set: { accountType: UserAccountType.TENANT } });
+    await users.updateMany({ accountType: { $exists: false } }, { $set: { accountType: UserAccountType.TENANT, adminLevel: UserAdminLevel.EMPLOYEE } });
 
     for (const key of PERMISSIONS) {
       await permissions.updateOne(
@@ -314,6 +314,7 @@ async function main() {
       tenantId,
       companyId,
       roleId: roleRefs['Tenant Admin'],
+      adminLevel: UserAdminLevel.TENANT_ADMIN,
       firstName: 'Demo',
       lastName: 'Admin',
       jobTitle: 'Tenant Administrator',
@@ -336,6 +337,7 @@ async function main() {
       tenantId: '',
       companyId: '',
       roleId: roleRefs['Platform Admin'],
+      adminLevel: UserAdminLevel.EMPLOYEE,
       firstName: 'System',
       lastName: 'Administrator',
       jobTitle: 'Platform Administrator',
@@ -392,10 +394,10 @@ async function main() {
 
     console.log('Seed complete.');
     console.log(`Tenant login: ${tenantEmail}`);
-    console.log(`Tenant slug: demo`);
-    console.log(`Tenant company: Demo Company Pvt. Ltd. (${companyId})`);
     console.log(`Tenant admin role: ${roleRefs['Tenant Admin']}`);
+    console.log(`Tenant admin level: ${UserAdminLevel.TENANT_ADMIN}`);
     console.log(`System login: ${systemEmail}`);
+    console.log('System admin level: PLATFORM ADMIN');
     console.log('Demo tenant subscription: Professional / active');
     console.log('Demo tenant organization: Head Office -> IT Department Floor -> Information Technology');
     console.log('Demo tenant asset types: Laptop, Desktop, Monitor, Mobile, Network Device');
