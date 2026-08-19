@@ -17,17 +17,76 @@ function getMongodbUri(): string {
   return uri;
 }
 
-async function resetAccount(users: any, sessions: any, email: string, password: string, label: string) {
+async function resetTenantAccount(db: any) {
   const now = new Date();
-  const user = await users.findOne({ email }, { projection: { _id: 1, accountType: 1, authVersion: 1 } });
-  if (!user?._id) throw new Error(`${label} account not found: ${email}`);
+  const users = db.collection('users');
+  const tenants = db.collection('tenants');
+  const companies = db.collection('companies');
+  const roles = db.collection('roles');
+  const sessions = db.collection('sessions');
 
-  const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+  const tenant = await tenants.findOne({ slug: 'demo' });
+  if (!tenant?._id) throw new Error('Demo tenant not found. Run db:seed first.');
+  const company = await companies.findOne({ tenantId: String(tenant._id), code: 'DEMO' });
+  if (!company?._id) throw new Error('Demo company not found. Run db:seed first.');
+  const role = await roles.findOne({ tenantId: String(tenant._id), name: 'Tenant Admin', companyId: String(company._id) });
+  if (!role?._id) throw new Error('Demo Tenant Admin role not found. Run db:seed first.');
+
+  const user = await users.findOne({ email: TENANT_EMAIL, accountType: 'TENANT' });
+  if (!user?._id) throw new Error(`Tenant Admin account not found: ${TENANT_EMAIL}. Run db:seed first.`);
+  const passwordHash = await argon2.hash(TENANT_PASSWORD, { type: argon2.argon2id });
 
   await users.updateOne(
     { _id: user._id },
     {
       $set: {
+        tenantId: String(tenant._id),
+        companyId: String(company._id),
+        roleIds: [String(role._id)],
+        passwordHash,
+        forcePasswordReset: true,
+        failedLoginAttempts: 0,
+        isActive: true,
+        backupCodesHash: [],
+        mfaMethod: 'NONE',
+        authVersion: Number(user.authVersion ?? 0) + 1,
+        updatedAt: now,
+      },
+      $unset: { lockedUntil: '', accessTokenHash: '', accessTokenIssuedAt: '', accessTokenExpiresAt: '' },
+    },
+  );
+
+  await tenants.updateOne(
+    { _id: tenant._id },
+    { $set: { status: 'active', primaryUserId: String(user._id), primaryEmail: TENANT_EMAIL, updatedAt: now }, $unset: { suspendedAt: '', suspendedBy: '', suspensionReason: '' } },
+  );
+
+  await sessions.updateMany(
+    { userId: String(user._id), revokedAt: { $exists: false } },
+    { $set: { revokedAt: now, revokedReason: 'demo_credentials_reset' } },
+  );
+}
+
+async function resetSystemAccount(db: any) {
+  const now = new Date();
+  const users = db.collection('users');
+  const roles = db.collection('roles');
+  const sessions = db.collection('sessions');
+
+  const role = await roles.findOne({ name: 'Platform Admin', 'permissions.permissionKey': 'platform:console:access' });
+  if (!role?._id) throw new Error('Platform Admin role not found. Run db:seed first.');
+  const user = await users.findOne({ email: SYSTEM_EMAIL, accountType: 'SYSTEM' });
+  if (!user?._id) throw new Error(`System Admin account not found: ${SYSTEM_EMAIL}. Run db:seed first.`);
+  const passwordHash = await argon2.hash(SYSTEM_PASSWORD, { type: argon2.argon2id });
+
+  await users.updateOne(
+    { _id: user._id },
+    {
+      $set: {
+        accountType: 'SYSTEM',
+        tenantId: '',
+        companyId: '',
+        roleIds: [String(role._id)],
         passwordHash,
         forcePasswordReset: true,
         failedLoginAttempts: 0,
@@ -45,8 +104,6 @@ async function resetAccount(users: any, sessions: any, email: string, password: 
     { userId: String(user._id), revokedAt: { $exists: false } },
     { $set: { revokedAt: now, revokedReason: 'demo_credentials_reset' } },
   );
-
-  console.log(`${label} reset: ${email}`);
 }
 
 async function main() {
@@ -54,13 +111,11 @@ async function main() {
   try {
     const db = connection.db;
     if (!db) throw new Error('Mongo connection failed: native db handle is undefined');
-    const users = db.collection('users');
-    const sessions = db.collection('sessions');
 
-    await resetAccount(users, sessions, TENANT_EMAIL, TENANT_PASSWORD, 'Tenant Admin');
-    await resetAccount(users, sessions, SYSTEM_EMAIL, SYSTEM_PASSWORD, 'System Admin');
+    await resetTenantAccount(db);
+    await resetSystemAccount(db);
 
-    console.log('Demo credentials reset and accounts unlocked.');
+    console.log('Demo credentials reset and authorization state repaired.');
     console.log(`Tenant: ${TENANT_EMAIL} / ${TENANT_PASSWORD}`);
     console.log(`System: ${SYSTEM_EMAIL} / ${SYSTEM_PASSWORD}`);
   } finally {
