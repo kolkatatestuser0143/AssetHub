@@ -17,10 +17,27 @@ function headersFor(options: RequestInit = {}) {
   return headers;
 }
 
+function friendlySystemError(status: number, body: any): Error {
+  const raw = typeof body?.message === 'string' ? body.message.toLowerCase() : '';
+  if (raw.includes('csrf') || raw.includes('security token')) return new Error('Your secure session needs to be refreshed. Please try again.');
+  if (raw.includes('invalid system administrator credentials') || raw.includes('invalid email or password')) return new Error('The system administrator email or password is incorrect.');
+  if (raw.includes('temporarily locked')) return new Error('The system administrator account is temporarily locked. Please try again later.');
+  if (raw.includes('inactive')) return new Error('This system administrator account is inactive. Please contact another administrator.');
+  if (raw.includes('not found')) return new Error('The requested platform item could not be found. Refresh the page and try again.');
+  if (raw.includes('already exists') || raw.includes('duplicate')) return new Error('This information already exists. Please choose a different value.');
+  if (raw.includes('permission') || raw.includes('forbidden')) return new Error('You do not have permission to perform this action.');
+  if (status === 401) return new Error('Your System Admin session has expired. Please sign in again.');
+  if (status === 403) return new Error('You do not have permission to perform this action.');
+  if (status === 404) return new Error('The requested platform item could not be found.');
+  if (status === 409) return new Error('This change conflicts with existing platform information. Please review and try again.');
+  if (status >= 500) return new Error('The platform could not complete that request. Please try again.');
+  return new Error('We could not complete that request. Please try again.');
+}
+
 async function refreshSystemSession() {
   if (refreshing) return refreshing;
   refreshing = fetch(`${API_BASE}/auth/refresh`, { method: 'POST', headers: headersFor({ method: 'POST', headers: { 'X-Auth-Scope': 'system' } }), credentials: 'include' })
-    .then((res) => { if (!res.ok) throw new Error('System administrator session expired'); })
+    .then((res) => { if (!res.ok) throw friendlySystemError(res.status, {}); })
     .finally(() => { refreshing = null; });
   return refreshing;
 }
@@ -61,7 +78,7 @@ export async function systemFetch(path: string, options: RequestInit = {}, retry
   }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body.message ?? `Request failed: ${response.status}`);
+    throw friendlySystemError(response.status, body);
   }
   return response.json();
 }
