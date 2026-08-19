@@ -9,6 +9,7 @@ export interface AuthContext {
   sessionId: string;
   tenantId: string;
   companyId: string;
+  adminLevel: 'EMPLOYEE' | 'COMPANY_ADMIN' | 'TENANT_ADMIN';
   crossCompany: boolean;
   permissions: string[];
   forcePasswordReset: boolean;
@@ -30,7 +31,7 @@ export class TenantContextGuard implements CanActivate {
     try {
       const payload = this.jwt.verify(token);
       if (!payload.sub || !payload.sessionId || !payload.tenantId || !payload.companyId) throw new UnauthorizedException('Invalid access token claims');
-      const user = await this.db.user.findOne({ _id: payload.sub, tenantId: payload.tenantId, accountType: 'TENANT' }).select({ authVersion: 1, isActive: 1, forcePasswordReset: 1 }).lean();
+      const user = await this.db.user.findOne({ _id: payload.sub, tenantId: payload.tenantId, accountType: 'TENANT' }).select({ authVersion: 1, isActive: 1, forcePasswordReset: 1, adminLevel: 1 }).lean();
       if (!user || user.isActive === false) throw new UnauthorizedException('Tenant account is inactive');
       if (Number(payload.authVersion ?? 0) !== Number(user.authVersion ?? 0)) throw new UnauthorizedException('Session is no longer valid');
       const tenant = await this.db.tenant.findById(payload.tenantId).select({ status: 1 }).lean();
@@ -46,6 +47,7 @@ export class TenantContextGuard implements CanActivate {
         sessionId: payload.sessionId,
         tenantId: payload.tenantId,
         companyId: payload.companyId,
+        adminLevel: (user.adminLevel ?? payload.adminLevel ?? 'EMPLOYEE') as AuthContext['adminLevel'],
         crossCompany: !!payload.crossCompany,
         permissions: Array.isArray(payload.permissions) ? payload.permissions : [],
         forcePasswordReset: user.forcePasswordReset === true,
