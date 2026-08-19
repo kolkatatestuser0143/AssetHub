@@ -1,5 +1,6 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001/api/v1';
 let refreshing: Promise<void> | null = null;
+let csrfBootstrapping: Promise<void> | null = null;
 let sessionEstablished = false;
 
 export function setAccessToken(_token: string | null) {}
@@ -11,6 +12,17 @@ function csrfToken(): string | undefined {
   if (typeof document === 'undefined') return undefined;
   const match = document.cookie.split('; ').find((entry) => entry.startsWith('assethub_csrf='));
   return match ? decodeURIComponent(match.slice('assethub_csrf='.length)) : undefined;
+}
+
+async function ensureCsrfToken() {
+  if (csrfToken()) return;
+  if (csrfBootstrapping) return csrfBootstrapping;
+  csrfBootstrapping = fetch(`${API_BASE}/auth/csrf`, { method: 'GET', credentials: 'include' })
+    .then(async (res) => {
+      if (!res.ok || !csrfToken()) throw new Error('Unable to initialize CSRF protection');
+    })
+    .finally(() => { csrfBootstrapping = null; });
+  return csrfBootstrapping;
 }
 
 function isMutating(method: string | undefined) {
@@ -27,9 +39,10 @@ async function expireTenantSession() {
 
 async function refreshSession() {
   if (refreshing) return refreshing;
+  await ensureCsrfToken();
   refreshing = fetch(`${API_BASE}/auth/refresh`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(csrfToken() ? { 'X-CSRF-Token': csrfToken()! } : {}) },
+    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken()! },
     credentials: 'include',
   }).then(async (res) => {
     if (!res.ok) {
@@ -45,11 +58,12 @@ function shouldRefreshOn401(path: string) {
   return sessionEstablished && path !== '/auth/refresh' && path !== '/auth/login' && path !== '/auth/system/login';
 }
 
-function buildHeaders(options: RequestInit) {
+async function buildHeaders(options: RequestInit) {
   const headers = new Headers(options.headers);
   if (options.body instanceof FormData) headers.delete('Content-Type');
   else if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   if (isMutating(options.method)) {
+    await ensureCsrfToken();
     const token = csrfToken();
     if (token && !headers.has('X-CSRF-Token')) headers.set('X-CSRF-Token', token);
   }
@@ -57,7 +71,8 @@ function buildHeaders(options: RequestInit) {
 }
 
 export async function apiFetch(path: string, options: RequestInit = {}, retry = true) {
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers: buildHeaders(options), credentials: 'include' });
+  const headers = await buildHeaders(options);
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: 'include' });
   if (res.status === 401 && retry && shouldRefreshOn401(path)) {
     await refreshSession();
     return apiFetch(path, options, false);
@@ -71,7 +86,8 @@ export async function apiFetch(path: string, options: RequestInit = {}, retry = 
 }
 
 export async function downloadFile(path: string, retry = true, options: RequestInit = {}) {
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers: buildHeaders(options), credentials: 'include' });
+  const headers = await buildHeaders(options);
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: 'include' });
   if (res.status === 401 && retry && sessionEstablished && path !== '/auth/refresh') {
     await refreshSession();
     return downloadFile(path, false, options);
@@ -119,7 +135,8 @@ export async function systemLogin(email: string, password: string) {
 export async function logout() {
   if (typeof window === 'undefined') return;
   try {
-    await fetch(`${API_BASE}/auth/logout`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Auth-Scope': 'tenant', ...(csrfToken() ? { 'X-CSRF-Token': csrfToken()! } : {}) }, credentials: 'include' });
+    await ensureCsrfToken();
+    await fetch(`${API_BASE}/auth/logout`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Auth-Scope': 'tenant', 'X-CSRF-Token': csrfToken()! }, credentials: 'include' });
   } catch {}
   await expireTenantSession();
 }
