@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { AlertCircle, CheckCircle2, Info, Loader2, Plus, RefreshCw, Search, TriangleAlert, X } from 'lucide-react';
 import { type ButtonHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react';
 
+export { Modal, ModalBody, ModalFooter } from './modal';
+
 export function PageHeader({ title, description, action, actionHref }: { title: string; description?: string; action?: string; actionHref?: string }) {
   return <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between page-section-enter"><div className="min-w-0"><h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">{title}</h1>{description ? <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">{description}</p> : null}</div>{action ? actionHref ? <Link href={actionHref} className="btn-primary ui-interactive shrink-0"><Plus size={16}/>{action}</Link> : <button type="button" className="btn-primary ui-interactive shrink-0"><Plus size={16}/>{action}</button> : null}</div>;
 }
