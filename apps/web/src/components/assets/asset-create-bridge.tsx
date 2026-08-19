@@ -7,15 +7,13 @@ const BUTTON_LABEL = 'New asset';
 
 export default function AssetCreateBridge() {
   const [open, setOpen] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     function onClick(event: MouseEvent) {
       if (window.location.pathname !== '/assets') return;
       const target = event.target as Element | null;
       const button = target?.closest('button');
-      if (!button) return;
-      if (button.textContent?.trim() !== BUTTON_LABEL) return;
+      if (!button || button.textContent?.trim() !== BUTTON_LABEL) return;
 
       event.preventDefault();
       event.stopPropagation();
@@ -27,14 +25,5 @@ export default function AssetCreateBridge() {
     return () => document.removeEventListener('click', onClick, true);
   }, []);
 
-  return (
-    <AssetEditorDrawer
-      open={open}
-      onClose={() => setOpen(false)}
-      onSaved={() => {
-        setOpen(false);
-        setRefreshKey((current) => current + 1);
-      }}
-    />
-  );
+  return <AssetEditorDrawer open={open} onClose={() => setOpen(false)} onSaved={() => setOpen(false)} />;
 }
