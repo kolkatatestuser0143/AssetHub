@@ -16,8 +16,21 @@ class ChangePasswordDto {
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService, private readonly jwt: JwtService) {}
-  private sendSession(res: any, result: any, scope: 'tenant' | 'system') { if (scope === 'system') setSystemAuthCookies(res, result.accessToken, result.refreshToken); else setTenantAuthCookies(res, result.accessToken, result.refreshToken); return { ok: true, sessionId: result.sessionId, accountType: result.accountType, forcePasswordReset: result.forcePasswordReset === true }; }
+
+  private sendSession(res: any, result: any, scope: 'tenant' | 'system') {
+    if (scope === 'system') setSystemAuthCookies(res, result.accessToken, result.refreshToken);
+    else setTenantAuthCookies(res, result.accessToken, result.refreshToken);
+    return {
+      ok: true,
+      sessionId: result.sessionId,
+      accountType: result.accountType,
+      adminLevel: scope === 'tenant' ? (result.adminLevel ?? 'EMPLOYEE') : undefined,
+      forcePasswordReset: result.forcePasswordReset === true,
+    };
+  }
+
   private cookieNames(scope: 'tenant' | 'system') { return scope === 'system' ? { access: SYSTEM_ACCESS_COOKIE, refresh: SYSTEM_REFRESH_COOKIE } : { access: TENANT_ACCESS_COOKIE, refresh: TENANT_REFRESH_COOKIE }; }
+
   private tenantSlug(req: any): string | undefined {
     const header = String(req.headers?.['x-tenant-slug'] ?? '').trim().toLowerCase();
     return header || undefined;
@@ -40,7 +53,7 @@ export class AuthController {
   async changePassword(@Body() dto: ChangePasswordDto, @Req() req: any, @Res({ passthrough: true }) res: any) {
     const result = await this.authService.changeTenantPassword(req.authContext.userId, dto.currentPassword, dto.newPassword, req.authContext.sessionId, req.ip, req.headers['user-agent'] ?? '');
     setTenantAuthCookies(res, result.accessToken, result.refreshToken);
-    return { ok: true, mustChangePassword: false, sessionId: result.sessionId, accountType: result.accountType, forcePasswordReset: false };
+    return { ok: true, mustChangePassword: false, sessionId: result.sessionId, accountType: result.accountType, adminLevel: result.adminLevel ?? 'EMPLOYEE', forcePasswordReset: false };
   }
 
   @Get('session')
@@ -52,7 +65,7 @@ export class AuthController {
       try {
         const payload = this.jwt.verify(accessToken);
         const matchesScope = requestedScope === 'system' ? payload?.accountType === 'SYSTEM' && payload?.systemAdmin === true : payload?.accountType === 'TENANT';
-        if (matchesScope) return { authenticated: true, accountType: payload.accountType, forcePasswordReset: payload.forcePasswordReset === true };
+        if (matchesScope) return { authenticated: true, accountType: payload.accountType, adminLevel: requestedScope === 'tenant' ? (payload.adminLevel ?? 'EMPLOYEE') : undefined, forcePasswordReset: payload.forcePasswordReset === true };
       } catch {}
     }
     const refreshToken = readCookie(req, names.refresh) ?? readCookie(req, LEGACY_REFRESH_COOKIE);
@@ -61,7 +74,7 @@ export class AuthController {
       const result = await this.authService.refresh(refreshToken, req.ip, req.headers['user-agent'] ?? '');
       const actualScope = result.accountType === 'SYSTEM' ? 'system' : 'tenant';
       this.sendSession(res, result, actualScope);
-      return { authenticated: true, accountType: result.accountType, forcePasswordReset: result.forcePasswordReset === true };
+      return { authenticated: true, accountType: result.accountType, adminLevel: actualScope === 'tenant' ? (result.adminLevel ?? 'EMPLOYEE') : undefined, forcePasswordReset: result.forcePasswordReset === true };
     } catch {
       if (requestedScope === 'system') clearSystemAuthCookies(res); else clearTenantAuthCookies(res);
       return { authenticated: false };
