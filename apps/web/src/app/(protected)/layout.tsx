@@ -3,7 +3,7 @@
 import { useMemo, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { AuthProvider, useAuth } from '../../lib/auth-context';
-import { FEATURE_KEYS, FEATURE_ROUTES, type FeatureKey } from '../../lib/feature-registry';
+import { FEATURE_ROUTES, type FeatureKey } from '../../lib/feature-registry';
 import PageTransition from '../../components/layout/PageTransition';
 import CommandPalette from '../../components/navigation/CommandPalette';
 import AppShell from '../../components/app-shell';
@@ -20,7 +20,7 @@ function getRequiredFeature(pathname: string): FeatureKey | undefined {
 }
 
 function ProtectedContent({ children }: { children: React.ReactNode }) {
-  const { status, logout, hasFeature, forcePasswordReset } = useAuth();
+  const { status, hasFeature, forcePasswordReset } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
   const requiredFeature = useMemo(() => getRequiredFeature(pathname), [pathname]);
@@ -58,7 +58,7 @@ function ProtectedContent({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <AppShell>{children}</AppShell>
+      <AppShell><PageTransition>{children}</PageTransition></AppShell>
       <CommandPalette />
     </>
   );
@@ -67,6 +67,3 @@ function ProtectedContent({ children }: { children: React.ReactNode }) {
 export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
   return <AuthProvider><ProtectedContent>{children}</ProtectedContent></AuthProvider>;
 }
-
-void FEATURE_KEYS;
-void logout;
