@@ -97,15 +97,16 @@ const PROFESSIONAL_FEATURES: Record<string, unknown> = {
 };
 
 const DEFAULT_TENANT_EMAIL = 'admin@demo.local';
-const DEFAULT_TENANT_PASSWORD = 'ChangeMe123456!';
+const DEFAULT_TENANT_PASSWORD = 'ChangeMe1234567!';
 const DEFAULT_SYSTEM_EMAIL = 'admin@assethub.local';
-const DEFAULT_SYSTEM_PASSWORD = 'ChangeMe123456!';
+const DEFAULT_SYSTEM_PASSWORD = 'ChangeMe1234567!';
 
 function resolveSeedCredential(variableName: string, fallback: string): string {
   const configured = process.env[variableName];
   const devMode = process.env.SEED_DEV_MODE === 'true';
   if (!configured && !devMode) throw new Error(`${variableName} must be configured unless SEED_DEV_MODE=true`);
   if (configured && configured.length < 16) throw new Error(`${variableName} must be at least 16 characters`);
+  if (fallback.length < 16) throw new Error(`${variableName} fallback must be at least 16 characters`);
   return configured ?? fallback;
 }
 
@@ -184,13 +185,7 @@ async function upsertRole(roles: any, tenantId: string, companyId: string | null
   return String(result._id);
 }
 
-async function ensurePlanAndSubscription(args: {
-  plans: any;
-  subscriptions: any;
-  entitlements: any;
-  tenantId: string;
-  now: Date;
-}) {
+async function ensurePlanAndSubscription(args: { plans: any; subscriptions: any; entitlements: any; tenantId: string; now: Date }) {
   const { plans, subscriptions, entitlements, tenantId, now } = args;
   const planResult = await plans.findOneAndUpdate(
     { name: 'Professional' },
