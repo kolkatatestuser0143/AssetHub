@@ -29,8 +29,14 @@ export async function systemBootstrap(): Promise<boolean> {
   if (typeof window === 'undefined') return false;
   try {
     const response = await fetch(`${API_BASE}/auth/session`, { method: 'GET', headers: { 'X-Auth-Scope': 'system' }, credentials: 'include' });
-    if (!response.ok) return false;
-    const data = await response.json();
+    if (response.ok) {
+      const data = await response.json();
+      if (data.authenticated === true && data.accountType === 'SYSTEM') return true;
+    }
+    await refreshSystemSession();
+    const retried = await fetch(`${API_BASE}/auth/session`, { method: 'GET', headers: { 'X-Auth-Scope': 'system' }, credentials: 'include' });
+    if (!retried.ok) return false;
+    const data = await retried.json();
     return data.authenticated === true && data.accountType === 'SYSTEM';
   } catch { return false; }
 }
