@@ -5,6 +5,7 @@ import { IsOptional, IsString, MinLength } from 'class-validator';
 import { AuthService } from './auth.service';
 import { LoginDto, RefreshDto } from './auth.dto';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
+import { issueCsrfCookie } from '../../common/security/csrf.middleware';
 import { clearSystemAuthCookies, clearTenantAuthCookies, readCookie, LEGACY_REFRESH_COOKIE, SYSTEM_ACCESS_COOKIE, SYSTEM_REFRESH_COOKIE, TENANT_ACCESS_COOKIE, TENANT_REFRESH_COOKIE, setSystemAuthCookies, setTenantAuthCookies } from '../../common/auth/auth-cookies';
 
 class ChangePasswordDto {
@@ -23,7 +24,10 @@ export class AuthController {
   }
 
   @Get('csrf')
-  csrf() { return { ok: true }; }
+  csrf(@Res({ passthrough: true }) res: any) {
+    issueCsrfCookie(res);
+    return { ok: true };
+  }
 
   @Post('login') @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async login(@Body() dto: LoginDto, @Req() req: any, @Res({ passthrough: true }) res: any) { return this.sendSession(res, await this.authService.login(dto.email, dto.password, req.ip, req.headers['user-agent'] ?? '', this.tenantSlug(req)), 'tenant'); }
