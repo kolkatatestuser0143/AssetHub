@@ -11,168 +11,22 @@ import { UserAdminLevel } from '../../models/user.schemas';
 
 @Injectable()
 export class UsersService extends TenantScopedRepository {
-  constructor(
-    private readonly db: MongooseDatabaseService,
-    private readonly invites: InviteService,
-    private readonly mail: MailService,
-    private readonly entitlements: EntitlementService,
-  ) { super(); }
-
-  private safe(user: any) {
-    if (!user) return user;
-    const dto = toDto(user);
-    if (dto && typeof dto === 'object') {
-      delete (dto as any).passwordHash;
-      delete (dto as any).totpSecretEnc;
-      delete (dto as any).backupCodesHash;
-      delete (dto as any).accessTokenHash;
-      delete (dto as any).accessTokenIssuedAt;
-      delete (dto as any).accessTokenExpiresAt;
-    }
-    return dto;
-  }
-
-  async list(auth: AuthContext, adminLevel?: UserAdminLevel) {
-    const filter: Record<string, unknown> = { ...this.scope(auth), accountType: 'TENANT' };
-    if (adminLevel) filter.adminLevel = adminLevel;
-    const docs = await this.db.user.find(filter).sort({ lastName: 1, firstName: 1 }).lean();
-    return toDtoArray(docs).map((u: any) => this.safe(u));
-  }
-
-  async get(auth: AuthContext, userId: string) {
-    if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found');
-    const doc = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
-    if (!doc) throw new NotFoundException('User not found');
-    return this.safe(doc);
-  }
-
-  async create(auth: AuthContext, input: { email: string; firstName: string; lastName: string; employeeId?: string; companyId?: string; jobTitle?: string; phone?: string; departmentId?: string; locationId?: string }) {
-    const companyId = input.companyId ?? auth.companyId;
-    if (!auth.crossCompany && companyId !== auth.companyId) throw new NotFoundException('Company not in scope');
-    const email = input.email.trim().toLowerCase();
-    const exists = await this.db.user.findOne({ email, tenantId: auth.tenantId }).lean();
-    if (exists) throw new ConflictException('A user with this email already exists');
-    const employeeId = input.employeeId?.trim() || undefined;
-    if (employeeId) {
-      const duplicateEmployee = await this.db.user.findOne({ tenantId: auth.tenantId, companyId, employeeId }).lean();
-      if (duplicateEmployee) throw new ConflictException('A user with this employee ID already exists');
-    }
-    const currentUserCount = await this.db.user.countDocuments({ tenantId: auth.tenantId, accountType: 'TENANT' });
-    await this.entitlements.requireWithinLimit(auth.tenantId, 'max_users', currentUserCount, 1);
-    const doc = await this.db.user.create({ tenantId: auth.tenantId, companyId, employeeId, email, firstName: input.firstName.trim(), lastName: input.lastName.trim(), jobTitle: input.jobTitle?.trim() || undefined, phone: input.phone?.trim() || undefined, departmentId: input.departmentId || undefined, locationId: input.locationId || undefined, isActive: true, forcePasswordReset: true, roleIds: [], accountType: 'TENANT', adminLevel: UserAdminLevel.EMPLOYEE, mfaMethod: 'NONE', backupCodesHash: [] });
-    return this.safe(doc.toObject());
-  }
-
-  async update(auth: AuthContext, userId: string, input: { email?: string; firstName?: string; lastName?: string; employeeId?: string; jobTitle?: string; phone?: string; departmentId?: string; locationId?: string }) {
-    if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found');
-    const current = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
-    if (!current) throw new NotFoundException('User not found');
-    const tenant = await this.db.tenant.findById(auth.tenantId).select({ primaryUserId: 1 }).lean();
-    const isPrimaryLoginUser = String(tenant?.primaryUserId ?? '') === String(current._id);
-    const email = input.email?.trim().toLowerCase();
-    if (isPrimaryLoginUser && email !== undefined && email !== current.email) {
-      throw new ForbiddenException('The primary login email is managed by the AssetHub System Administrator');
-    }
-    if (email && email !== current.email) {
-      const duplicate = await this.db.user.findOne({ _id: { $ne: userId }, tenantId: auth.tenantId, email }).lean();
-      if (duplicate) throw new ConflictException('A user with this email already exists');
-    }
-    const employeeId = input.employeeId?.trim() || undefined;
-    if (employeeId && employeeId !== current.employeeId) {
-      const duplicate = await this.db.user.findOne({ _id: { $ne: userId }, tenantId: auth.tenantId, companyId: current.companyId, employeeId }).lean();
-      if (duplicate) throw new ConflictException('A user with this employee ID already exists');
-    }
-    const patch: Record<string, unknown> = {};
-    if (email !== undefined) patch.email = email;
-    if (input.firstName !== undefined) patch.firstName = input.firstName.trim();
-    if (input.lastName !== undefined) patch.lastName = input.lastName.trim();
-    if (input.employeeId !== undefined) patch.employeeId = employeeId;
-    if (input.jobTitle !== undefined) patch.jobTitle = input.jobTitle.trim() || undefined;
-    if (input.phone !== undefined) patch.phone = input.phone.trim() || undefined;
-    if (input.departmentId !== undefined) patch.departmentId = input.departmentId || undefined;
-    if (input.locationId !== undefined) patch.locationId = input.locationId || undefined;
-    const doc = await this.db.user.findOneAndUpdate({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }, { $set: patch }, { new: true }).lean();
-    if (!doc) throw new NotFoundException('User not found');
-    return this.safe(doc);
-  }
-
-  async changeAdminLevel(auth: AuthContext, userId: string, adminLevel: UserAdminLevel) {
-    if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found');
-    if (String(userId) === String(auth.userId)) throw new ForbiddenException('You cannot change your own administrative level');
-    if (![UserAdminLevel.EMPLOYEE, UserAdminLevel.COMPANY_ADMIN, UserAdminLevel.TENANT_ADMIN].includes(adminLevel)) throw new ConflictException('Invalid administrative level');
-    const target = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
-    if (!target) throw new NotFoundException('User not found');
-    if (target.adminLevel === UserAdminLevel.TENANT_ADMIN && adminLevel !== UserAdminLevel.TENANT_ADMIN) {
-      const count = await this.db.user.countDocuments({ tenantId: auth.tenantId, accountType: 'TENANT', adminLevel: UserAdminLevel.TENANT_ADMIN, isActive: true });
-      if (count <= 1) throw new ConflictException('The last active Tenant Admin cannot be demoted');
-    }
-
-    const patch: Record<string, unknown> = { adminLevel };
-    const rolePatch: Record<string, unknown> = {};
-    if (adminLevel === UserAdminLevel.TENANT_ADMIN) {
-      const role = await this.db.role.findOne({ tenantId: auth.tenantId, name: 'Tenant Admin', companyId: null }).lean();
-      if (!role) throw new NotFoundException('Tenant Admin role is not configured');
-      rolePatch.$addToSet = { roleIds: String(role._id) };
-    }
-
-    const update: Record<string, unknown> = { $set: patch, $inc: { authVersion: 1 } };
-    if (Object.keys(rolePatch).length) Object.assign(update, rolePatch);
-    if (adminLevel !== UserAdminLevel.TENANT_ADMIN) {
-      const tenantAdminRole = await this.db.role.findOne({ tenantId: auth.tenantId, name: 'Tenant Admin', companyId: null }).lean();
-      if (tenantAdminRole) update.$pull = { roleIds: String(tenantAdminRole._id) };
-    }
-    const updated = await this.db.user.findOneAndUpdate({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }, update, { new: true }).lean();
-    if (!updated) throw new NotFoundException('User not found');
-    return this.safe(updated);
-  }
-
-  async sendAccessEmail(auth: AuthContext, userId: string, action: 'invite' | 'reset') {
-    if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found');
-    const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
-    if (!user) throw new NotFoundException('User not found');
-    if (!user.isActive) throw new ConflictException('Cannot send access email to an inactive user');
-    const token = await this.invites.createInternalToken(String(user._id));
-    const appUrl = (process.env.WEB_APP_URL ?? 'http://localhost:3000').replace(/\/$/, '');
-    const setupUrl = `${appUrl}/accept-invite?token=${encodeURIComponent(token.rawToken)}`;
-    const result = await this.mail.sendTenantAccessEmail({ to: user.email, firstName: user.firstName, action, setupUrl, expiresAt: token.expiresAt });
-    return { ok: true, action, email: user.email, emailSent: result.sent, emailConfigured: this.mail.isEnabled(), setupUrl: result.sent ? undefined : setupUrl, expiresAt: token.expiresAt };
-  }
-
-  async setActive(auth: AuthContext, userId: string, active: boolean) {
-    if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found');
-    if (!active) {
-      const current = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
-      if (current?.adminLevel === UserAdminLevel.TENANT_ADMIN) {
-        const count = await this.db.user.countDocuments({ tenantId: auth.tenantId, accountType: 'TENANT', adminLevel: UserAdminLevel.TENANT_ADMIN, isActive: true });
-        if (count <= 1) throw new ConflictException('The last active Tenant Admin cannot be deactivated');
-      }
-    }
-    const doc = await this.db.user.findOneAndUpdate({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }, { $set: { isActive: active }, $inc: { authVersion: 1 } }, { new: true }).lean();
-    if (!doc) throw new NotFoundException('User not found');
-    if (!active) await this.db.session.updateMany({ userId: String(doc._id), revokedAt: { $exists: false } }, { $set: { revokedAt: new Date(), revokedReason: 'admin_deactivated' } });
-    return this.safe(doc);
-  }
-
-  async sessions(auth: AuthContext, userId: string) {
-    const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
-    if (!user) throw new NotFoundException('User not found');
-    const docs = await this.db.session.find({ userId: String(user._id) }).sort({ lastSeenAt: -1, createdAt: -1 }).lean();
-    return toDtoArray(docs).map((session: any) => { delete session.refreshTokenHash; delete session.familyId; delete session.parentTokenHash; return session; });
-  }
-
-  async loginHistory(auth: AuthContext, userId: string) {
-    const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
-    if (!user) throw new NotFoundException('User not found');
-    const docs = await this.db.loginHistory.find({ userId: String(user._id) }).sort({ occurredAt: -1 }).limit(100).lean();
-    return toDtoArray(docs);
-  }
-
-  async revokeSession(auth: AuthContext, userId: string, sessionId: string, actorUserId: string) {
-    const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
-    if (!user) throw new NotFoundException('User not found');
-    if (String(user._id) === actorUserId && String((await this.db.session.findById(sessionId).lean())?._id) === sessionId) throw new ConflictException('Your current session cannot be revoked from this screen');
-    const session = await this.db.session.findOneAndUpdate({ _id: sessionId, userId: String(user._id), revokedAt: { $exists: false } }, { $set: { revokedAt: new Date(), revokedReason: 'admin_revoked' } }, { new: true }).lean();
-    if (!session) throw new NotFoundException('Active session not found');
-    return { ok: true, sessionId: String(session._id) };
-  }
+  constructor(private readonly db: MongooseDatabaseService, private readonly invites: InviteService, private readonly mail: MailService, private readonly entitlements: EntitlementService) { super(); }
+  private safe(user: any) { if (!user) return user; const dto = toDto(user); if (dto && typeof dto === 'object') { delete (dto as any).passwordHash; delete (dto as any).totpSecretEnc; delete (dto as any).backupCodesHash; delete (dto as any).accessTokenHash; delete (dto as any).accessTokenIssuedAt; delete (dto as any).accessTokenExpiresAt; } return dto; }
+  async list(auth: AuthContext, adminLevel?: UserAdminLevel) { const filter: Record<string, unknown> = { ...this.scope(auth), accountType: 'TENANT' }; if (adminLevel) filter.adminLevel = adminLevel; const docs = await this.db.user.find(filter).sort({ lastName: 1, firstName: 1 }).lean(); return toDtoArray(docs).map((u: any) => this.safe(u)); }
+  async listTenantAdmins(auth: AuthContext) { if (auth.adminLevel !== UserAdminLevel.TENANT_ADMIN) throw new ForbiddenException('Tenant Administrators only'); return this.list({ ...auth, crossCompany: true }, UserAdminLevel.TENANT_ADMIN); }
+  async get(auth: AuthContext, userId: string) { if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found'); const doc = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean(); if (!doc) throw new NotFoundException('User not found'); return this.safe(doc); }
+  async create(auth: AuthContext, input: { email: string; firstName: string; lastName: string; employeeId?: string; companyId?: string; jobTitle?: string; phone?: string; departmentId?: string; locationId?: string }) { const companyId = input.companyId ?? auth.companyId; if (!auth.crossCompany && companyId !== auth.companyId) throw new NotFoundException('Company not in scope'); const email = input.email.trim().toLowerCase(); const exists = await this.db.user.findOne({ email, tenantId: auth.tenantId }).lean(); if (exists) throw new ConflictException('A user with this email already exists'); const employeeId = input.employeeId?.trim() || undefined; if (employeeId) { const duplicateEmployee = await this.db.user.findOne({ tenantId: auth.tenantId, companyId, employeeId }).lean(); if (duplicateEmployee) throw new ConflictException('A user with this employee ID already exists'); } const currentUserCount = await this.db.user.countDocuments({ tenantId: auth.tenantId, accountType: 'TENANT' }); await this.entitlements.requireWithinLimit(auth.tenantId, 'max_users', currentUserCount, 1); const doc = await this.db.user.create({ tenantId: auth.tenantId, companyId, employeeId, email, firstName: input.firstName.trim(), lastName: input.lastName.trim(), jobTitle: input.jobTitle?.trim() || undefined, phone: input.phone?.trim() || undefined, departmentId: input.departmentId || undefined, locationId: input.locationId || undefined, isActive: true, forcePasswordReset: true, roleIds: [], accountType: 'TENANT', adminLevel: UserAdminLevel.EMPLOYEE, mfaMethod: 'NONE', backupCodesHash: [] }); return this.safe(doc.toObject()); }
+  async update(auth: AuthContext, userId: string, input: { email?: string; firstName?: string; lastName?: string; employeeId?: string; jobTitle?: string; phone?: string; departmentId?: string; locationId?: string }) { if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found'); const current = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean(); if (!current) throw new NotFoundException('User not found'); const tenant = await this.db.tenant.findById(auth.tenantId).select({ primaryUserId: 1 }).lean(); const isPrimaryLoginUser = String(tenant?.primaryUserId ?? '') === String(current._id); const email = input.email?.trim().toLowerCase(); if (isPrimaryLoginUser && email !== undefined && email !== current.email) throw new ForbiddenException('The primary login email is managed by the AssetHub System Administrator'); if (email && email !== current.email) { const duplicate = await this.db.user.findOne({ _id: { $ne: userId }, tenantId: auth.tenantId, email }).lean(); if (duplicate) throw new ConflictException('A user with this email already exists'); } const employeeId = input.employeeId?.trim() || undefined; if (employeeId && employeeId !== current.employeeId) { const duplicate = await this.db.user.findOne({ _id: { $ne: userId }, tenantId: auth.tenantId, companyId: current.companyId, employeeId }).lean(); if (duplicate) throw new ConflictException('A user with this employee ID already exists'); } const patch: Record<string, unknown> = {}; if (email !== undefined) patch.email = email; if (input.firstName !== undefined) patch.firstName = input.firstName.trim(); if (input.lastName !== undefined) patch.lastName = input.lastName.trim(); if (input.employeeId !== undefined) patch.employeeId = employeeId; if (input.jobTitle !== undefined) patch.jobTitle = input.jobTitle.trim() || undefined; if (input.phone !== undefined) patch.phone = input.phone.trim() || undefined; if (input.departmentId !== undefined) patch.departmentId = input.departmentId || undefined; if (input.locationId !== undefined) patch.locationId = input.locationId || undefined; const doc = await this.db.user.findOneAndUpdate({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }, { $set: patch }, { new: true }).lean(); if (!doc) throw new NotFoundException('User not found'); return this.safe(doc); }
+  async changeAdminLevel(auth: AuthContext, userId: string, adminLevel: UserAdminLevel) { if (auth.adminLevel !== UserAdminLevel.TENANT_ADMIN) throw new ForbiddenException('Only a Tenant Administrator can change administrative levels'); if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found'); if (String(userId) === String(auth.userId)) throw new ForbiddenException('You cannot change your own administrative level'); if (![UserAdminLevel.EMPLOYEE, UserAdminLevel.COMPANY_ADMIN, UserAdminLevel.TENANT_ADMIN].includes(adminLevel)) throw new ConflictException('Invalid administrative level'); const target = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean(); if (!target) throw new NotFoundException('User not found'); if (target.adminLevel === UserAdminLevel.TENANT_ADMIN && adminLevel !== UserAdminLevel.TENANT_ADMIN) { const count = await this.db.user.countDocuments({ tenantId: auth.tenantId, accountType: 'TENANT', adminLevel: UserAdminLevel.TENANT_ADMIN, isActive: true }); if (count <= 1) throw new ConflictException('The last active Tenant Admin cannot be demoted'); }
+    const update: Record<string, unknown> = { $set: { adminLevel }, $inc: { authVersion: 1 } };
+    const tenantAdminRole = await this.db.role.findOne({ tenantId: auth.tenantId, name: 'Tenant Admin', companyId: null }).lean();
+    if (adminLevel === UserAdminLevel.TENANT_ADMIN) { if (!tenantAdminRole) throw new NotFoundException('Tenant Admin role is not configured'); update.$addToSet = { roleIds: String(tenantAdminRole._id) }; }
+    else if (tenantAdminRole) update.$pull = { roleIds: String(tenantAdminRole._id) };
+    const updated = await this.db.user.findOneAndUpdate({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }, update, { new: true }).lean(); if (!updated) throw new NotFoundException('User not found'); return this.safe(updated); }
+  async sendAccessEmail(auth: AuthContext, userId: string, action: 'invite' | 'reset') { if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found'); const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean(); if (!user) throw new NotFoundException('User not found'); if (!user.isActive) throw new ConflictException('Cannot send access email to an inactive user'); const token = await this.invites.createInternalToken(String(user._id)); const appUrl = (process.env.WEB_APP_URL ?? 'http://localhost:3000').replace(/\/$/, ''); const setupUrl = `${appUrl}/accept-invite?token=${encodeURIComponent(token.rawToken)}`; const result = await this.mail.sendTenantAccessEmail({ to: user.email, firstName: user.firstName, action, setupUrl, expiresAt: token.expiresAt }); return { ok: true, action, email: user.email, emailSent: result.sent, emailConfigured: this.mail.isEnabled(), setupUrl: result.sent ? undefined : setupUrl, expiresAt: token.expiresAt }; }
+  async setActive(auth: AuthContext, userId: string, active: boolean) { if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found'); if (!active) { const current = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean(); if (current?.adminLevel === UserAdminLevel.TENANT_ADMIN) { if (auth.adminLevel !== UserAdminLevel.TENANT_ADMIN) throw new ForbiddenException('Only a Tenant Administrator can deactivate another Tenant Administrator'); const count = await this.db.user.countDocuments({ tenantId: auth.tenantId, accountType: 'TENANT', adminLevel: UserAdminLevel.TENANT_ADMIN, isActive: true }); if (count <= 1) throw new ConflictException('The last active Tenant Admin cannot be deactivated'); } } const doc = await this.db.user.findOneAndUpdate({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }, { $set: { isActive: active }, $inc: { authVersion: 1 } }, { new: true }).lean(); if (!doc) throw new NotFoundException('User not found'); if (!active) await this.db.session.updateMany({ userId: String(doc._id), revokedAt: { $exists: false } }, { $set: { revokedAt: new Date(), revokedReason: 'admin_deactivated' } }); return this.safe(doc); }
+  async sessions(auth: AuthContext, userId: string) { const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean(); if (!user) throw new NotFoundException('User not found'); const docs = await this.db.session.find({ userId: String(user._id) }).sort({ lastSeenAt: -1, createdAt: -1 }).lean(); return toDtoArray(docs).map((session: any) => { delete session.refreshTokenHash; delete session.familyId; delete session.parentTokenHash; return session; }); }
+  async loginHistory(auth: AuthContext, userId: string) { const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean(); if (!user) throw new NotFoundException('User not found'); const docs = await this.db.loginHistory.find({ userId: String(user._id) }).sort({ occurredAt: -1 }).limit(100).lean(); return toDtoArray(docs); }
+  async revokeSession(auth: AuthContext, userId: string, sessionId: string, actorUserId: string) { const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean(); if (!user) throw new NotFoundException('User not found'); if (String(user._id) === actorUserId && String((await this.db.session.findById(sessionId).lean())?._id) === sessionId) throw new ConflictException('Your current session cannot be revoked from this screen'); const session = await this.db.session.findOneAndUpdate({ _id: sessionId, userId: String(user._id), revokedAt: { $exists: false } }, { $set: { revokedAt: new Date(), revokedReason: 'admin_revoked' } }, { new: true }).lean(); if (!session) throw new NotFoundException('Active session not found'); return { ok: true, sessionId: String(session._id) }; }
 }
