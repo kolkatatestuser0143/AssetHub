@@ -51,9 +51,15 @@ export class SessionService {
     const sessionId = String(session._id);
     const claims: Record<string, any> = { sub: normalizedUserId, sessionId, permissions: access.permissions, accountType: rawUser.accountType, authVersion: Number(rawUser.authVersion ?? 0) };
     if (system) claims.systemAdmin = true;
-    else { claims.tenantId = rawUser.tenantId; claims.companyId = rawUser.companyId; claims.crossCompany = access.crossCompany; claims.forcePasswordReset = rawUser.forcePasswordReset === true; }
+    else {
+      claims.tenantId = rawUser.tenantId;
+      claims.companyId = rawUser.companyId;
+      claims.crossCompany = access.crossCompany;
+      claims.adminLevel = rawUser.adminLevel ?? 'EMPLOYEE';
+      claims.forcePasswordReset = rawUser.forcePasswordReset === true;
+    }
     const accessToken = this.jwt.sign(claims, { expiresIn: ACCESS_TOKEN_TTL });
-    return { accessToken, refreshToken: rawRefreshToken, sessionId, accountType: rawUser.accountType, forcePasswordReset: !system && rawUser.forcePasswordReset === true };
+    return { accessToken, refreshToken: rawRefreshToken, sessionId, accountType: rawUser.accountType, adminLevel: !system ? (rawUser.adminLevel ?? 'EMPLOYEE') : undefined, forcePasswordReset: !system && rawUser.forcePasswordReset === true };
   }
 
   async isSystemUser(userId: string): Promise<boolean> { const user = await this.db.user.findOne({ _id: userId }).select({ accountType: 1 }).lean(); return user?.accountType === UserAccountType.SYSTEM; }
