@@ -22,6 +22,9 @@ export class AuthController {
     return header || undefined;
   }
 
+  @Get('csrf')
+  csrf() { return { ok: true }; }
+
   @Post('login') @Throttle({ default: { limit: 5, ttl: 60_000 } })
   async login(@Body() dto: LoginDto, @Req() req: any, @Res({ passthrough: true }) res: any) { return this.sendSession(res, await this.authService.login(dto.email, dto.password, req.ip, req.headers['user-agent'] ?? '', this.tenantSlug(req)), 'tenant'); }
 
@@ -64,7 +67,7 @@ export class AuthController {
   @Post('refresh')
   async refresh(@Body() dto: RefreshDto, @Req() req: any, @Res({ passthrough: true }) res: any) {
     const requestedScope = req.headers['x-auth-scope'] === 'system' ? 'system' : 'tenant';
-    const scopedRefreshToken = readCookie(req, requestedScope === 'system' ? SYSTEM_REFRESH_COOKIE : TENANT_REFRESH_COOKIE);
+    const scopedRefreshToken = readCookie(req, requestedScope === 'system' ? TENANT_REFRESH_COOKIE : SYSTEM_REFRESH_COOKIE);
     const legacyRefreshToken = readCookie(req, LEGACY_REFRESH_COOKIE);
     const refreshToken = dto.refreshToken || scopedRefreshToken || legacyRefreshToken;
     if (!refreshToken) throw new UnauthorizedException('Missing refresh token');
