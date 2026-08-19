@@ -24,6 +24,9 @@ export class UsersController {
   @Post() @RequirePermission('user:write') create(@Body() dto: CreateUserDto, @Req() req: any) { return this.users.create(req.authContext, dto); }
   @Patch(':userId') @RequirePermission('user:write') update(@Param('userId') userId: string, @Body() dto: UpdateUserDto, @Req() req: any) { return this.users.update(req.authContext, userId, dto); }
   @Put(':userId/roles') @RequirePermission('role:write') async updateRoles(@Param('userId') userId: string, @Body() dto: UpdateRolesDto, @Req() req: any) {
+    if (String(userId) === String(req.authContext.userId)) {
+      throw new ForbiddenException('You cannot modify your own roles. Ask another tenant administrator or the System Administrator.');
+    }
     const user = await this.db.user.findOne({ _id: userId, ...this.scopeFilter(req.authContext), accountType: 'TENANT' }).lean();
     if (!user) throw new NotFoundException('User not found');
     const uniqueRoleIds = [...new Set(dto.roleIds.map((id) => String(id).trim()).filter(Boolean))];
