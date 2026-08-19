@@ -3,6 +3,20 @@ let refreshing: Promise<void> | null = null;
 let csrfBootstrapping: Promise<void> | null = null;
 let sessionEstablished = false;
 
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code?: string;
+  readonly details?: unknown;
+
+  constructor(message: string, status: number, code?: string, details?: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
 export function setAccessToken(_token: string | null) {}
 export function getAccessToken() { return null; }
 export function setSessionEstablished(value: boolean) { sessionEstablished = value; }
@@ -19,7 +33,7 @@ async function ensureCsrfToken(force = false) {
   if (csrfBootstrapping) return csrfBootstrapping;
   csrfBootstrapping = fetch(`${API_BASE}/auth/csrf`, { method: 'GET', credentials: 'include' })
     .then(async (res) => {
-      if (!res.ok || !csrfToken()) throw new Error('Unable to initialize CSRF protection');
+      if (!res.ok || !csrfToken()) throw new ApiError('We could not prepare the secure request. Please refresh the page and try again.', res.status || 500, 'CSRF_INIT_FAILED');
     })
     .finally(() => { csrfBootstrapping = null; });
   return csrfBootstrapping;
@@ -47,7 +61,7 @@ async function refreshSession() {
   }).then(async (res) => {
     if (!res.ok) {
       await expireTenantSession();
-      throw new Error('Session expired');
+      throw new ApiError('Your session has ended. Please sign in again.', res.status || 401, 'SESSION_EXPIRED');
     }
     sessionEstablished = true;
   }).finally(() => { refreshing = null; });
@@ -70,6 +84,92 @@ async function buildHeaders(path: string, options: RequestInit) {
   return headers;
 }
 
+function normalizeServerMessage(body: any): string {
+  if (!body) return '';
+  if (typeof body.message === 'string') return body.message.trim();
+  if (Array.isArray(body.message)) return body.message.filter((item: unknown) => typeof item === 'string').join(' ').trim();
+  if (typeof body.error?.message === 'string') return body.error.message.trim();
+  return '';
+}
+
+function userFriendlyMessage(status: number, path: string, body: any): { message: string; code?: string } {
+  const raw = normalizeServerMessage(body).toLowerCase();
+  const endpoint = path.split('?')[0];
+
+  if (raw.includes('csrf') || raw.includes('security token')) {
+    return { message: 'Your secure session needs to be refreshed. Please try again.', code: 'CSRF_INVALID' };
+  }
+  if (raw.includes('account temporarily locked') || raw.includes('temporarily locked')) {
+    return { message: 'Your account is temporarily locked after several unsuccessful sign-in attempts. Please try again later.', code: 'ACCOUNT_LOCKED' };
+  }
+  if (raw.includes('invalid email or password')) {
+    return { message: 'The email address or password is incorrect.', code: 'INVALID_CREDENTIALS' };
+  }
+  if (raw.includes('invalid system administrator credentials')) {
+    return { message: 'The system administrator email or password is incorrect.', code: 'INVALID_SYSTEM_CREDENTIALS' };
+  }
+  if (raw.includes('account is inactive') || raw.includes('inactive')) {
+    return { message: 'This account is inactive. Please contact your administrator.', code: 'ACCOUNT_INACTIVE' };
+  }
+  if (raw.includes('tenant is suspended') || raw.includes('tenant account is unavailable')) {
+    return { message: 'This organization is currently unavailable. Please contact your system administrator.', code: 'TENANT_UNAVAILABLE' };
+  }
+  if (raw.includes('tenant is archived')) {
+    return { message: 'This organization is archived and cannot be accessed.', code: 'TENANT_ARCHIVED' };
+  }
+  if (raw.includes('session is no longer valid') || raw.includes('session expired') || raw.includes('missing access token') || raw.includes('invalid or expired access token')) {
+    return { message: 'Your session has expired. Please sign in again.', code: 'SESSION_EXPIRED' };
+  }
+  if (raw.includes('you cannot modify your own roles')) {
+    return { message: 'You cannot change your own access from here. Ask another administrator to make this change.', code: 'SELF_ROLE_CHANGE_BLOCKED' };
+  }
+  if (raw.includes('you cannot modify your own admin level')) {
+    return { message: 'You cannot change your own administrator level. Ask another administrator to make this change.', code: 'SELF_ADMIN_LEVEL_CHANGE_BLOCKED' };
+  }
+  if (raw.includes('last active tenant administrator') || raw.includes('last tenant admin')) {
+    return { message: 'At least one active Tenant Administrator must remain for this organization.', code: 'LAST_ADMIN_PROTECTED' };
+  }
+  if (raw.includes('role belongs to a different company') || raw.includes('different company')) {
+    return { message: 'That access option belongs to a different company and cannot be assigned here.', code: 'COMPANY_SCOPE_MISMATCH' };
+  }
+  if (raw.includes('one or more roles are not available')) {
+    return { message: 'One or more selected roles are no longer available. Refresh the page and try again.', code: 'ROLE_NOT_AVAILABLE' };
+  }
+  if (raw.includes('already assigned') || raw.includes('already exists') || raw.includes('duplicate')) {
+    return { message: 'This information already exists. Please choose a different value.', code: 'DUPLICATE' };
+  }
+  if (raw.includes('not found')) {
+    return { message: 'The requested item could not be found. It may have been removed or is no longer available.', code: 'NOT_FOUND' };
+  }
+  if (raw.includes('required') || raw.includes('validation') || raw.includes('must be') || raw.includes('invalid')) {
+    return { message: 'Please check the information you entered and try again.', code: 'VALIDATION_FAILED' };
+  }
+  if (endpoint.includes('/assets/') && endpoint.endsWith('/assign')) {
+    return { message: 'We could not assign this asset. Please check the employee and asset details and try again.', code: 'ASSET_ASSIGN_FAILED' };
+  }
+  if (endpoint === '/assets') {
+    return { message: 'We could not save the asset. Please check the details and try again.', code: 'ASSET_SAVE_FAILED' };
+  }
+  if (endpoint.includes('/users') && endpoint.endsWith('/roles')) {
+    return { message: 'We could not update access for this user. Please refresh the page and try again.', code: 'USER_ACCESS_UPDATE_FAILED' };
+  }
+  if (status === 400) return { message: 'Please check the information entered and try again.', code: 'BAD_REQUEST' };
+  if (status === 401) return { message: 'Your session has expired. Please sign in again.', code: 'UNAUTHORIZED' };
+  if (status === 403) return { message: 'You do not have permission to perform this action.', code: 'FORBIDDEN' };
+  if (status === 404) return { message: 'We could not find what you were looking for.', code: 'NOT_FOUND' };
+  if (status === 409) return { message: 'This change conflicts with existing information. Please review and try again.', code: 'CONFLICT' };
+  if (status === 413) return { message: 'The selected file is too large. Please choose a smaller file.', code: 'PAYLOAD_TOO_LARGE' };
+  if (status === 429) return { message: 'Too many requests. Please wait a moment and try again.', code: 'RATE_LIMITED' };
+  if (status >= 500) return { message: 'Something went wrong on our side. Please try again. If the problem continues, contact your administrator.', code: 'SERVER_ERROR' };
+  return { message: 'We could not complete that request. Please try again.', code: 'REQUEST_FAILED' };
+}
+
+async function parseErrorResponse(res: Response, path: string): Promise<ApiError> {
+  const body = await res.json().catch(() => ({}));
+  const mapped = userFriendlyMessage(res.status, path, body);
+  return new ApiError(mapped.message, res.status, mapped.code);
+}
+
 export async function apiFetch(path: string, options: RequestInit = {}, retry = true) {
   const headers = await buildHeaders(path, options);
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: 'include' });
@@ -77,11 +177,7 @@ export async function apiFetch(path: string, options: RequestInit = {}, retry = 
     await refreshSession();
     return apiFetch(path, options, false);
   }
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    const message = Array.isArray(body?.message) ? body.message.join(', ') : body?.message;
-    throw new Error(message ?? `Request failed: ${res.status}`);
-  }
+  if (!res.ok) throw await parseErrorResponse(res, path);
   return res.json();
 }
 
@@ -92,11 +188,7 @@ export async function downloadFile(path: string, retry = true, options: RequestI
     await refreshSession();
     return downloadFile(path, false, options);
   }
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    const message = Array.isArray(body?.message) ? body.message.join(', ') : body?.message;
-    throw new Error(message ?? `Request failed: ${res.status}`);
-  }
+  if (!res.ok) throw await parseErrorResponse(res, path);
   return { blob: await res.blob(), filename: getFilename(res.headers.get('content-disposition')) };
 }
 
