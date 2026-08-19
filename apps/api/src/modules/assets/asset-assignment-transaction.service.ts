@@ -12,7 +12,13 @@ import { assertLifecycleTransition } from './asset-lifecycle';
 export class AssetAssignmentTransactionService extends TenantScopedRepository {
   constructor(private readonly db: MongooseDatabaseService, @InjectConnection() private readonly connection: Connection) { super(); }
 
+  private supportsTransactions(): boolean {
+    const topologyType = (this.connection.getClient() as any)?.topology?.description?.type;
+    return ['ReplicaSetWithPrimary', 'ReplicaSetNoPrimary', 'Sharded', 'LoadBalanced'].includes(String(topologyType));
+  }
+
   async assign(auth: AuthContext, assetId: string, userId: string, notes?: string) {
+    if (!this.supportsTransactions()) return this.assignWithoutTransaction(auth, assetId, userId, notes);
     const session = await this.connection.startSession(); try { let result: any; await session.withTransaction(async () => {
       const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).session(session).lean(); if (!asset) throw new NotFoundException('Asset not found in your scope');
       if (asset.status !== AssetLifecycleState.IN_STOCK) throw new ConflictException(`Asset cannot be assigned while in ${asset.status} state`);
@@ -24,6 +30,26 @@ export class AssetAssignmentTransactionService extends TenantScopedRepository {
       try { const created = await this.db.assetAssignment.create([{ assetId, userId, assignedAt: new Date(), notes }], { session }); result = created[0]; } catch (error: any) { if (error?.code === 11000) throw new ConflictException('Asset is already assigned'); throw error; }
       await this.db.assetAuditEvent.create([{ tenantId: auth.tenantId, companyId: auth.companyId, assetId, fromState: AssetLifecycleState.IN_STOCK, toState: AssetLifecycleState.ASSIGNED, actorUserId: auth.userId, reason: notes?.trim() || 'Asset assigned', occurredAt: new Date() }], { session });
     }); return toDto(result); } finally { await session.endSession(); }
+  }
+
+  private async assignWithoutTransaction(auth: AuthContext, assetId: string, userId: string, notes?: string) {
+    const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).lean(); if (!asset) throw new NotFoundException('Asset not found in your scope');
+    if (asset.status !== AssetLifecycleState.IN_STOCK) throw new ConflictException(`Asset cannot be assigned while in ${asset.status} state`);
+    if (asset.condition === AssetCondition.DAMAGED || asset.condition === AssetCondition.NEEDS_INSPECTION) throw new ConflictException('Damaged or inspection-required assets cannot be assigned');
+    const user = await this.db.user.findOne({ _id: userId, tenantId: auth.tenantId, companyId: auth.companyId }).lean(); if (!user) throw new NotFoundException('User not found in your company'); if (!user.isActive) throw new ForbiddenException('Cannot assign an asset to an inactive user');
+    const active = await this.db.assetAssignment.findOne({ assetId, returnedAt: { $exists: false } }).lean(); if (active) throw new ConflictException('Asset is already assigned');
+    assertLifecycleTransition(AssetLifecycleState.IN_STOCK, AssetLifecycleState.ASSIGNED);
+    const transitioned = await this.db.asset.findOneAndUpdate({ _id: assetId, ...this.scope(auth), status: AssetLifecycleState.IN_STOCK }, { $set: { status: AssetLifecycleState.ASSIGNED, updatedAt: new Date() } }, { new: true }).lean();
+    if (!transitioned) throw new ConflictException('Asset changed before assignment; retry');
+    try {
+      const created = await this.db.assetAssignment.create({ assetId, userId, assignedAt: new Date(), notes });
+      await this.db.assetAuditEvent.create({ tenantId: auth.tenantId, companyId: auth.companyId, assetId, fromState: AssetLifecycleState.IN_STOCK, toState: AssetLifecycleState.ASSIGNED, actorUserId: auth.userId, reason: notes?.trim() || 'Asset assigned', occurredAt: new Date() });
+      return toDto(created.toObject());
+    } catch (error: any) {
+      await this.db.asset.findOneAndUpdate({ _id: assetId, ...this.scope(auth), status: AssetLifecycleState.ASSIGNED }, { $set: { status: AssetLifecycleState.IN_STOCK, updatedAt: new Date() } });
+      if (error?.code === 11000) throw new ConflictException('Asset is already assigned');
+      throw error;
+    }
   }
 
   async unassign(auth: AuthContext, assetId: string, notes?: string, conditionAtReturn?: AssetCondition) {
