@@ -1,7 +1,6 @@
 import '../src/bootstrap-dns';
-import 'dotenv/config';
 import { config as loadEnv } from 'dotenv';
-loadEnv({ path: require('path').resolve(__dirname, '../../../.env') });
+loadEnv({ path: require('path').resolve(__dirname, '../../../.env'), override: true });
 
 import mongoose from 'mongoose';
 import * as argon2 from 'argon2';
@@ -15,6 +14,13 @@ const TENANT_ADMIN_PERMISSIONS = ['asset:read','asset:write','asset:bulk_update'
 const SYSTEM_ADMIN_PERMISSIONS = ['platform:console:access','platform:overview:read','platform:tenants:read','platform:tenants:manage','platform:users:read','platform:users:manage','platform:roles:read','platform:roles:manage','platform:billing:read','platform:billing:manage','platform:audit:read','platform:health:read','platform:analytics:read','platform:settings:read','platform:settings:manage','platform:support:read','platform:support:manage'];
 
 function getMongodbUri(): string { const uri = process.env.MONGODB_URI; if (!uri) throw new Error('Missing required environment variable: MONGODB_URI'); return uri; }
+function safeMongoFingerprint(uri: string): string { const parsed = new URL(uri); const database = parsed.pathname.replace(/^\//, '').split('/')[0] || '(default)'; return `${parsed.protocol}//${parsed.hostname}/${database}`; }
+
+async function verifyPassword(db: any, email: string, accountType: string, password: string) {
+  const user = await db.collection('users').findOne({ email: email.trim().toLowerCase(), accountType });
+  if (!user?.passwordHash || !(await argon2.verify(user.passwordHash, password))) throw new Error(`Credential verification failed for ${email}`);
+  return user;
+}
 
 async function ensurePermissions(db: any, keys: string[], now: Date) {
   const permissions = db.collection('permissions');
@@ -34,10 +40,10 @@ async function resetTenantAccount(db: any, now: Date) {
   const roleResult = await roles.findOneAndUpdate({ tenantId: String(tenant._id), name: 'Tenant Admin' }, { $set: { tenantId: String(tenant._id), companyId: null, name: 'Tenant Admin', isSystem: true, permissions: permissionRefs, updatedAt: now }, $setOnInsert: { _id: new mongoose.Types.ObjectId(), createdAt: now } }, { upsert: true, returnDocument: 'after' });
   if (!roleResult?._id) throw new Error('Failed to repair Demo Tenant Admin role');
   const passwordHash = await argon2.hash(TENANT_PASSWORD, { type: argon2.argon2id });
-  const user = await users.findOne({ email: TENANT_EMAIL, accountType: 'TENANT' }, { projection: { _id: 1 } });
+  const user = await users.findOne({ email: TENANT_EMAIL.trim().toLowerCase(), accountType: 'TENANT' }, { projection: { _id: 1 } });
   if (!user?._id) throw new Error(`Tenant Admin account not found: ${TENANT_EMAIL}. Run db:seed first.`);
   await users.updateOne({ _id: user._id }, { $set: { tenantId: String(tenant._id), companyId: String(company._id), adminLevel: 'TENANT_ADMIN', roleIds: [String(roleResult._id)], passwordHash, forcePasswordReset: true, failedLoginAttempts: 0, isActive: true, backupCodesHash: [], mfaMethod: 'NONE', updatedAt: now }, $unset: { lockedUntil: '', accessTokenHash: '', accessTokenIssuedAt: '', accessTokenExpiresAt: '' }, $inc: { authVersion: 1 } });
-  await tenants.updateOne({ _id: tenant._id }, { $set: { status: 'active', primaryUserId: String(user._id), primaryEmail: TENANT_EMAIL, updatedAt: now }, $unset: { suspendedAt: '', suspendedBy: '', suspensionReason: '' } });
+  await tenants.updateOne({ _id: tenant._id }, { $set: { status: 'active', primaryUserId: String(user._id), primaryEmail: TENANT_EMAIL.trim().toLowerCase(), updatedAt: now }, $unset: { suspendedAt: '', suspendedBy: '', suspensionReason: '' } });
   await sessions.updateMany({ userId: String(user._id), revokedAt: { $exists: false } }, { $set: { revokedAt: now, revokedReason: 'demo_credentials_reset' } });
 }
 
@@ -48,14 +54,28 @@ async function resetSystemAccount(db: any, now: Date) {
   const roleResult = await roles.findOneAndUpdate({ name: 'Platform Admin' }, { $set: { name: 'Platform Admin', tenantId: '', companyId: null, isSystem: true, permissions: permissionRefs, updatedAt: now }, $setOnInsert: { _id: new mongoose.Types.ObjectId(), createdAt: now } }, { upsert: true, returnDocument: 'after' });
   if (!roleResult?._id) throw new Error('Failed to repair Platform Admin role');
   const passwordHash = await argon2.hash(SYSTEM_PASSWORD, { type: argon2.argon2id });
-  const user = await users.findOne({ email: SYSTEM_EMAIL, accountType: 'SYSTEM' }, { projection: { _id: 1 } });
+  const user = await users.findOne({ email: SYSTEM_EMAIL.trim().toLowerCase(), accountType: 'SYSTEM' }, { projection: { _id: 1 } });
   if (!user?._id) throw new Error(`System Admin account not found: ${SYSTEM_EMAIL}. Run db:seed first.`);
-  await users.updateOne({ _id: user._id }, { $set: { accountType: 'SYSTEM', tenantId: '', companyId: '', roleIds: [String(roleResult._id)], passwordHash, forcePasswordReset: true, failedLoginAttempts: 0, isActive: true, backupCodesHash: [], mfaMethod: 'NONE', updatedAt: now }, $unset: { lockedUntil: '', accessTokenHash: '', accessTokenIssuedAt: '', accessTokenExpiresAt: '' }, $inc: { authVersion: 1 } });
+  await users.updateOne({ _id: user._id }, { $set: { accountType: 'SYSTEM', tenantId: '', companyId: '', adminLevel: 'EMPLOYEE', roleIds: [String(roleResult._id)], passwordHash, forcePasswordReset: true, failedLoginAttempts: 0, isActive: true, backupCodesHash: [], mfaMethod: 'NONE', updatedAt: now }, $unset: { lockedUntil: '', accessTokenHash: '', accessTokenIssuedAt: '', accessTokenExpiresAt: '' }, $inc: { authVersion: 1 } });
   await sessions.updateMany({ userId: String(user._id), revokedAt: { $exists: false } }, { $set: { revokedAt: now, revokedReason: 'demo_credentials_reset' } });
 }
 
 async function main() {
-  const connection = await mongoose.createConnection(getMongodbUri()).asPromise();
-  try { const db = connection.db; if (!db) throw new Error('Mongo connection failed: native db handle is undefined'); const now = new Date(); await resetTenantAccount(db, now); await resetSystemAccount(db, now); console.log('Demo credentials and authorization state repaired.'); console.log(`Tenant: ${TENANT_EMAIL} / ${TENANT_PASSWORD}`); console.log(`System: ${SYSTEM_EMAIL} / ${SYSTEM_PASSWORD}`); console.log('Tenant Admin includes billing:read and company:read.'); } finally { await connection.close(); }
+  const uri = getMongodbUri();
+  console.log(`[CONFIG] Mongo target: ${safeMongoFingerprint(uri)}`);
+  const connection = await mongoose.createConnection(uri).asPromise();
+  try {
+    const db = connection.db;
+    if (!db) throw new Error('Mongo connection failed: native db handle is undefined');
+    const now = new Date();
+    await resetTenantAccount(db, now);
+    await resetSystemAccount(db, now);
+    await verifyPassword(db, TENANT_EMAIL, 'TENANT', TENANT_PASSWORD);
+    await verifyPassword(db, SYSTEM_EMAIL, 'SYSTEM', SYSTEM_PASSWORD);
+    console.log('Demo credentials and authorization state repaired and verified.');
+    console.log(`Tenant account verified: ${TENANT_EMAIL}`);
+    console.log(`System account verified: ${SYSTEM_EMAIL}`);
+    console.log('Both passwords verified directly against the stored Argon2 hashes.');
+  } finally { await connection.close(); }
 }
 main().catch((error) => { console.error(error); process.exit(1); });
