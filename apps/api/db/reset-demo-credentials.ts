@@ -7,9 +7,9 @@ import mongoose from 'mongoose';
 import * as argon2 from 'argon2';
 
 const TENANT_EMAIL = process.env.TENANT_ADMIN_EMAIL ?? 'admin@demo.local';
-const TENANT_PASSWORD = 'ChangeMe1234567!';
+const TENANT_PASSWORD = process.env.TENANT_ADMIN_PASSWORD ?? 'ChangeMe1234567!';
 const SYSTEM_EMAIL = process.env.SYSTEM_ADMIN_EMAIL ?? 'admin@assethub.local';
-const SYSTEM_PASSWORD = 'ChangeMe1234567!';
+const SYSTEM_PASSWORD = process.env.SYSTEM_ADMIN_PASSWORD ?? 'ChangeMe1234567!';
 
 const TENANT_ADMIN_PERMISSIONS = ['asset:read','asset:write','asset:bulk_update','asset:delete','company:read','company:write','user:read','user:write','role:read','role:write','identity_provider:read','identity_provider:write','scim:manage','integration:read','integration:write','billing:read','billing:manage','audit:read'];
 const SYSTEM_ADMIN_PERMISSIONS = ['platform:console:access','platform:overview:read','platform:tenants:read','platform:tenants:manage','platform:users:read','platform:users:manage','platform:roles:read','platform:roles:manage','platform:billing:read','platform:billing:manage','platform:audit:read','platform:health:read','platform:analytics:read','platform:settings:read','platform:settings:manage','platform:support:read','platform:support:manage'];
@@ -31,12 +31,12 @@ async function resetTenantAccount(db: any, now: Date) {
   const company = await companies.findOne({ tenantId: String(tenant._id), code: 'DEMO' }); if (!company?._id) throw new Error('Demo company not found. Run db:seed first.');
   const permissionByKey = await ensurePermissions(db, TENANT_ADMIN_PERMISSIONS, now);
   const permissionRefs = TENANT_ADMIN_PERMISSIONS.map((permissionKey) => ({ permissionId: permissionByKey.get(permissionKey), permissionKey }));
-  const roleResult = await roles.findOneAndUpdate({ tenantId: String(tenant._id), name: 'Tenant Admin' }, { $set: { tenantId: String(tenant._id), companyId: String(company._id), name: 'Tenant Admin', isSystem: true, permissions: permissionRefs, updatedAt: now }, $setOnInsert: { _id: new mongoose.Types.ObjectId(), createdAt: now } }, { upsert: true, returnDocument: 'after' });
+  const roleResult = await roles.findOneAndUpdate({ tenantId: String(tenant._id), name: 'Tenant Admin' }, { $set: { tenantId: String(tenant._id), companyId: null, name: 'Tenant Admin', isSystem: true, permissions: permissionRefs, updatedAt: now }, $setOnInsert: { _id: new mongoose.Types.ObjectId(), createdAt: now } }, { upsert: true, returnDocument: 'after' });
   if (!roleResult?._id) throw new Error('Failed to repair Demo Tenant Admin role');
   const passwordHash = await argon2.hash(TENANT_PASSWORD, { type: argon2.argon2id });
   const user = await users.findOne({ email: TENANT_EMAIL, accountType: 'TENANT' }, { projection: { _id: 1 } });
   if (!user?._id) throw new Error(`Tenant Admin account not found: ${TENANT_EMAIL}. Run db:seed first.`);
-  await users.updateOne({ _id: user._id }, { $set: { tenantId: String(tenant._id), companyId: String(company._id), roleIds: [String(roleResult._id)], passwordHash, forcePasswordReset: true, failedLoginAttempts: 0, isActive: true, backupCodesHash: [], mfaMethod: 'NONE', updatedAt: now }, $unset: { lockedUntil: '', accessTokenHash: '', accessTokenIssuedAt: '', accessTokenExpiresAt: '' }, $inc: { authVersion: 1 } });
+  await users.updateOne({ _id: user._id }, { $set: { tenantId: String(tenant._id), companyId: String(company._id), adminLevel: 'TENANT_ADMIN', roleIds: [String(roleResult._id)], passwordHash, forcePasswordReset: true, failedLoginAttempts: 0, isActive: true, backupCodesHash: [], mfaMethod: 'NONE', updatedAt: now }, $unset: { lockedUntil: '', accessTokenHash: '', accessTokenIssuedAt: '', accessTokenExpiresAt: '' }, $inc: { authVersion: 1 } });
   await tenants.updateOne({ _id: tenant._id }, { $set: { status: 'active', primaryUserId: String(user._id), primaryEmail: TENANT_EMAIL, updatedAt: now }, $unset: { suspendedAt: '', suspendedBy: '', suspensionReason: '' } });
   await sessions.updateMany({ userId: String(user._id), revokedAt: { $exists: false } }, { $set: { revokedAt: now, revokedReason: 'demo_credentials_reset' } });
 }
