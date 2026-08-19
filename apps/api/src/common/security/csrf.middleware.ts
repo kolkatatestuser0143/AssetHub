@@ -17,28 +17,39 @@ function parseCookies(header?: string): Record<string, string[]> {
   }, {});
 }
 
-function cookieDomain(): string {
-  const root = (process.env.TENANT_ROOT_DOMAIN ?? process.env.NEXT_PUBLIC_TENANT_ROOT_DOMAIN ?? '').trim().replace(/^\.+|\.+$/g, '');
-  return root && !/^(localhost|127\.0\.0\.1)$/i.test(root) ? `; Domain=.${root}` : '';
+function requestHost(req?: any): string {
+  const forwarded = String(req?.headers?.['x-forwarded-host'] ?? '').split(',')[0].trim();
+  const host = forwarded || String(req?.headers?.host ?? '').trim();
+  return host.split(':')[0].toLowerCase();
 }
 
-function cookieOptions() {
-  const domain = cookieDomain();
+function cookieDomain(req?: any): string {
+  const host = requestHost(req);
+  if (host === 'localhost' || host === '127.0.0.1' || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return '';
+
+  const root = (process.env.TENANT_ROOT_DOMAIN ?? process.env.NEXT_PUBLIC_TENANT_ROOT_DOMAIN ?? '')
+    .trim().replace(/^\.+|\.+$/g, '').toLowerCase();
+  if (!root || host === root || !host.endsWith(`.${root}`)) return '';
+  return `; Domain=.${root}`;
+}
+
+function cookieOptions(req?: any) {
+  const domain = cookieDomain(req);
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
   return `${domain}; Path=/; Max-Age=86400; SameSite=Lax${secure}`;
 }
 
-function legacyCookieCleanup() {
-  const domain = cookieDomain();
+function legacyCookieCleanup(req?: any) {
+  const domain = cookieDomain(req);
   return [
     `${CSRF_COOKIE}=;${domain}; Path=/api/v1; Max-Age=0; SameSite=Lax`,
     `${CSRF_COOKIE}=;${domain}; Path=/api/v1/auth; Max-Age=0; SameSite=Lax`,
   ];
 }
 
-export function issueCsrfCookie(res: any, token = crypto.randomBytes(32).toString('hex')) {
+export function issueCsrfCookie(res: any, req?: any, token = crypto.randomBytes(32).toString('hex')) {
   const originalSetHeader = res.setHeader.bind(res);
-  originalSetHeader('Set-Cookie', [`${CSRF_COOKIE}=${encodeURIComponent(token)}${cookieOptions()}`, ...legacyCookieCleanup()]);
+  originalSetHeader('Set-Cookie', [`${CSRF_COOKIE}=${encodeURIComponent(token)}${cookieOptions(req)}`, ...legacyCookieCleanup(req)]);
   return token;
 }
 
@@ -83,7 +94,7 @@ export function csrfMiddleware(req: any, res: any, next: () => void) {
   const cookies = parseCookies(req?.headers?.cookie);
   const csrfTokens = cookies[CSRF_COOKIE] ?? [];
   const token = csrfTokens.find((value) => value.length >= 32) ?? crypto.randomBytes(32).toString('hex');
-  const csrfCookie = `${CSRF_COOKIE}=${encodeURIComponent(token)}${cookieOptions()}`;
+  const csrfCookie = `${CSRF_COOKIE}=${encodeURIComponent(token)}${cookieOptions(req)}`;
   const originalSetHeader = res.setHeader.bind(res);
   let csrfCookieSent = false;
 
@@ -92,7 +103,7 @@ export function csrfMiddleware(req: any, res: any, next: () => void) {
     const existing = res.getHeader?.('Set-Cookie');
     const values = Array.isArray(existing) ? [...existing] : existing ? [existing] : [];
     if (!values.some((item: unknown) => String(item).startsWith(`${CSRF_COOKIE}=`) && !String(item).includes('Max-Age=0'))) values.push(csrfCookie);
-    for (const cleanup of legacyCookieCleanup()) if (!values.some((item: unknown) => String(item) === cleanup)) values.push(cleanup);
+    for (const cleanup of legacyCookieCleanup(req)) if (!values.some((item: unknown) => String(item) === cleanup)) values.push(cleanup);
     originalSetHeader('Set-Cookie', values);
     csrfCookieSent = true;
   };
@@ -101,7 +112,7 @@ export function csrfMiddleware(req: any, res: any, next: () => void) {
     if (String(name).toLowerCase() === 'set-cookie') {
       const values = Array.isArray(value) ? [...value] : [value];
       if (!values.some((item: unknown) => String(item).startsWith(`${CSRF_COOKIE}=`) && !String(item).includes('Max-Age=0'))) values.push(csrfCookie);
-      for (const cleanup of legacyCookieCleanup()) if (!values.some((item: unknown) => String(item) === cleanup)) values.push(cleanup);
+      for (const cleanup of legacyCookieCleanup(req)) if (!values.some((item: unknown) => String(item) === cleanup)) values.push(cleanup);
       csrfCookieSent = true;
       return originalSetHeader(name, values);
     }
