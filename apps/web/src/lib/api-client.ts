@@ -14,8 +14,8 @@ function csrfToken(): string | undefined {
   return match ? decodeURIComponent(match.slice('assethub_csrf='.length)) : undefined;
 }
 
-async function ensureCsrfToken() {
-  if (csrfToken()) return;
+async function ensureCsrfToken(force = false) {
+  if (!force && csrfToken()) return;
   if (csrfBootstrapping) return csrfBootstrapping;
   csrfBootstrapping = fetch(`${API_BASE}/auth/csrf`, { method: 'GET', credentials: 'include' })
     .then(async (res) => {
@@ -58,12 +58,12 @@ function shouldRefreshOn401(path: string) {
   return sessionEstablished && path !== '/auth/refresh' && path !== '/auth/login' && path !== '/auth/system/login';
 }
 
-async function buildHeaders(options: RequestInit) {
+async function buildHeaders(path: string, options: RequestInit) {
   const headers = new Headers(options.headers);
   if (options.body instanceof FormData) headers.delete('Content-Type');
   else if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   if (isMutating(options.method)) {
-    await ensureCsrfToken();
+    await ensureCsrfToken(path === '/auth/change-password');
     const token = csrfToken();
     if (token && !headers.has('X-CSRF-Token')) headers.set('X-CSRF-Token', token);
   }
@@ -71,7 +71,7 @@ async function buildHeaders(options: RequestInit) {
 }
 
 export async function apiFetch(path: string, options: RequestInit = {}, retry = true) {
-  const headers = await buildHeaders(options);
+  const headers = await buildHeaders(path, options);
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: 'include' });
   if (res.status === 401 && retry && shouldRefreshOn401(path)) {
     await refreshSession();
@@ -86,7 +86,7 @@ export async function apiFetch(path: string, options: RequestInit = {}, retry = 
 }
 
 export async function downloadFile(path: string, retry = true, options: RequestInit = {}) {
-  const headers = await buildHeaders(options);
+  const headers = await buildHeaders(path, options);
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: 'include' });
   if (res.status === 401 && retry && sessionEstablished && path !== '/auth/refresh') {
     await refreshSession();
