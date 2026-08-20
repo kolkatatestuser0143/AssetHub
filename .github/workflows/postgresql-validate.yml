@@ -27,3 +27,4 @@ jobs:
         working-directory: .
       - run: pnpm prisma validate
       - run: pnpm prisma generate
+      - run: pnpm build
