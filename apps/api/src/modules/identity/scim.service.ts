@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, PreconditionFailedException, UnauthorizedException } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { PrismaService } from '../../common/database/prisma.service';
 import { EntitlementService } from '../billing/entitlement.service';
@@ -13,7 +13,9 @@ export class ScimService {
 
   async authenticate(authorization?: string) {
     if (!authorization?.startsWith('Bearer ')) throw new UnauthorizedException('Missing SCIM bearer token');
-    const hash = crypto.createHash('sha256').update(authorization.slice(7).trim()).digest('hex');
+    const raw = authorization.slice(7).trim();
+    if (!raw) throw new UnauthorizedException('Missing SCIM bearer token');
+    const hash = crypto.createHash('sha256').update(raw).digest('hex');
     const token = await this.db.scimToken.findFirst({ where: { tokenHash: hash, revokedAt: null }, include: { company: true } });
     if (!token) throw new UnauthorizedException('Invalid or revoked SCIM token');
     await this.entitlements.requireFeature(token.company.tenantId, 'scim_enabled');
@@ -21,22 +23,42 @@ export class ScimService {
   }
 
   serviceProviderConfig() {
-    return { schemas: ['urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig'], patch: { supported: true }, bulk: { supported: false, maxOperations: 0, maxPayloadSize: 0 }, filter: { supported: true, maxResults: 200 }, sort: { supported: false }, etag: { supported: false }, changePassword: { supported: false }, authenticationSchemes: [{ type: 'oauth2', name: 'SCIM Bearer Token', description: 'AssetHub SCIM bearer token' }] };
+    return { schemas: ['urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig'], patch: { supported: true }, bulk: { supported: false, maxOperations: 0, maxPayloadSize: 0 }, filter: { supported: true, maxResults: 200 }, sort: { supported: false }, etag: { supported: true }, changePassword: { supported: false }, authenticationSchemes: [{ type: 'oauth2', name: 'SCIM Bearer Token', description: 'AssetHub SCIM bearer token' }] };
   }
 
   resourceTypes() { return { schemas: ['urn:ietf:params:scim:schemas:core:2.0:ResourceType'], id: 'User', name: 'User', endpoint: '/Users', schema: SCIM_USER_SCHEMA }; }
   schemas() { return { schemas: ['urn:ietf:params:scim:schemas:core:2.0:Schema'], id: SCIM_USER_SCHEMA, name: 'User', description: 'AssetHub SCIM User schema', attributes: [] }; }
 
   async listUsers(token: any, startIndex = 1, count = 100, filter?: string) {
+    const safeStart = Number.isFinite(startIndex) ? Math.max(Math.floor(startIndex), 1) : 1;
+    const safeCount = Number.isFinite(count) ? Math.min(Math.max(Math.floor(count), 1), 200) : 100;
     const where: any = { tenantId: token.company.tenantId, companyId: token.companyId };
-    const match = filter?.match(/^(userName|externalId)\s+eq\s+"([^"]+)"$/i);
-    if (match?.[1].toLowerCase() === 'username') where.email = match[2];
-    if (match?.[1].toLowerCase() === 'externalid') {
-      const rows = await this.db.$queryRawUnsafe<any[]>(`SELECT user_id AS "userId" FROM external_identities WHERE company_id=$1::uuid AND provider=$2 AND external_id=$3`, token.companyId, this.providerName(token), match[2]);
+    if (filter?.trim()) await this.applyFilter(where, token, filter.trim());
+    const [total, users] = await Promise.all([this.db.user.count({ where }), this.db.user.findMany({ where, orderBy: { createdAt: 'asc' }, skip: safeStart - 1, take: safeCount })]);
+    return { schemas: ['urn:ietf:params:scim:api:messages:2.0:ListResponse'], totalResults: total, startIndex: safeStart, itemsPerPage: users.length, Resources: users.map(user => this.toScim(user)) };
+  }
+
+  private async applyFilter(where: any, token: any, filter: string) {
+    const match = filter.match(/^([A-Za-z][A-Za-z0-9.]*)\s+(eq|co|sw|ew)\s+"((?:\\.|[^"])*)"$/i);
+    if (!match) throw new BadRequestException('Unsupported SCIM filter. Supported form: attribute eq|co|sw|ew "value"');
+    const attribute = match[1].toLowerCase();
+    const operator = match[2].toLowerCase();
+    const value = match[3].replace(/\\(["\\])/g, '$1');
+    const stringFilter = (field: string) => ({ [field]: operator === 'eq' ? value : operator === 'co' ? { contains: value, mode: 'insensitive' } : operator === 'sw' ? { startsWith: value, mode: 'insensitive' } : { endsWith: value, mode: 'insensitive' } });
+    if (attribute === 'username' || attribute === 'emails.value') Object.assign(where, stringFilter('email'));
+    else if (attribute === 'name.givenname') Object.assign(where, stringFilter('firstName'));
+    else if (attribute === 'name.familyname') Object.assign(where, stringFilter('lastName'));
+    else if (attribute === 'title') Object.assign(where, stringFilter('jobTitle'));
+    else if (attribute === 'active') {
+      if (operator !== 'eq') throw new BadRequestException('SCIM active supports eq only');
+      if (!['true', 'false'].includes(value.toLowerCase())) throw new BadRequestException('SCIM active must be true or false');
+      where.isActive = value.toLowerCase() === 'true';
+    } else if (attribute === 'externalid') {
+      const rows = await this.db.$queryRawUnsafe<any[]>(`SELECT user_id AS "userId" FROM external_identities WHERE tenant_id=$1::uuid AND company_id=$2::uuid AND provider=$3 AND external_id=$4`, token.company.tenantId, token.companyId, this.providerName(token), value);
       where.id = { in: rows.map(row => row.userId) };
-    }
-    const [total, users] = await Promise.all([this.db.user.count({ where }), this.db.user.findMany({ where, orderBy: { createdAt: 'asc' }, skip: Math.max(startIndex - 1, 0), take: Math.min(Math.max(count, 1), 200) })]);
-    return { schemas: ['urn:ietf:params:scim:api:messages:2.0:ListResponse'], totalResults: total, startIndex, itemsPerPage: users.length, Resources: users.map(user => this.toScim(user)) };
+    } else if (attribute === 'employeenumber') {
+      where.employeeId = value;
+    } else throw new BadRequestException(`Unsupported SCIM filter attribute: ${match[1]}`);
   }
 
   async getUser(token: any, id: string) {
@@ -51,16 +73,18 @@ export class ScimService {
     return this.toScim(user);
   }
 
-  async replaceUser(token: any, id: string, body: any) {
+  async replaceUser(token: any, id: string, body: any, ifMatch?: string) {
     const existing = await this.db.user.findFirst({ where: { id, tenantId: token.company.tenantId, companyId: token.companyId } });
     if (!existing) throw new NotFoundException('SCIM user not found');
+    this.assertIfMatch(existing, ifMatch);
     const identity = this.fromScim(body, existing.employeeId ?? existing.externalScimId ?? id);
     return this.toScim(await this.provisioning.upsertFromIdentity(token.companyId, token.company.tenantId, identity, this.providerName(token)));
   }
 
-  async patchUser(token: any, id: string, body: any) {
+  async patchUser(token: any, id: string, body: any, ifMatch?: string) {
     const existing = await this.db.user.findFirst({ where: { id, tenantId: token.company.tenantId, companyId: token.companyId } });
     if (!existing) throw new NotFoundException('SCIM user not found');
+    this.assertIfMatch(existing, ifMatch);
     const data: any = {};
     for (const op of Array.isArray(body?.Operations) ? body.Operations : []) {
       const operation = String(op.op || '').toLowerCase();
@@ -80,11 +104,19 @@ export class ScimService {
     return this.toScim(await this.db.user.findUniqueOrThrow({ where: { id } }));
   }
 
-  async deleteUser(token: any, id: string) {
+  async deleteUser(token: any, id: string, ifMatch?: string) {
     const user = await this.db.user.findFirst({ where: { id, tenantId: token.company.tenantId, companyId: token.companyId } });
     if (!user) throw new NotFoundException('SCIM user not found');
+    this.assertIfMatch(user, ifMatch);
     await this.db.user.update({ where: { id }, data: { isActive: false } });
     await this.db.$executeRawUnsafe(`UPDATE external_identities SET status='inactive', last_seen_at=now(), updated_at=now() WHERE user_id=$1::uuid AND company_id=$2::uuid AND provider=$3`, id, token.companyId, this.providerName(token));
+  }
+
+  etag(user: any) { return `W/"${crypto.createHash('sha256').update(`${user.id}:${user.updatedAt?.toISOString?.() ?? ''}`).digest('hex')}"`; }
+
+  private assertIfMatch(user: any, ifMatch?: string) {
+    if (!ifMatch || ifMatch.trim() === '*') return;
+    if (ifMatch.trim() !== this.etag(user)) throw new PreconditionFailedException('SCIM resource has changed; refresh before updating');
   }
 
   private providerName(token: any) { return `SCIM:${token.label?.trim() || token.id}`; }
@@ -103,6 +135,6 @@ export class ScimService {
 
   private toScim(user: any) {
     const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email;
-    return { schemas: [SCIM_USER_SCHEMA], id: user.id, externalId: user.externalScimId ?? user.employeeId ?? user.id, userName: user.email, displayName, name: { givenName: user.firstName ?? '', familyName: user.lastName ?? '', formatted: displayName }, emails: [{ value: user.email, type: 'work', primary: true }], active: Boolean(user.isActive), title: user.jobTitle ?? undefined, phoneNumbers: user.phone ? [{ value: user.phone, type: 'work', primary: true }] : [], meta: { resourceType: 'User', created: user.createdAt?.toISOString?.(), lastModified: user.updatedAt?.toISOString?.() } };
+    return { schemas: [SCIM_USER_SCHEMA], id: user.id, externalId: user.externalScimId ?? user.employeeId ?? user.id, userName: user.email, displayName, name: { givenName: user.firstName ?? '', familyName: user.lastName ?? '', formatted: displayName }, emails: [{ value: user.email, type: 'work', primary: true }], active: Boolean(user.isActive), title: user.jobTitle ?? undefined, phoneNumbers: user.phone ? [{ value: user.phone, type: 'work', primary: true }] : [], meta: { resourceType: 'User', created: user.createdAt?.toISOString?.(), lastModified: user.updatedAt?.toISOString?.(), version: this.etag(user) } };
   }
 }
