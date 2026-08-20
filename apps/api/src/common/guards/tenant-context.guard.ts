@@ -12,8 +12,8 @@ export interface AuthContext {
   adminLevel: 'EMPLOYEE' | 'COMPANY_ADMIN' | 'TENANT_ADMIN';
   crossCompany: boolean;
   permissions: string[];
-  allowedCompanyIds: string[];
-  allowedLocationIds: string[];
+  allowedCompanyIds?: string[];
+  allowedLocationIds?: string[];
   forcePasswordReset: boolean;
   authVersion?: number;
 }
