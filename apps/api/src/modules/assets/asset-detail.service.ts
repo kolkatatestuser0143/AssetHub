@@ -1,32 +1,71 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { MongooseDatabaseService } from '../../common/mongoose-database.service';
-import { AuthContext } from '../../common/guards/tenant-context.guard';
-import { TenantScopedRepository } from '../../common/tenant-scoped.repository';
-import { toDto } from '../../common/mongoose.utils';
+import { PrismaService } from '../../common/database/prisma.service';
 
 @Injectable()
-export class AssetDetailService extends TenantScopedRepository {
-  constructor(private readonly db: MongooseDatabaseService) { super(); }
+export class AssetDetailService {
+  constructor(private readonly prisma: PrismaService) {}
 
-  async get(auth: AuthContext, assetId: string) {
-    const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).lean();
+  async get(auth: { tenantId: string; companyId?: string | null; crossCompany?: boolean }, assetId: string) {
+    const companyScope = !auth.crossCompany && auth.companyId ? { companyId: auth.companyId } : {};
+
+    const asset = await this.prisma.withTenantContext(
+      auth.tenantId,
+      auth.crossCompany ? null : auth.companyId ?? null,
+      (tx) => tx.asset.findFirst({
+        where: { id: assetId, tenantId: auth.tenantId, ...companyScope },
+        include: {
+          assetType: { select: { id: true, name: true, companyId: true } },
+          assignments: {
+            where: { returnedAt: null },
+            orderBy: { assignedAt: 'desc' },
+            take: 1,
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  employeeId: true,
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                  jobTitle: true,
+                  companyId: true,
+                  accountType: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+    );
+
     if (!asset) throw new NotFoundException('Asset not found');
-    const assetTypeFilter: Record<string, unknown> = { _id: asset.assetTypeId };
-    if (!auth.crossCompany) assetTypeFilter.companyId = auth.companyId;
-    const [assetType, assignment] = await Promise.all([
-      this.db.assetType.findOne(assetTypeFilter).select({ _id: 1, name: 1 }).lean(),
-      this.db.assetAssignment.findOne({ assetId: String(asset._id), returnedAt: { $exists: false } }).lean(),
-    ]);
-    let user: any = null;
-    if (assignment?.userId) {
-      const userFilter: Record<string, unknown> = { _id: assignment.userId, tenantId: auth.tenantId, accountType: 'TENANT' };
-      if (!auth.crossCompany) userFilter.companyId = auth.companyId;
-      user = await this.db.user.findOne(userFilter).select({ _id: 1, employeeId: 1, firstName: 1, lastName: 1, email: 1, jobTitle: 1 }).lean();
-    }
+
+    const assignment = asset.assignments[0] ?? null;
+    const user = assignment?.user &&
+      assignment.user.accountType === 'TENANT' &&
+      (auth.crossCompany || assignment.user.companyId === auth.companyId)
+      ? assignment.user
+      : null;
+
+    const { assignments: _assignments, assetType, ...assetDto } = asset;
+
     return {
-      ...toDto(asset),
-      assetType: assetType ? toDto(assetType) : undefined,
-      assignment: assignment ? { ...toDto(assignment), user: user ? toDto(user) : null } : null,
+      ...assetDto,
+      assetType: assetType ? { id: assetType.id, name: assetType.name } : undefined,
+      assignment: assignment
+        ? {
+            id: assignment.id,
+            assetId: assignment.assetId,
+            userId: assignment.userId,
+            assignedAt: assignment.assignedAt,
+            returnedAt: assignment.returnedAt,
+            notes: assignment.notes,
+            conditionAtReturn: assignment.conditionAtReturn,
+            createdAt: assignment.createdAt,
+            updatedAt: assignment.updatedAt,
+            user,
+          }
+        : null,
     };
   }
 }
