@@ -1,73 +1,25 @@
 import { Injectable } from '@nestjs/common';
-import { MongooseDatabaseService } from '../../common/mongoose-database.service';
-import { AuthContext } from '../../common/guards/tenant-context.guard';
-import { TenantScopedRepository } from '../../common/tenant-scoped.repository';
-import { toDto } from '../../common/mongoose.utils';
+import { PrismaService } from '../../common/database/prisma.service';
 
 const MAX_PAGE_SIZE = 100;
 const SORT_FIELDS = new Set(['assetNumber', 'status', 'createdAt']);
 
 @Injectable()
-export class AssetListService extends TenantScopedRepository {
-  constructor(private readonly db: MongooseDatabaseService) { super(); }
+export class AssetListService {
+  constructor(private readonly prisma: PrismaService) {}
 
-  async list(auth: AuthContext, options: {
-    q?: string;
-    status?: string;
-    assetTypeId?: string;
-    page?: number;
-    pageSize?: number;
-    sortBy?: string;
-    sortDir?: 'asc' | 'desc';
-  }) {
+  async list(auth: { tenantId: string; companyId?: string | null; crossCompany?: boolean }, options: { q?: string; status?: string; assetTypeId?: string; page?: number; pageSize?: number; sortBy?: string; sortDir?: 'asc' | 'desc' }) {
     const page = Math.max(1, Number(options.page) || 1);
     const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(options.pageSize) || 25));
     const sortBy = SORT_FIELDS.has(options.sortBy ?? '') ? options.sortBy! : 'createdAt';
-    const sortDir = options.sortDir === 'asc' ? 1 : -1;
-    const filter: Record<string, unknown> = this.scope(auth);
-
-    if (options.status && options.status !== 'ALL') filter.status = options.status;
-    if (options.assetTypeId) filter.assetTypeId = options.assetTypeId;
-
-    const query = (options.q ?? '').trim();
-    if (query) {
-      const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(escaped, 'i');
-      const assetTypeFilter: Record<string, unknown> = {};
-      if (!auth.crossCompany) assetTypeFilter.companyId = auth.companyId;
-      const matchingTypes = await this.db.assetType.find({ ...assetTypeFilter, name: regex }).select({ _id: 1 }).lean();
-      filter.$or = [
-        { assetNumber: regex },
-        { status: regex },
-        ...(matchingTypes.length ? [{ assetTypeId: { $in: matchingTypes.map((type: any) => String(type._id)) } }] : []),
-      ];
-    }
-
-    const [total, rows] = await Promise.all([
-      this.db.asset.countDocuments(filter),
-      this.db.asset.find(filter).sort({ [sortBy]: sortDir, _id: sortDir }).skip((page - 1) * pageSize).limit(pageSize).lean(),
-    ]);
-
-    const typeIds = [...new Set(rows.map((row: any) => String(row.assetTypeId)).filter(Boolean))];
-    const typeFilter: Record<string, unknown> = { _id: { $in: typeIds } };
-    if (!auth.crossCompany) typeFilter.companyId = auth.companyId;
-    const types = typeIds.length
-      ? await this.db.assetType.find(typeFilter).select({ _id: 1, name: 1 }).lean()
-      : [];
-    const typeById = new Map(types.map((type: any) => [String(type._id), type]));
-
-    return {
-      items: rows.map((row: any) => ({
-        ...toDto(row),
-        assetType: typeById.has(String(row.assetTypeId)) ? { name: typeById.get(String(row.assetTypeId)).name } : undefined,
-      })),
-      pagination: {
-        page,
-        pageSize,
-        total,
-        totalPages: Math.max(1, Math.ceil(total / pageSize)),
-      },
-      sort: { sortBy, sortDir: sortDir === 1 ? 'asc' : 'desc' },
-    };
+    const sortDir = options.sortDir === 'asc' ? 'asc' : 'desc';
+    const where: any = { tenantId: auth.tenantId, ...(auth.crossCompany ? {} : { companyId: auth.companyId }), ...(options.status && options.status !== 'ALL' ? { status: options.status } : {}), ...(options.assetTypeId ? { assetTypeId: options.assetTypeId } : {}) };
+    const q = (options.q ?? '').trim();
+    if (q) where.OR = [{ assetNumber: { contains: q, mode: 'insensitive' } }, { status: { contains: q, mode: 'insensitive' } }, { assetType: { name: { contains: q, mode: 'insensitive' }, ...(auth.crossCompany ? {} : { companyId: auth.companyId }) } }];
+    const [total, rows] = await this.prisma.withTenantContext(auth.tenantId, auth.crossCompany ? null : auth.companyId ?? null, async tx => Promise.all([
+      tx.asset.count({ where }),
+      tx.asset.findMany({ where, orderBy: [{ [sortBy]: sortDir }, { id: sortDir }], skip: (page - 1) * pageSize, take: pageSize, include: { assetType: { select: { id: true, name: true } } } }),
+    ]));
+    return { items: rows.map((row: any) => ({ ...row, assetType: row.assetType ? { name: row.assetType.name } : undefined })), pagination: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) }, sort: { sortBy, sortDir } };
   }
 }
