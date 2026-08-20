@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../common/prisma.service';
+import { PrismaService } from '../../common/database/prisma.service';
 
 const MAX_PAGE_SIZE = 100;
 const SORT_FIELDS = new Set(['assetNumber', 'status', 'createdAt']);
