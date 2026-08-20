@@ -12,6 +12,8 @@ export interface AuthContext {
   adminLevel: 'EMPLOYEE' | 'COMPANY_ADMIN' | 'TENANT_ADMIN';
   crossCompany: boolean;
   permissions: string[];
+  allowedCompanyIds: string[];
+  allowedLocationIds: string[];
   forcePasswordReset: boolean;
   authVersion?: number;
 }
@@ -39,7 +41,14 @@ export class TenantContextGuard implements CanActivate {
         if (tenant.status === TenantStatus.ARCHIVED) throw new UnauthorizedException('This tenant is archived and cannot be accessed.');
         throw new UnauthorizedException('This tenant account is unavailable. Please contact your system administrator.');
       }
-      req.authContext = { userId: String(payload.sub), sessionId: String(payload.sessionId), tenantId: String(payload.tenantId), companyId: String(payload.companyId), adminLevel: (user.adminLevel ?? payload.adminLevel ?? 'EMPLOYEE') as AuthContext['adminLevel'], crossCompany: !!payload.crossCompany, permissions: Array.isArray(payload.permissions) ? payload.permissions : [], forcePasswordReset: user.forcePasswordReset === true, authVersion: Number(user.authVersion ?? 0) } as AuthContext;
+      req.authContext = {
+        userId: String(payload.sub), sessionId: String(payload.sessionId), tenantId: String(payload.tenantId), companyId: String(payload.companyId),
+        adminLevel: (user.adminLevel ?? payload.adminLevel ?? 'EMPLOYEE') as AuthContext['adminLevel'],
+        crossCompany: !!payload.crossCompany, permissions: Array.isArray(payload.permissions) ? payload.permissions : [],
+        allowedCompanyIds: Array.isArray(payload.allowedCompanyIds) ? payload.allowedCompanyIds.map(String) : [],
+        allowedLocationIds: Array.isArray(payload.allowedLocationIds) ? payload.allowedLocationIds.map(String) : [],
+        forcePasswordReset: user.forcePasswordReset === true, authVersion: Number(user.authVersion ?? 0),
+      } as AuthContext;
       return true;
     } catch (error) {
       if (error instanceof UnauthorizedException) throw error;
