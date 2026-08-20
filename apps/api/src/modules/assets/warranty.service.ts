@@ -1,43 +1,31 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { MongooseDatabaseService } from '../../common/mongoose-database.service';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../common/database/prisma.service';
 import { AuthContext } from '../../common/guards/tenant-context.guard';
-import { TenantScopedRepository } from '../../common/tenant-scoped.repository';
-import { toDto } from '../../common/mongoose.utils';
 
 @Injectable()
-export class WarrantyService extends TenantScopedRepository {
-  constructor(private readonly db: MongooseDatabaseService) { super(); }
+export class WarrantyService {
+  constructor(private readonly prisma: PrismaService) {}
 
   async get(auth: AuthContext, assetId: string) {
-    await this.requireAsset(auth, assetId);
-    const warranty = await this.db.warranty.findOne({ assetId, companyId: auth.companyId }).lean();
-    return warranty ? toDto(warranty) : null;
+    const asset = await this.requireAsset(auth, assetId);
+    if (!asset.warrantyProvider && !asset.warrantyExpiresAt) return null;
+    return { assetId: asset.id, companyId: asset.companyId, provider: asset.warrantyProvider, expiresAt: asset.warrantyExpiresAt };
   }
 
   async upsert(auth: AuthContext, assetId: string, provider?: string, expiresAt?: Date) {
-    await this.requireAsset(auth, assetId);
-    try {
-      const warranty = await this.db.warranty.findOneAndUpdate(
-        { assetId, companyId: auth.companyId },
-        { $set: { companyId: auth.companyId, assetId, provider, expiresAt } },
-        { upsert: true, new: true, setDefaultsOnInsert: true },
-      ).lean();
-      return toDto(warranty);
-    } catch (error: any) {
-      if (error?.code === 11000) throw new ConflictException('Warranty already exists for this asset');
-      throw error;
-    }
+    const asset = await this.requireAsset(auth, assetId);
+    return this.prisma.withTenantContext(auth.tenantId, auth.companyId, tx => tx.asset.update({ where: { id: asset.id }, data: { warrantyProvider: provider?.trim() || null, warrantyExpiresAt: expiresAt ?? null }, select: { id: true, companyId: true, warrantyProvider: true, warrantyExpiresAt: true } })).then(row => ({ assetId: row.id, companyId: row.companyId, provider: row.warrantyProvider, expiresAt: row.warrantyExpiresAt }));
   }
 
   async remove(auth: AuthContext, assetId: string) {
-    await this.requireAsset(auth, assetId);
-    const result = await this.db.warranty.deleteOne({ assetId, companyId: auth.companyId });
-    if (result.deletedCount === 0) throw new NotFoundException('Warranty not found');
+    const asset = await this.requireAsset(auth, assetId);
+    if (!asset.warrantyProvider && !asset.warrantyExpiresAt) throw new NotFoundException('Warranty not found');
+    await this.prisma.withTenantContext(auth.tenantId, auth.companyId, tx => tx.asset.update({ where: { id: asset.id }, data: { warrantyProvider: null, warrantyExpiresAt: null } }));
     return { ok: true };
   }
 
   private async requireAsset(auth: AuthContext, assetId: string) {
-    const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).lean();
+    const asset = await this.prisma.withTenantContext(auth.tenantId, auth.companyId, tx => tx.asset.findFirst({ where: { id: assetId, tenantId: auth.tenantId, companyId: auth.companyId } }));
     if (!asset) throw new NotFoundException('Asset not found in your scope');
     return asset;
   }
