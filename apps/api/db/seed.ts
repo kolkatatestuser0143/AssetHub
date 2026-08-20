@@ -1,66 +1,12 @@
 import '../src/bootstrap-dns';
 import { config as loadEnv } from 'dotenv';
-loadEnv({ path: require('path').resolve(__dirname, '../../../.env'), override: true });
+import { resolve } from 'path';
+loadEnv({ path: resolve(__dirname, '../../../.env'), override: true });
 
-import mongoose from 'mongoose';
+import { PrismaClient } from '@prisma/client';
 import * as argon2 from 'argon2';
-import { UserAccountType, UserAdminLevel } from '../src/models/user.schemas';
-import { TenantStatus } from '../src/models/tenancy.schemas';
 
-function getMongodbUri(): string {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) throw new Error('Missing required environment variable: MONGODB_URI');
-  return uri;
-}
-
-const PERMISSIONS = [
-  'asset:read','asset:write','asset:bulk_update','asset:delete',
-  'company:read','company:write',
-  'user:read','user:write',
-  'role:read','role:write',
-  'identity_provider:read','identity_provider:write','scim:manage',
-  'integration:read','integration:write',
-  'billing:read','billing:manage',
-  'audit:read',
-  'platform:console:access','platform:manage_tenants',
-];
-
-const ROLE_PERMISSIONS: Record<string, string[]> = {
-  'Tenant Admin': PERMISSIONS.filter((permission) => !permission.startsWith('platform:')),
-  'Company Admin': ['asset:read','asset:write','asset:bulk_update','company:read','user:read','user:write','role:read','identity_provider:read','audit:read'],
-  'IT Manager': ['asset:read','asset:write','asset:bulk_update','user:read'],
-  'Read-Only Auditor': ['asset:read','company:read','user:read','audit:read'],
-  'Platform Admin': [
-    'platform:console:access','platform:overview:read','platform:tenants:read','platform:tenants:manage',
-    'platform:users:read','platform:users:manage','platform:roles:read','platform:roles:manage',
-    'platform:billing:read','platform:billing:manage','platform:audit:read','platform:health:read',
-    'platform:analytics:read','platform:settings:read','platform:settings:manage',
-    'platform:support:read','platform:support:manage',
-  ],
-};
-
-const PERMISSION_DESCRIPTIONS: Record<string, string> = {
-  'asset:read': 'View assets and asset inventory',
-  'asset:write': 'Create and update assets',
-  'asset:bulk_update': 'Perform bulk asset updates and imports',
-  'asset:delete': 'Delete assets and asset types',
-  'company:read': 'View company and organization information',
-  'company:write': 'Manage companies and organization structure',
-  'user:read': 'View tenant users',
-  'user:write': 'Create and manage tenant users',
-  'role:read': 'View roles and permissions',
-  'role:write': 'Manage tenant roles and permissions',
-  'identity_provider:read': 'View identity provider configuration',
-  'identity_provider:write': 'Manage identity provider configuration',
-  'scim:manage': 'Manage SCIM provisioning',
-  'integration:read': 'View integrations',
-  'integration:write': 'Manage integrations',
-  'billing:read': 'View billing and subscription details',
-  'billing:manage': 'Manage tenant billing settings',
-  'audit:read': 'View audit logs',
-  'platform:console:access': 'Access the system administrator console',
-  'platform:manage_tenants': 'Manage platform tenants',
-};
+const prisma = new PrismaClient();
 
 const PROFESSIONAL_FEATURES: Record<string, unknown> = {
   max_assets: 5000,
@@ -100,313 +46,128 @@ const DEFAULT_TENANT_PASSWORD = 'ChangeMe1234567!';
 const DEFAULT_SYSTEM_EMAIL = 'admin@assethub.local';
 const DEFAULT_SYSTEM_PASSWORD = 'ChangeMe1234567!';
 
-function resolveSeedCredential(variableName: string, fallback: string): string {
-  const configured = process.env[variableName];
-  const devMode = process.env.SEED_DEV_MODE === 'true';
-  if (!configured && !devMode) throw new Error(`${variableName} must be configured unless SEED_DEV_MODE=true`);
-  if (configured && configured.length < 16) throw new Error(`${variableName} must be at least 16 characters`);
-  return configured ?? fallback;
+function credential(name: string, fallback: string) {
+  const value = process.env[name];
+  if (!value && process.env.SEED_DEV_MODE !== 'true') throw new Error(`${name} must be configured unless SEED_DEV_MODE=true`);
+  if (value && value.length < 16) throw new Error(`${name} must be at least 16 characters`);
+  return value ?? fallback;
 }
 
-async function upsertSeedUser(args: {
-  users: any;
-  email: string;
-  password: string;
-  accountType: UserAccountType;
-  tenantId: string;
-  companyId: string;
-  roleId: string;
-  adminLevel: UserAdminLevel;
-  firstName: string;
-  lastName: string;
-  jobTitle: string;
-  phone: string;
-  employeeId?: string;
-  departmentId?: string;
-  locationId?: string;
-  forcePasswordReset: boolean;
+async function upsertUser(args: {
+  email: string; password: string; accountType: string; tenantId: string; companyId: string;
+  roleIds: string[]; adminLevel: string; firstName: string; lastName: string; jobTitle: string;
+  phone: string; employeeId?: string; departmentId?: string; locationId?: string; forcePasswordReset?: boolean;
 }) {
-  const now = new Date();
   const passwordHash = await argon2.hash(args.password, { type: argon2.argon2id });
-  const setFields: Record<string, unknown> = {
-    accountType: args.accountType,
-    tenantId: args.tenantId,
-    companyId: args.companyId,
-    adminLevel: args.adminLevel,
-    passwordHash,
-    firstName: args.firstName,
-    lastName: args.lastName,
-    jobTitle: args.jobTitle,
-    phone: args.phone,
-    forcePasswordReset: args.forcePasswordReset,
-    isActive: true,
-    roleIds: [args.roleId],
-    backupCodesHash: [],
-    mfaMethod: 'NONE',
-    failedLoginAttempts: 0,
-    updatedAt: now,
-  };
-  if (args.employeeId !== undefined) setFields.employeeId = args.employeeId;
-  if (args.departmentId !== undefined) setFields.departmentId = args.departmentId;
-  if (args.locationId !== undefined) setFields.locationId = args.locationId;
-
-  await args.users.updateOne(
-    { email: args.email },
-    {
-      $set: setFields,
-      $unset: { lockedUntil: '', accessTokenHash: '', accessTokenIssuedAt: '', accessTokenExpiresAt: '' },
-      $setOnInsert: { _id: new mongoose.Types.ObjectId(), createdAt: now, authVersion: 0 },
+  return prisma.user.upsert({
+    where: { tenantId_email: { tenantId: args.tenantId, email: args.email } },
+    create: {
+      tenantId: args.tenantId, companyId: args.companyId, email: args.email, passwordHash,
+      accountType: args.accountType, adminLevel: args.adminLevel, firstName: args.firstName,
+      lastName: args.lastName, jobTitle: args.jobTitle, phone: args.phone,
+      employeeId: args.employeeId, departmentId: args.departmentId, locationId: args.locationId,
+      forcePasswordReset: args.forcePasswordReset ?? true, roleIds: args.roleIds,
     },
-    { upsert: true },
-  );
-
-  const user = await args.users.findOne({ email: args.email }, { projection: { _id: 1 } });
-  if (!user?._id) throw new Error(`Failed to seed user: ${args.email}`);
-  return String(user._id);
-}
-
-async function upsertRole(roles: any, tenantId: string, companyId: string | null, roleName: string, permissionRefs: Array<{ permissionId: string; permissionKey: string }>, now: Date): Promise<string> {
-  const result = await roles.findOneAndUpdate(
-    { tenantId, name: roleName },
-    {
-      $set: {
-        tenantId,
-        ...(companyId ? { companyId } : { companyId: null }),
-        name: roleName,
-        isSystem: true,
-        permissions: permissionRefs,
-        updatedAt: now,
-      },
-      $setOnInsert: { _id: new mongoose.Types.ObjectId(), createdAt: now },
+    update: {
+      companyId: args.companyId, passwordHash, accountType: args.accountType, adminLevel: args.adminLevel,
+      firstName: args.firstName, lastName: args.lastName, jobTitle: args.jobTitle, phone: args.phone,
+      employeeId: args.employeeId, departmentId: args.departmentId, locationId: args.locationId,
+      forcePasswordReset: args.forcePasswordReset ?? true, roleIds: args.roleIds,
+      isActive: true, failedLoginAttempts: 0, lockedUntil: null, accessTokenHash: null,
+      accessTokenIssuedAt: null, accessTokenExpiresAt: null, updatedAt: new Date(),
     },
-    { upsert: true, returnDocument: 'after' },
-  );
-  if (!result?._id) throw new Error(`Failed to seed role: ${roleName}`);
-  return String(result._id);
-}
-
-async function ensurePlanAndSubscription(args: { plans: any; subscriptions: any; entitlements: any; tenantId: string; now: Date }) {
-  const { plans, subscriptions, entitlements, tenantId, now } = args;
-  const planResult = await plans.findOneAndUpdate(
-    { name: 'Professional' },
-    {
-      $set: { name: 'Professional', themePreset: 'professional', features: PROFESSIONAL_FEATURES, isActive: true, updatedAt: now },
-      $setOnInsert: { _id: new mongoose.Types.ObjectId(), createdAt: now },
-    },
-    { upsert: true, returnDocument: 'after' },
-  );
-  if (!planResult?._id) throw new Error('Failed to seed Professional plan');
-
-  const subscriptionResult = await subscriptions.findOneAndUpdate(
-    { tenantId },
-    {
-      $set: { tenantId, planId: String(planResult._id), status: 'active', startedAt: now, updatedAt: now },
-      $unset: { endsAt: '', graceUntil: '' },
-      $setOnInsert: { _id: new mongoose.Types.ObjectId(), createdAt: now },
-    },
-    { upsert: true, returnDocument: 'after' },
-  );
-  if (!subscriptionResult?._id) throw new Error('Failed to seed tenant subscription');
-
-  const subscriptionId = String(subscriptionResult._id);
-  for (const [key, value] of Object.entries(PROFESSIONAL_FEATURES)) {
-    await entitlements.updateOne(
-      { subscriptionId, key },
-      { $set: { subscriptionId, key, value, source: 'plan', updatedAt: now }, $setOnInsert: { _id: new mongoose.Types.ObjectId(), createdAt: now } },
-      { upsert: true },
-    );
-  }
-  return { planId: String(planResult._id), subscriptionId };
+  });
 }
 
 async function main() {
-  const connection = await mongoose.createConnection(getMongodbUri()).asPromise();
-  try {
-    const db = connection.db;
-    if (!db) throw new Error('Mongo connection failed: native db handle is undefined');
+  const now = new Date();
 
-    const now = new Date();
-    const tenants = db.collection('tenants');
-    const companies = db.collection('companies');
-    const sites = db.collection('plants');
-    const locations = db.collection('locations');
-    const departments = db.collection('departments');
-    const permissions = db.collection('permissions');
-    const roles = db.collection('roles');
-    const users = db.collection('users');
-    const plans = db.collection('plans');
-    const subscriptions = db.collection('subscriptions');
-    const entitlements = db.collection('entitlements');
-    const assetTypes = db.collection('asset_types');
-    const vendors = db.collection('vendors');
-    const assets = db.collection('assets');
+  const tenant = await prisma.tenant.upsert({
+    where: { slug: 'demo' },
+    create: { name: 'Demo Tenant', slug: 'demo', status: 'active', primaryEmail: process.env.TENANT_ADMIN_EMAIL ?? DEFAULT_TENANT_EMAIL, phone: '+91-90000-00001', website: 'https://demo.local' },
+    update: { name: 'Demo Tenant', status: 'active', primaryEmail: process.env.TENANT_ADMIN_EMAIL ?? DEFAULT_TENANT_EMAIL, phone: '+91-90000-00001', website: 'https://demo.local', suspendedAt: null, suspendedBy: null, suspensionReason: null },
+  });
 
-    await users.updateMany({ accountType: { $exists: false } }, { $set: { accountType: UserAccountType.TENANT, adminLevel: UserAdminLevel.EMPLOYEE } });
+  const company = await prisma.company.upsert({
+    where: { tenantId_code: { tenantId: tenant.id, code: 'DEMO' } },
+    create: { tenantId: tenant.id, name: 'Demo Company Pvt. Ltd.', code: 'DEMO' },
+    update: { name: 'Demo Company Pvt. Ltd.' },
+  });
 
-    for (const key of PERMISSIONS) {
-      await permissions.updateOne(
-        { key },
-        { $set: { key, description: PERMISSION_DESCRIPTIONS[key] ?? key, updatedAt: now }, $setOnInsert: { _id: new mongoose.Types.ObjectId(), createdAt: now } },
-        { upsert: true },
-      );
-    }
+  const site = await prisma.site.findFirst({ where: { companyId: company.id, name: 'Demo Head Office' } }) ?? await prisma.site.create({ data: { tenantId: tenant.id, companyId: company.id, type: 'head_office', name: 'Demo Head Office' } });
+  const location = await prisma.location.findFirst({ where: { siteId: site.id, name: 'IT Department Floor' } }) ?? await prisma.location.create({ data: { siteId: site.id, name: 'IT Department Floor' } });
+  const department = await prisma.department.findFirst({ where: { locationId: location.id, name: 'Information Technology' } }) ?? await prisma.department.create({ data: { locationId: location.id, name: 'Information Technology' } });
 
-    const permissionDocs = await permissions.find({ key: { $in: [...new Set(Object.values(ROLE_PERMISSIONS).flat())] } }).toArray();
-    const permissionByKey = new Map(permissionDocs.map((permission) => [permission.key as string, String(permission._id)]));
-    for (const rolePermissions of Object.values(ROLE_PERMISSIONS)) {
-      for (const key of rolePermissions) if (!permissionByKey.has(key)) throw new Error(`Missing permission key after seed: ${key}`);
-    }
+  // Roles are represented by stable role identifiers until the dedicated RBAC persistence models are introduced.
+  const tenantAdminRole = 'tenant-admin';
+  const platformAdminRole = 'platform-admin';
 
-    let tenant = await tenants.findOne({ slug: 'demo' });
-    const tenantId = tenant?._id ? String(tenant._id) : new mongoose.Types.ObjectId().toString();
-    const demoTenantValues = {
-      name: 'Demo Tenant',
-      slug: 'demo',
-      status: TenantStatus.ACTIVE,
-      primaryEmail: process.env.TENANT_ADMIN_EMAIL ?? DEFAULT_TENANT_EMAIL,
-      phone: '+91-90000-00001',
-      website: 'https://demo.local',
-      updatedAt: now,
-    };
-    if (!tenant) {
-      await tenants.insertOne({ _id: new mongoose.Types.ObjectId(tenantId), ...demoTenantValues, createdAt: now });
-      tenant = await tenants.findOne({ slug: 'demo' });
-    } else {
-      await tenants.updateOne({ _id: tenant._id }, { $set: demoTenantValues, $unset: { suspendedAt: '', suspendedBy: '', suspensionReason: '' } });
-    }
-    if (!tenant?._id) throw new Error('Failed to seed demo tenant');
+  const plan = await prisma.plan.upsert({
+    where: { name: 'Professional' },
+    create: { name: 'Professional', themePreset: 'professional', features: PROFESSIONAL_FEATURES, isActive: true },
+    update: { themePreset: 'professional', features: PROFESSIONAL_FEATURES, isActive: true },
+  });
 
-    let company = await companies.findOne({ tenantId, code: 'DEMO' });
-    const companyId = company?._id ? String(company._id) : new mongoose.Types.ObjectId().toString();
-    if (!company) {
-      await companies.insertOne({ _id: new mongoose.Types.ObjectId(companyId), tenantId, name: 'Demo Company Pvt. Ltd.', code: 'DEMO', createdAt: now, updatedAt: now });
-    } else {
-      await companies.updateOne({ _id: company._id }, { $set: { tenantId, name: 'Demo Company Pvt. Ltd.', code: 'DEMO', updatedAt: now } });
-    }
+  const subscription = await prisma.subscription.upsert({
+    where: { id: (await prisma.subscription.findFirst({ where: { tenantId }, orderBy: { startedAt: 'desc' } }))?.id ?? '00000000-0000-0000-0000-000000000000' },
+    create: { tenantId: tenant.id, planId: plan.id, status: 'active', startedAt: now, endsAt: null, graceUntil: null },
+    update: { planId: plan.id, status: 'active', startedAt: now, endsAt: null, graceUntil: null },
+  });
 
-    let site = await sites.findOne({ companyId, name: 'Demo Head Office' });
-    const siteId = site?._id ? String(site._id) : new mongoose.Types.ObjectId().toString();
-    if (!site) await sites.insertOne({ _id: new mongoose.Types.ObjectId(siteId), companyId, type: 'head_office', name: 'Demo Head Office', createdAt: now, updatedAt: now });
-
-    let location = await locations.findOne({ plantId: siteId, name: 'IT Department Floor' });
-    const locationId = location?._id ? String(location._id) : new mongoose.Types.ObjectId().toString();
-    if (!location) await locations.insertOne({ _id: new mongoose.Types.ObjectId(locationId), plantId: siteId, name: 'IT Department Floor', createdAt: now, updatedAt: now });
-
-    let department = await departments.findOne({ locationId, name: 'Information Technology' });
-    const departmentId = department?._id ? String(department._id) : new mongoose.Types.ObjectId().toString();
-    if (!department) await departments.insertOne({ _id: new mongoose.Types.ObjectId(departmentId), locationId, name: 'Information Technology', createdAt: now, updatedAt: now });
-
-    const roleRefs: Record<string, string> = {};
-    for (const [roleName, rolePermissions] of Object.entries(ROLE_PERMISSIONS)) {
-      const permissionRefs = rolePermissions.map((permissionKey) => ({ permissionId: permissionByKey.get(permissionKey)!, permissionKey }));
-      roleRefs[roleName] = await upsertRole(roles, tenantId, roleName === 'Platform Admin' ? null : companyId, roleName, permissionRefs, now);
-    }
-
-    await ensurePlanAndSubscription({ plans, subscriptions, entitlements, tenantId, now });
-
-    const tenantEmail = process.env.TENANT_ADMIN_EMAIL ?? DEFAULT_TENANT_EMAIL;
-    const tenantPassword = resolveSeedCredential('TENANT_ADMIN_PASSWORD', DEFAULT_TENANT_PASSWORD);
-    const tenantUserId = await upsertSeedUser({
-      users,
-      email: tenantEmail,
-      password: tenantPassword,
-      accountType: UserAccountType.TENANT,
-      tenantId,
-      companyId,
-      roleId: roleRefs['Tenant Admin'],
-      adminLevel: UserAdminLevel.TENANT_ADMIN,
-      firstName: 'Demo',
-      lastName: 'Admin',
-      jobTitle: 'Tenant Administrator',
-      phone: '+91-90000-00002',
-      employeeId: 'DEMO-ADMIN-001',
-      departmentId,
-      locationId,
-      forcePasswordReset: true,
+  for (const [key, value] of Object.entries(PROFESSIONAL_FEATURES)) {
+    await prisma.entitlement.upsert({
+      where: { subscriptionId_key: { subscriptionId: subscription.id, key } },
+      create: { subscriptionId: subscription.id, key, value, source: 'plan' },
+      update: { value, source: 'plan' },
     });
-
-    await tenants.updateOne({ _id: tenant._id }, { $set: { primaryUserId: tenantUserId, primaryEmail: tenantEmail, updatedAt: now } });
-
-    const systemEmail = process.env.SYSTEM_ADMIN_EMAIL ?? DEFAULT_SYSTEM_EMAIL;
-    const systemPassword = resolveSeedCredential('SYSTEM_ADMIN_PASSWORD', DEFAULT_SYSTEM_PASSWORD);
-    await upsertSeedUser({
-      users,
-      email: systemEmail,
-      password: systemPassword,
-      accountType: UserAccountType.SYSTEM,
-      tenantId: '',
-      companyId: '',
-      roleId: roleRefs['Platform Admin'],
-      adminLevel: UserAdminLevel.EMPLOYEE,
-      firstName: 'System',
-      lastName: 'Administrator',
-      jobTitle: 'Platform Administrator',
-      phone: '+91-90000-00000',
-      forcePasswordReset: true,
-    });
-
-    const assetTypeSeeds = [
-      { name: 'Laptop', prefix: 'LAP' },
-      { name: 'Desktop', prefix: 'DSK' },
-      { name: 'Monitor', prefix: 'MON' },
-      { name: 'Mobile', prefix: 'MOB' },
-      { name: 'Network Device', prefix: 'NET' },
-    ];
-    for (const item of assetTypeSeeds) {
-      await assetTypes.updateOne(
-        { companyId, name: item.name },
-        { $set: { companyId, name: item.name, numberingRule: { prefix: item.prefix, separator: '-', padding: 6, nextSequence: 1 }, updatedAt: now }, $setOnInsert: { _id: new mongoose.Types.ObjectId(), createdAt: now } },
-        { upsert: true },
-      );
-    }
-
-    const vendorResult = await vendors.findOneAndUpdate(
-      { companyId, name: 'Demo IT Supplies' },
-      { $set: { companyId, name: 'Demo IT Supplies', contact: 'sales@demo.local', updatedAt: now }, $setOnInsert: { _id: new mongoose.Types.ObjectId(), createdAt: now } },
-      { upsert: true, returnDocument: 'after' },
-    );
-
-    const laptopType = await assetTypes.findOne({ companyId, name: 'Laptop' });
-    if (laptopType?._id) {
-      await assets.updateOne(
-        { companyId, assetNumber: 'LAP-000001' },
-        {
-          $set: {
-            tenantId,
-            companyId,
-            assetTypeId: String(laptopType._id),
-            assetNumber: 'LAP-000001',
-            serialNumber: 'DEMO-LAP-001',
-            model: 'ThinkPad T14 Gen 5',
-            status: 'IN_STOCK',
-            condition: 'GOOD',
-            locationId,
-            departmentId,
-            ...(vendorResult?._id ? { vendorId: String(vendorResult._id) } : {}),
-            customFields: {},
-            updatedAt: now,
-          },
-          $setOnInsert: { _id: new mongoose.Types.ObjectId(), createdAt: now },
-        },
-        { upsert: true },
-      );
-    }
-
-    console.log('Seed complete.');
-    console.log(`Tenant login: ${tenantEmail}`);
-    console.log(`Tenant admin role: ${roleRefs['Tenant Admin']}`);
-    console.log(`Tenant admin level: ${UserAdminLevel.TENANT_ADMIN}`);
-    console.log(`System login: ${systemEmail}`);
-    console.log('System admin level: PLATFORM ADMIN');
-    console.log('Demo tenant subscription: Professional / active');
-    console.log('Demo tenant organization: Head Office -> IT Department Floor -> Information Technology');
-    console.log('Demo tenant asset types: Laptop, Desktop, Monitor, Mobile, Network Device');
-  } finally {
-    await connection.close();
   }
+
+  const tenantEmail = process.env.TENANT_ADMIN_EMAIL ?? DEFAULT_TENANT_EMAIL;
+  const tenantUser = await upsertUser({
+    email: tenantEmail, password: credential('TENANT_ADMIN_PASSWORD', DEFAULT_TENANT_PASSWORD), accountType: 'TENANT',
+    tenantId: tenant.id, companyId: company.id, roleIds: [tenantAdminRole], adminLevel: 'TENANT_ADMIN',
+    firstName: 'Demo', lastName: 'Admin', jobTitle: 'Tenant Administrator', phone: '+91-90000-00002',
+    employeeId: 'DEMO-ADMIN-001', departmentId: department.id, locationId: location.id,
+  });
+
+  await prisma.tenant.update({ where: { id: tenant.id }, data: { primaryUserId: tenantUser.id, primaryEmail: tenantEmail } });
+
+  // System administrators still use the same tenant/company foreign-key scope; accountType/adminLevel controls platform privileges.
+  await upsertUser({
+    email: process.env.SYSTEM_ADMIN_EMAIL ?? DEFAULT_SYSTEM_EMAIL,
+    password: credential('SYSTEM_ADMIN_PASSWORD', DEFAULT_SYSTEM_PASSWORD), accountType: 'SYSTEM',
+    tenantId: tenant.id, companyId: company.id, roleIds: [platformAdminRole], adminLevel: 'PLATFORM_ADMIN',
+    firstName: 'System', lastName: 'Administrator', jobTitle: 'Platform Administrator', phone: '+91-90000-00000',
+  });
+
+  const assetTypes = [
+    ['Laptop', 'LAP'], ['Desktop', 'DSK'], ['Monitor', 'MON'], ['Mobile', 'MOB'], ['Network Device', 'NET'],
+  ];
+  for (const [name, prefix] of assetTypes) {
+    await prisma.assetType.upsert({
+      where: { companyId_name: { companyId: company.id, name } },
+      create: { companyId: company.id, name, prefix, separator: '-', padding: 6, nextSequence: 1 },
+      update: { prefix, separator: '-', padding: 6 },
+    });
+  }
+
+  const vendor = await prisma.vendor.upsert({
+    where: { companyId_name: { companyId: company.id, name: 'Demo IT Supplies' } },
+    create: { companyId: company.id, name: 'Demo IT Supplies', contact: 'sales@demo.local' },
+    update: { contact: 'sales@demo.local' },
+  });
+
+  const laptopType = await prisma.assetType.findUnique({ where: { companyId_name: { companyId: company.id, name: 'Laptop' } } });
+  if (!laptopType) throw new Error('Laptop asset type was not seeded');
+  await prisma.asset.upsert({
+    where: { companyId_assetNumber: { companyId: company.id, assetNumber: 'LAP-000001' } },
+    create: { tenantId: tenant.id, companyId: company.id, assetTypeId: laptopType.id, assetNumber: 'LAP-000001', serialNumber: 'DEMO-LAP-001', model: 'ThinkPad T14 Gen 5', status: 'IN_STOCK', condition: 'GOOD', locationId: location.id, departmentId: department.id, vendorId: vendor.id, customFields: {} },
+    update: { assetTypeId: laptopType.id, serialNumber: 'DEMO-LAP-001', model: 'ThinkPad T14 Gen 5', status: 'IN_STOCK', condition: 'GOOD', locationId: location.id, departmentId: department.id, vendorId: vendor.id, customFields: {} },
+  });
+
+  console.log('PostgreSQL seed complete.');
+  console.log(`Tenant login: ${tenantEmail}`);
+  console.log(`System login: ${process.env.SYSTEM_ADMIN_EMAIL ?? DEFAULT_SYSTEM_EMAIL}`);
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+main().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async () => { await prisma.$disconnect(); });
