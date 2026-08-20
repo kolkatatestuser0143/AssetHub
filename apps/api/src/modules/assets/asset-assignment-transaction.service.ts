@@ -1,65 +1,57 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { InjectConnection } from '@nestjs/mongoose';
-import { Connection } from 'mongoose';
-import { MongooseDatabaseService } from '../../common/mongoose-database.service';
+import { PrismaService } from '../../common/database/prisma.service';
 import { AuthContext } from '../../common/guards/tenant-context.guard';
-import { TenantScopedRepository } from '../../common/tenant-scoped.repository';
 import { AssetCondition, AssetLifecycleState } from '../../common/enums';
-import { toDto } from '../../common/mongoose.utils';
 import { assertLifecycleTransition } from './asset-lifecycle';
 
 @Injectable()
-export class AssetAssignmentTransactionService extends TenantScopedRepository {
-  constructor(private readonly db: MongooseDatabaseService, @InjectConnection() private readonly connection: Connection) { super(); }
-
-  private supportsTransactions(): boolean {
-    const topologyType = (this.connection.getClient() as any)?.topology?.description?.type;
-    return ['ReplicaSetWithPrimary', 'ReplicaSetNoPrimary', 'Sharded', 'LoadBalanced'].includes(String(topologyType));
-  }
+export class AssetAssignmentTransactionService {
+  constructor(private readonly prisma: PrismaService) {}
 
   async assign(auth: AuthContext, assetId: string, userId: string, notes?: string) {
-    if (!this.supportsTransactions()) return this.assignWithoutTransaction(auth, assetId, userId, notes);
-    const session = await this.connection.startSession(); try { let result: any; await session.withTransaction(async () => {
-      const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).session(session).lean(); if (!asset) throw new NotFoundException('Asset not found in your scope');
+    const result = await this.prisma.withTenantContext(auth.tenantId, auth.companyId, async (tx) => {
+      const asset = await tx.asset.findFirst({ where: { id: assetId, tenantId: auth.tenantId, companyId: auth.companyId } });
+      if (!asset) throw new NotFoundException('Asset not found in your scope');
       if (asset.status !== AssetLifecycleState.IN_STOCK) throw new ConflictException(`Asset cannot be assigned while in ${asset.status} state`);
       if (asset.condition === AssetCondition.DAMAGED || asset.condition === AssetCondition.NEEDS_INSPECTION) throw new ConflictException('Damaged or inspection-required assets cannot be assigned');
-      const user = await this.db.user.findOne({ _id: userId, tenantId: auth.tenantId, companyId: auth.companyId }).session(session).lean(); if (!user) throw new NotFoundException('User not found in your company'); if (!user.isActive) throw new ForbiddenException('Cannot assign an asset to an inactive user');
-      const active = await this.db.assetAssignment.findOne({ assetId, returnedAt: { $exists: false } }).session(session).lean(); if (active) throw new ConflictException('Asset is already assigned');
-      assertLifecycleTransition(AssetLifecycleState.IN_STOCK, AssetLifecycleState.ASSIGNED);
-      const transitioned = await this.db.asset.findOneAndUpdate({ _id: assetId, ...this.scope(auth), status: AssetLifecycleState.IN_STOCK }, { $set: { status: AssetLifecycleState.ASSIGNED, updatedAt: new Date() } }, { new: true, session }).lean(); if (!transitioned) throw new ConflictException('Asset changed before assignment; retry');
-      try { const created = await this.db.assetAssignment.create([{ assetId, userId, assignedAt: new Date(), notes }], { session }); result = created[0]; } catch (error: any) { if (error?.code === 11000) throw new ConflictException('Asset is already assigned'); throw error; }
-      await this.db.assetAuditEvent.create([{ tenantId: auth.tenantId, companyId: auth.companyId, assetId, fromState: AssetLifecycleState.IN_STOCK, toState: AssetLifecycleState.ASSIGNED, actorUserId: auth.userId, reason: notes?.trim() || 'Asset assigned', occurredAt: new Date() }], { session });
-    }); return toDto(result); } finally { await session.endSession(); }
-  }
 
-  private async assignWithoutTransaction(auth: AuthContext, assetId: string, userId: string, notes?: string) {
-    const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).lean(); if (!asset) throw new NotFoundException('Asset not found in your scope');
-    if (asset.status !== AssetLifecycleState.IN_STOCK) throw new ConflictException(`Asset cannot be assigned while in ${asset.status} state`);
-    if (asset.condition === AssetCondition.DAMAGED || asset.condition === AssetCondition.NEEDS_INSPECTION) throw new ConflictException('Damaged or inspection-required assets cannot be assigned');
-    const user = await this.db.user.findOne({ _id: userId, tenantId: auth.tenantId, companyId: auth.companyId }).lean(); if (!user) throw new NotFoundException('User not found in your company'); if (!user.isActive) throw new ForbiddenException('Cannot assign an asset to an inactive user');
-    const active = await this.db.assetAssignment.findOne({ assetId, returnedAt: { $exists: false } }).lean(); if (active) throw new ConflictException('Asset is already assigned');
-    assertLifecycleTransition(AssetLifecycleState.IN_STOCK, AssetLifecycleState.ASSIGNED);
-    const transitioned = await this.db.asset.findOneAndUpdate({ _id: assetId, ...this.scope(auth), status: AssetLifecycleState.IN_STOCK }, { $set: { status: AssetLifecycleState.ASSIGNED, updatedAt: new Date() } }, { new: true }).lean();
-    if (!transitioned) throw new ConflictException('Asset changed before assignment; retry');
-    try {
-      const created = await this.db.assetAssignment.create({ assetId, userId, assignedAt: new Date(), notes });
-      await this.db.assetAuditEvent.create({ tenantId: auth.tenantId, companyId: auth.companyId, assetId, fromState: AssetLifecycleState.IN_STOCK, toState: AssetLifecycleState.ASSIGNED, actorUserId: auth.userId, reason: notes?.trim() || 'Asset assigned', occurredAt: new Date() });
-      return toDto(created.toObject());
-    } catch (error: any) {
-      await this.db.asset.findOneAndUpdate({ _id: assetId, ...this.scope(auth), status: AssetLifecycleState.ASSIGNED }, { $set: { status: AssetLifecycleState.IN_STOCK, updatedAt: new Date() } });
-      if (error?.code === 11000) throw new ConflictException('Asset is already assigned');
-      throw error;
-    }
+      const user = await tx.user.findFirst({ where: { id: userId, tenantId: auth.tenantId, companyId: auth.companyId } });
+      if (!user) throw new NotFoundException('User not found in your company');
+      if (!user.isActive) throw new ForbiddenException('Cannot assign an asset to an inactive user');
+
+      const active = await tx.assetAssignment.findFirst({ where: { assetId, returnedAt: null } });
+      if (active) throw new ConflictException('Asset is already assigned');
+      assertLifecycleTransition(AssetLifecycleState.IN_STOCK, AssetLifecycleState.ASSIGNED);
+
+      const transitioned = await tx.asset.updateMany({ where: { id: assetId, tenantId: auth.tenantId, companyId: auth.companyId, status: AssetLifecycleState.IN_STOCK }, data: { status: AssetLifecycleState.ASSIGNED } });
+      if (transitioned.count !== 1) throw new ConflictException('Asset changed before assignment; retry');
+
+      const created = await tx.assetAssignment.create({ data: { assetId, userId, assignedAt: new Date(), notes } });
+      await tx.assetAuditEvent.create({ data: { tenantId: auth.tenantId, companyId: auth.companyId, assetId, fromState: AssetLifecycleState.IN_STOCK, toState: AssetLifecycleState.ASSIGNED, actorUserId: auth.userId, reason: notes?.trim() || 'Asset assigned', occurredAt: new Date() } });
+      return created;
+    });
+    return result;
   }
 
   async unassign(auth: AuthContext, assetId: string, notes?: string, conditionAtReturn?: AssetCondition) {
-    const session = await this.connection.startSession(); try { let result: any; await session.withTransaction(async () => {
-      const asset = await this.db.asset.findOne({ _id: assetId, ...this.scope(auth) }).session(session).lean(); if (!asset) throw new NotFoundException('Asset not found in your scope'); if (asset.status !== AssetLifecycleState.ASSIGNED) throw new ConflictException(`Asset cannot be returned while in ${asset.status} state`);
-      const assignment = await this.db.assetAssignment.findOne({ assetId, returnedAt: { $exists: false } }).session(session).lean(); if (!assignment) throw new NotFoundException('Asset is not currently assigned'); assertLifecycleTransition(AssetLifecycleState.ASSIGNED, AssetLifecycleState.IN_STOCK);
-      const closed = await this.db.assetAssignment.findOneAndUpdate({ _id: assignment._id, returnedAt: { $exists: false } }, { $set: { returnedAt: new Date(), ...(notes ? { notes } : {}), ...(conditionAtReturn ? { conditionAtReturn } : {}) } }, { new: true, session }).lean(); if (!closed) throw new ConflictException('Assignment changed before return; retry');
+    return this.prisma.withTenantContext(auth.tenantId, auth.companyId, async (tx) => {
+      const asset = await tx.asset.findFirst({ where: { id: assetId, tenantId: auth.tenantId, companyId: auth.companyId } });
+      if (!asset) throw new NotFoundException('Asset not found in your scope');
+      if (asset.status !== AssetLifecycleState.ASSIGNED) throw new ConflictException(`Asset cannot be returned while in ${asset.status} state`);
+
+      const assignment = await tx.assetAssignment.findFirst({ where: { assetId, returnedAt: null } });
+      if (!assignment) throw new NotFoundException('Asset is not currently assigned');
+      assertLifecycleTransition(AssetLifecycleState.ASSIGNED, AssetLifecycleState.IN_STOCK);
+
+      const closed = await tx.assetAssignment.updateMany({ where: { id: assignment.id, returnedAt: null }, data: { returnedAt: new Date(), ...(notes !== undefined ? { notes } : {}), ...(conditionAtReturn !== undefined ? { conditionAtReturn } : {}) } });
+      if (closed.count !== 1) throw new ConflictException('Assignment changed before return; retry');
+
       const nextCondition = conditionAtReturn ?? asset.condition ?? AssetCondition.GOOD;
-      const transitioned = await this.db.asset.findOneAndUpdate({ _id: assetId, ...this.scope(auth), status: AssetLifecycleState.ASSIGNED }, { $set: { status: AssetLifecycleState.IN_STOCK, condition: nextCondition, updatedAt: new Date() } }, { new: true, session }).lean(); if (!transitioned) throw new ConflictException('Asset changed before return; retry');
-      await this.db.assetAuditEvent.create([{ tenantId: auth.tenantId, companyId: auth.companyId, assetId, fromState: AssetLifecycleState.ASSIGNED, toState: AssetLifecycleState.IN_STOCK, actorUserId: auth.userId, reason: notes?.trim() || `Asset returned${conditionAtReturn ? ` · condition ${conditionAtReturn}` : ''}`, occurredAt: new Date() }], { session }); result = closed;
-    }); return toDto(result); } finally { await session.endSession(); }
+      const transitioned = await tx.asset.updateMany({ where: { id: assetId, tenantId: auth.tenantId, companyId: auth.companyId, status: AssetLifecycleState.ASSIGNED }, data: { status: AssetLifecycleState.IN_STOCK, condition: nextCondition } });
+      if (transitioned.count !== 1) throw new ConflictException('Asset changed before return; retry');
+
+      await tx.assetAuditEvent.create({ data: { tenantId: auth.tenantId, companyId: auth.companyId, assetId, fromState: AssetLifecycleState.ASSIGNED, toState: AssetLifecycleState.IN_STOCK, actorUserId: auth.userId, reason: notes?.trim() || `Asset returned${conditionAtReturn ? ` · condition ${conditionAtReturn}` : ''}`, occurredAt: new Date() } });
+      return tx.assetAssignment.findUniqueOrThrow({ where: { id: assignment.id } });
+    });
   }
 }
