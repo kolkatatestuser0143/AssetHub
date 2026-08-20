@@ -14,11 +14,16 @@ jobs:
         working-directory: apps/api
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: package-lock.json
-      - run: npm ci
-      - run: npx prisma validate
-      - run: npx prisma generate
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: .
+      - run: pnpm prisma validate
+      - run: pnpm prisma generate
