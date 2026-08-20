@@ -1,13 +1,13 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
+import { PrismaService } from '../database/prisma.service';
 import { SYSTEM_ACCESS_COOKIE, readCookie } from '../auth/auth-cookies';
 import { SYSTEM_PERMISSION_KEY } from './system-permission.decorator';
-import { MongooseDatabaseService } from '../mongoose-database.service';
 
 @Injectable()
 export class SystemAdminGuard implements CanActivate {
-  constructor(private readonly jwt: JwtService, private readonly reflector: Reflector, private readonly db: MongooseDatabaseService) {}
+  constructor(private readonly jwt: JwtService, private readonly reflector: Reflector, private readonly prisma: PrismaService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest();
@@ -19,8 +19,8 @@ export class SystemAdminGuard implements CanActivate {
       const payload = this.jwt.verify(token);
       if (payload?.accountType !== 'SYSTEM' || payload?.systemAdmin !== true) throw new ForbiddenException('System console access required');
 
-      const user = await this.db.user.findOne({ _id: payload.sub, accountType: 'SYSTEM' }).select({ authVersion: 1, isActive: 1 }).lean();
-      if (!user || user.isActive === false) throw new UnauthorizedException('System administrator account is inactive');
+      const user = await this.prisma.user.findUnique({ where: { id: String(payload.sub) }, select: { accountType: true, authVersion: true, isActive: true } });
+      if (!user || user.accountType !== 'SYSTEM' || user.isActive === false) throw new UnauthorizedException('System administrator account is inactive');
       if (Number(payload.authVersion ?? 0) !== Number(user.authVersion ?? 0)) throw new UnauthorizedException('System administrator session is no longer valid');
 
       const permissions = Array.isArray(payload.permissions) ? payload.permissions : [];
