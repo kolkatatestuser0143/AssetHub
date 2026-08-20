@@ -1,56 +1,42 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Types } from 'mongoose';
-import { MongooseDatabaseService } from '../../common/mongoose-database.service';
-import { UserAccountType } from '../../models/user.schemas';
+import { PrismaService } from '../../common/database/prisma.service';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class PrimaryLoginEmailService {
-  constructor(private readonly db: MongooseDatabaseService) {}
+  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
 
   async change(tenantId: string, email: string, actorUserId?: string) {
-    if (!Types.ObjectId.isValid(tenantId)) throw new BadRequestException('Invalid tenant id');
     const normalized = email.trim().toLowerCase();
+    if (!/^[0-9a-f-]{36}$/i.test(tenantId)) throw new BadRequestException('Invalid organization id');
     if (!/^\S+@\S+\.\S+$/.test(normalized)) throw new BadRequestException('A valid email address is required');
 
-    const tenant = await this.db.tenant.findById(tenantId).lean();
-    if (!tenant) throw new NotFoundException('Tenant not found');
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) throw new NotFoundException('Organization not found');
+
     const primaryUser = tenant.primaryUserId
-      ? await this.db.user.findOne({ _id: tenant.primaryUserId, tenantId, accountType: UserAccountType.TENANT }).lean()
-      : await this.db.user.findOne({ tenantId, accountType: UserAccountType.TENANT }).sort({ createdAt: 1 }).lean();
-    if (!primaryUser) throw new NotFoundException('Tenant primary login user not found');
+      ? await this.prisma.user.findFirst({ where: { id: tenant.primaryUserId, tenantId, accountType: 'TENANT' } })
+      : await this.prisma.user.findFirst({ where: { tenantId, accountType: 'TENANT' }, orderBy: { createdAt: 'asc' } });
+    if (!primaryUser) throw new NotFoundException('Primary organization administrator not found');
 
     if (!tenant.primaryUserId) {
-      await this.db.tenant.updateOne({ _id: tenant._id, primaryUserId: { $exists: false } }, { $set: { primaryUserId: String(primaryUser._id), primaryEmail: primaryUser.email.toLowerCase(), updatedAt: new Date() } });
+      await this.prisma.tenant.update({ where: { id: tenantId }, data: { primaryUserId: primaryUser.id, primaryEmail: primaryUser.email.toLowerCase() } });
     }
 
     if (primaryUser.email.toLowerCase() === normalized && (tenant.primaryEmail ?? '').toLowerCase() === normalized) return { tenantId, email: normalized, changed: false };
-    const existing = await this.db.user.findOne({ email: normalized, _id: { $ne: primaryUser._id } }).lean();
+    const existing = await this.prisma.user.findFirst({ where: { email: normalized, id: { not: primaryUser.id } } });
     if (existing) throw new ConflictException('Email is already registered');
 
     const oldEmail = primaryUser.email;
     const now = new Date();
-    const connection = this.db.tenant.db;
-    const session = await connection.startSession();
-    try {
-      await session.withTransaction(async () => {
-        const updated = await this.db.user.findOneAndUpdate(
-          { _id: primaryUser._id, tenantId, accountType: UserAccountType.TENANT },
-          { $set: { email: normalized, updatedAt: now }, $inc: { authVersion: 1 } },
-          { new: true, session },
-        ).lean();
-        if (!updated) throw new NotFoundException('Tenant primary login user not found');
-        const updatedTenant = await this.db.tenant.findOneAndUpdate(
-          { _id: tenant._id, primaryUserId: String(primaryUser._id) },
-          { $set: { primaryEmail: normalized, updatedAt: now } },
-          { new: true, session },
-        ).lean();
-        if (!updatedTenant) throw new ConflictException('Tenant primary login identity changed concurrently');
-        await this.db.session.updateMany({ userId: String(primaryUser._id), revokedAt: { $exists: false } }, { $set: { revokedAt: now, revokedReason: 'platform_primary_email_changed' } }, { session });
-        await this.db.auditEvent.create([{ tenantId, actorUserId, action: 'tenant.primary_login_email_changed', targetType: 'user', targetId: String(primaryUser._id), metadata: { oldEmail, newEmail: normalized }, result: 'success', occurredAt: now }], { session });
-      });
-    } finally {
-      await session.endSession();
-    }
+    await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.user.updateMany({ where: { id: primaryUser.id, tenantId, accountType: 'TENANT' }, data: { email: normalized, updatedAt: now, authVersion: { increment: 1 } } });
+      if (updated.count !== 1) throw new ConflictException('Primary login identity changed concurrently');
+      await tx.tenant.update({ where: { id: tenantId }, data: { primaryUserId: primaryUser.id, primaryEmail: normalized, updatedAt: now } });
+      await tx.session.updateMany({ where: { userId: primaryUser.id, revokedAt: null }, data: { revokedAt: now, revokedReason: 'platform_primary_email_changed' } });
+    });
+
+    await this.audit.record({ tenantId, actorUserId, action: 'tenant.primary_login_email_changed', targetType: 'user', targetId: primaryUser.id, metadata: { oldEmail, newEmail: normalized } });
     return { tenantId, email: normalized, changed: true, sessionsRevoked: true };
   }
 }
