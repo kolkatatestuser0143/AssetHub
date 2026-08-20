@@ -44,8 +44,10 @@ export class AssetListPostgresqlService {
       ];
     }
 
-    const [total, rows] = await this.prisma.withTenantContext(auth.tenantId, auth.crossCompany ? null : auth.companyId ?? null, async (tx) => {
-      return Promise.all([
+    const [total, rows] = await this.prisma.withTenantContext(
+      auth.tenantId,
+      auth.crossCompany ? null : auth.companyId ?? null,
+      async (tx) => Promise.all([
         tx.asset.count({ where }),
         tx.asset.findMany({
           where,
@@ -54,15 +56,21 @@ export class AssetListPostgresqlService {
           take: pageSize,
           include: { assetType: { select: { name: true } } },
         }),
-      ]);
-    });
+      ]),
+    );
 
     return {
       items: rows.map((row: any) => ({
         ...row,
+        // Keep the Mongo API response shape: assetType is a compact DTO, not the full relation.
         assetType: row.assetType ? { name: row.assetType.name } : undefined,
       })),
-      pagination: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) },
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      },
       sort: { sortBy, sortDir },
     };
   }
