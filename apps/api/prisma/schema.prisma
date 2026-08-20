@@ -30,6 +30,7 @@ model Tenant {
   assets           Asset[]
   assetAuditEvents AssetAuditEvent[]
   transfers        AssetTransfer[]
+  maintenance      AssetMaintenance[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   @@index([status])
@@ -46,6 +47,7 @@ model Company {
   sites      Site[]
   assets     Asset[]
   assetTypes AssetType[]
+  maintenance AssetMaintenance[]
   @@unique([tenantId, code])
   @@index([tenantId])
   @@map("companies")
@@ -71,83 +73,41 @@ model User {
   @@map("users")
 }
 
-model Site {
-  id         String     @id @default(uuid()) @db.Uuid
-  tenantId   String     @db.Uuid
-  companyId  String     @db.Uuid
-  type       String     @default("plant")
-  name       String
-  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  company    Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  locations  Location[]
-  @@index([tenantId, companyId])
-  @@map("plants")
-}
-
-model Location {
-  id          String       @id @default(uuid()) @db.Uuid
-  siteId      String       @db.Uuid
-  name        String
-  site        Site         @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  departments Department[]
-  assets      Asset[]
-  @@index([siteId])
-  @@map("locations")
-}
-
-model Department {
-  id         String    @id @default(uuid()) @db.Uuid
-  locationId String    @db.Uuid
-  name       String
-  location   Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  assets     Asset[]
-  @@index([locationId])
-  @@map("departments")
-}
-
-model AssetType {
-  id           String   @id @default(uuid()) @db.Uuid
-  companyId    String   @db.Uuid
-  name         String
-  prefix       String?
-  separator    String   @default("-")
-  padding      Int      @default(6)
-  nextSequence Int      @default(1)
-  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  assets       Asset[]
-  @@unique([companyId, name])
-  @@map("asset_types")
-}
+model Site { id String @id @default(uuid()) @db.Uuid tenantId String @db.Uuid companyId String @db.Uuid type String @default("plant") name String tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade) company Company @relation(fields: [companyId], references: [id], onDelete: Cascade) locations Location[] @@index([tenantId, companyId]) @@map("plants") }
+model Location { id String @id @default(uuid()) @db.Uuid siteId String @db.Uuid name String site Site @relation(fields: [siteId], references: [id], onDelete: Cascade) departments Department[] assets Asset[] @@index([siteId]) @@map("locations") }
+model Department { id String @id @default(uuid()) @db.Uuid locationId String @db.Uuid name String location Location @relation(fields: [locationId], references: [id], onDelete: Cascade) assets Asset[] @@index([locationId]) @@map("departments") }
+model AssetType { id String @id @default(uuid()) @db.Uuid companyId String @db.Uuid name String prefix String? separator String @default("-") padding Int @default(6) nextSequence Int @default(1) company Company @relation(fields: [companyId], references: [id], onDelete: Cascade) assets Asset[] @@unique([companyId, name]) @@map("asset_types") }
 
 model Asset {
-  id                String            @id @default(uuid()) @db.Uuid
-  tenantId          String            @db.Uuid
-  companyId         String            @db.Uuid
-  assetTypeId       String?           @db.Uuid
-  assetNumber       String
-  serialNumber      String?
-  model             String?
-  status            String            @default("in_stock")
-  condition         String            @default("good")
-  locationId        String?           @db.Uuid
-  departmentId      String?           @db.Uuid
-  vendorId          String?
-  purchaseDate      DateTime?
-  warrantyProvider  String?
+  id String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+  companyId String @db.Uuid
+  assetTypeId String? @db.Uuid
+  assetNumber String
+  serialNumber String?
+  model String?
+  status String @default("in_stock")
+  condition String @default("good")
+  locationId String? @db.Uuid
+  departmentId String? @db.Uuid
+  vendorId String?
+  purchaseDate DateTime?
+  warrantyProvider String?
   warrantyExpiresAt DateTime?
-  qrCodeUrl         String?
-  barcodeValue      String?
-  customFields      Json?
-  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  company           Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  assetType         AssetType?        @relation(fields: [assetTypeId], references: [id], onDelete: SetNull)
-  location          Location?         @relation(fields: [locationId], references: [id], onDelete: SetNull)
-  department        Department?       @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  assignments       AssetAssignment[]
-  auditEvents       AssetAuditEvent[]
-  transfers         AssetTransfer[]
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  qrCodeUrl String?
+  barcodeValue String?
+  customFields Json?
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assetType AssetType? @relation(fields: [assetTypeId], references: [id], onDelete: SetNull)
+  location Location? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  assignments AssetAssignment[]
+  auditEvents AssetAuditEvent[]
+  transfers AssetTransfer[]
+  maintenance AssetMaintenance[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   @@unique([companyId, assetNumber])
   @@index([tenantId, companyId, status, createdAt])
   @@index([tenantId, companyId, assetTypeId, createdAt])
@@ -155,67 +115,28 @@ model Asset {
   @@map("assets")
 }
 
-model AssetAuditEvent {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String   @db.Uuid
-  companyId   String   @db.Uuid
-  assetId     String   @db.Uuid
-  fromState   String?
-  toState     String
-  actorUserId String?  @db.Uuid
-  reason      String?
-  occurredAt  DateTime @default(now())
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  asset       Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  @@index([assetId, occurredAt])
-  @@index([tenantId, companyId, occurredAt])
-  @@map("asset_audit_events")
+model AssetMaintenance {
+  id String @id @default(uuid()) @db.Uuid
+  tenantId String @db.Uuid
+  companyId String @db.Uuid
+  assetId String @db.Uuid
+  serviceDate DateTime
+  serviceType String
+  provider String?
+  technician String?
+  notes String?
+  nextServiceDate DateTime?
+  attachmentDocumentId String?
+  createdByUserId String? @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  @@index([tenantId, companyId, assetId, serviceDate])
+  @@map("asset_maintenance")
 }
 
-model AssetAssignment {
-  id                String    @id @default(uuid()) @db.Uuid
-  assetId           String    @db.Uuid
-  userId            String    @db.Uuid
-  assignedAt        DateTime  @default(now())
-  returnedAt        DateTime?
-  notes             String?
-  conditionAtReturn String?
-  asset             Asset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  user              User      @relation(fields: [userId], references: [id], onDelete: Restrict)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
-  @@index([assetId, returnedAt])
-  @@index([userId, returnedAt])
-  @@map("asset_assignments")
-}
-
-model AssetTransfer {
-  id                String   @id @default(uuid()) @db.Uuid
-  tenantId          String   @db.Uuid
-  companyId         String   @db.Uuid
-  assetId           String   @db.Uuid
-  fromUserId        String?  @db.Uuid
-  fromLocationId    String?  @db.Uuid
-  fromDepartmentId  String?  @db.Uuid
-  toUserId          String?  @db.Uuid
-  toLocationId      String?  @db.Uuid
-  toDepartmentId    String?  @db.Uuid
-  requestedByUserId String   @db.Uuid
-  approvedByUserId  String?  @db.Uuid
-  completedByUserId String?  @db.Uuid
-  cancelledByUserId String?  @db.Uuid
-  status            String
-  requestedAt       DateTime @default(now())
-  approvedAt        DateTime?
-  completedAt       DateTime?
-  cancelledAt       DateTime?
-  approvalNote      String?
-  completionNote    String?
-  cancellationNote String?
-  reason            String?
-  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  asset             Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  @@index([tenantId, assetId, status])
-  @@index([tenantId, requestedAt])
-  @@map("asset_transfers")
-}
+model AssetAuditEvent { id String @id @default(uuid()) @db.Uuid tenantId String @db.Uuid companyId String @db.Uuid assetId String @db.Uuid fromState String? toState String actorUserId String? @db.Uuid reason String? occurredAt DateTime @default(now()) tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade) asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade) @@index([assetId, occurredAt]) @@index([tenantId, companyId, occurredAt]) @@map("asset_audit_events") }
+model AssetAssignment { id String @id @default(uuid()) @db.Uuid assetId String @db.Uuid userId String @db.Uuid assignedAt DateTime @default(now()) returnedAt DateTime? notes String? conditionAtReturn String? asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade) user User @relation(fields: [userId], references: [id], onDelete: Restrict) createdAt DateTime @default(now()) updatedAt DateTime @updatedAt @@index([assetId, returnedAt]) @@index([userId, returnedAt]) @@map("asset_assignments") }
+model AssetTransfer { id String @id @default(uuid()) @db.Uuid tenantId String @db.Uuid companyId String @db.Uuid assetId String @db.Uuid fromUserId String? @db.Uuid fromLocationId String? @db.Uuid fromDepartmentId String? @db.Uuid toUserId String? @db.Uuid toLocationId String? @db.Uuid toDepartmentId String? @db.Uuid requestedByUserId String @db.Uuid approvedByUserId String? @db.Uuid completedByUserId String? @db.Uuid cancelledByUserId String? @db.Uuid status String requestedAt DateTime @default(now()) approvedAt DateTime? completedAt DateTime? cancelledAt DateTime? approvalNote String? completionNote String? cancellationNote String? reason String? tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade) asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade) @@index([tenantId, assetId, status]) @@index([tenantId, requestedAt]) @@map("asset_transfers") }
