@@ -2,17 +2,17 @@ import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@
 import { Reflector } from '@nestjs/core';
 import { PERMISSION_KEY } from '../decorators/require-permission.decorator';
 import { AuthContext } from './tenant-context.guard';
-import { MongooseDatabaseService } from '../mongoose-database.service';
+import { PrismaService } from '../database/prisma.service';
 
 /**
- * Server-side permission enforcement. JWT permissions are useful for fast
- * authorization, but role changes must take effect without waiting for an
- * old access token to expire. When the token does not contain the required
- * permission, resolve the user's current tenant roles from MongoDB.
+ * Server-side permission enforcement. Permissions are resolved from the
+ * current PostgreSQL role assignments so role changes take effect without
+ * waiting for an access token to expire. Identity providers never grant
+ * AssetHub permissions or scopes.
  */
 @Injectable()
 export class RbacGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector, private readonly db: MongooseDatabaseService) {}
+  constructor(private readonly reflector: Reflector, private readonly db: PrismaService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const required = this.reflector.get<string>(PERMISSION_KEY, context.getHandler());
@@ -24,28 +24,33 @@ export class RbacGuard implements CanActivate {
 
     if (authContext.permissions.includes(required)) return true;
 
-    const user = await this.db.user.findOne({
-      _id: authContext.userId,
-      tenantId: authContext.tenantId,
-    }).select({ roleIds: 1, companyId: 1 }).lean();
+    const user = await this.db.user.findFirst({
+      where: { id: authContext.userId, tenantId: authContext.tenantId },
+      select: { roleIds: true, companyId: true },
+    });
 
     if (!user?.roleIds?.length) {
       throw new ForbiddenException(`Missing permission: ${required}`);
     }
 
-    const roles = await this.db.role.find({
-      _id: { $in: user.roleIds },
-      tenantId: authContext.tenantId,
-      $or: [{ companyId: String(user.companyId) }, { companyId: null }, { companyId: { $exists: false } }],
-    }).select({ permissions: 1, companyId: 1 }).lean();
+    const roles = await this.db.$queryRawUnsafe<any[]>(
+      `SELECT r.id, r.company_id AS "companyId", p.key AS "permissionKey"
+       FROM roles r
+       LEFT JOIN role_permissions rp ON rp.role_id = r.id
+       LEFT JOIN permissions p ON p.id = rp.permission_id
+       WHERE r.tenant_id = $1::uuid
+         AND r.id = ANY($2::uuid[])
+         AND (r.company_id IS NULL OR r.company_id = $3::uuid)`,
+      authContext.tenantId,
+      user.roleIds,
+      user.companyId,
+    );
 
-    const permissions = new Set<string>(authContext.permissions);
+    const permissions = new Set<string>(authContext.permissions ?? []);
     let crossCompany = authContext.crossCompany;
-    for (const role of roles as any[]) {
+    for (const role of roles) {
       if (role.companyId == null) crossCompany = true;
-      for (const permission of role.permissions ?? []) {
-        if (permission?.permissionKey) permissions.add(String(permission.permissionKey));
-      }
+      if (role.permissionKey) permissions.add(String(role.permissionKey));
     }
 
     authContext.permissions = [...permissions];
