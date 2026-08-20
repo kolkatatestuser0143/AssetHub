@@ -1,19 +1,13 @@
-import '../src/bootstrap-dns';
 import 'dotenv/config';
-import { config as loadEnv } from 'dotenv';
-loadEnv({ path: require('path').resolve(__dirname, '../../../.env') });
-import mongoose from 'mongoose';
+import { PrismaClient } from '@prisma/client';
 
-const PLATFORM_TENANT_ID = process.env.SYSTEM_RBAC_TENANT_ID ?? 'SYSTEM';
+const prisma = new PrismaClient();
+const PLATFORM_TENANT_ID = process.env.SYSTEM_RBAC_TENANT_ID;
 
 const ROLE_PERMISSIONS: Record<string, string[]> = {
-  'Platform Admin': [
-    'platform:console:access','platform:overview:read','platform:tenants:read','platform:tenants:manage','platform:users:read','platform:users:manage',
-    'platform:roles:read','platform:roles:manage','platform:billing:read','platform:billing:manage','platform:audit:read','platform:health:read',
-    'platform:analytics:read','platform:settings:read','platform:settings:manage','platform:support:read','platform:support:manage',
-  ],
+  'Platform Admin': ['platform:console:access','platform:overview:read','platform:tenants:read','platform:tenants:manage','platform:users:read','platform:users:manage','platform:roles:read','platform:roles:manage','platform:billing:read','platform:billing:manage','platform:audit:read','platform:health:read','platform:analytics:read','platform:settings:read','platform:settings:manage','platform:support:read','platform:support:manage'],
   'Sales Manager': ['platform:console:access','platform:overview:read','platform:tenants:read','platform:tenants:manage','platform:billing:read','platform:analytics:read'],
-  'Sales': ['platform:console:access','platform:overview:read','platform:tenants:read','platform:billing:read'],
+  Sales: ['platform:console:access','platform:overview:read','platform:tenants:read','platform:billing:read'],
   'Billing Manager': ['platform:console:access','platform:overview:read','platform:tenants:read','platform:billing:read','platform:billing:manage','platform:analytics:read'],
   'Support Manager': ['platform:console:access','platform:overview:read','platform:tenants:read','platform:users:read','platform:support:read','platform:support:manage','platform:audit:read'],
   'Support Agent': ['platform:console:access','platform:overview:read','platform:tenants:read','platform:users:read','platform:support:read'],
@@ -22,44 +16,29 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
 };
 
 async function main() {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) throw new Error('Missing MONGODB_URI');
-  const connection = await mongoose.createConnection(uri).asPromise();
-  try {
-    const db = connection.db;
-    if (!db) throw new Error('Mongo connection failed');
-    const permissions = db.collection('permissions');
-    const roles = db.collection('roles');
-    const now = new Date();
-    const allPermissions = [...new Set(Object.values(ROLE_PERMISSIONS).flat())];
+  if (!PLATFORM_TENANT_ID) throw new Error('Missing SYSTEM_RBAC_TENANT_ID');
+  const tenant = await prisma.tenant.findUnique({ where: { id: PLATFORM_TENANT_ID } });
+  if (!tenant) throw new Error(`System RBAC tenant ${PLATFORM_TENANT_ID} does not exist`);
 
-    for (const key of allPermissions) {
-      await permissions.updateOne(
-        { key },
-        { $setOnInsert: { _id: new mongoose.Types.ObjectId(), key, createdAt: now, updatedAt: now } },
-        { upsert: true },
-      );
-    }
-
-    const permissionDocs = await permissions.find({ key: { $in: allPermissions } }).toArray();
-    const permissionIds = new Map(permissionDocs.map((p: any) => [p.key, String(p._id)]));
-
-    for (const [name, keys] of Object.entries(ROLE_PERMISSIONS)) {
-      const rolePermissions = keys.map((key) => ({ permissionId: permissionIds.get(key)!, permissionKey: key }));
-      await roles.updateOne(
-        { tenantId: PLATFORM_TENANT_ID, name },
-        {
-          $set: { tenantId: PLATFORM_TENANT_ID, companyId: null, name, isSystem: true, permissions: rolePermissions, updatedAt: now },
-          $setOnInsert: { _id: new mongoose.Types.ObjectId(), createdAt: now },
-        },
-        { upsert: true },
-      );
-    }
-
-    console.log(`Seeded ${Object.keys(ROLE_PERMISSIONS).length} platform roles under tenant scope ${PLATFORM_TENANT_ID}.`);
-  } finally {
-    await connection.close();
+  const allPermissions = [...new Set(Object.values(ROLE_PERMISSIONS).flat())];
+  for (const key of allPermissions) {
+    await prisma.$executeRawUnsafe(`INSERT INTO permissions (key, name) VALUES ($1,$2) ON CONFLICT (key) DO NOTHING`, key, key);
   }
+
+  for (const [name, keys] of Object.entries(ROLE_PERMISSIONS)) {
+    const role = await prisma.$queryRawUnsafe<any[]>(
+      `INSERT INTO roles (tenant_id, company_id, name, is_system) VALUES ($1::uuid,NULL,$2,true)
+       ON CONFLICT (tenant_id, company_id, name) DO UPDATE SET is_system=true, updated_at=now()
+       RETURNING id`,
+      PLATFORM_TENANT_ID,
+      name,
+    );
+    for (const key of keys) {
+      await prisma.$executeRawUnsafe(`INSERT INTO role_permissions (role_id, permission_id) SELECT $1::uuid,id FROM permissions WHERE key=$2 ON CONFLICT DO NOTHING`, role[0].id, key);
+    }
+  }
+
+  console.log(`Seeded ${Object.keys(ROLE_PERMISSIONS).length} platform roles under tenant scope ${PLATFORM_TENANT_ID}.`);
 }
 
-main().catch((error) => { console.error(error); process.exit(1); });
+main().catch(error => { console.error(error); process.exit(1); }).finally(() => prisma.$disconnect());
