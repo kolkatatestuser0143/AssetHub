@@ -9,8 +9,5 @@
     "test:security": "pnpm --filter api test:security",
     "db:seed": "pnpm --filter api db:seed",
     "db:migrate": "pnpm --filter api db:migrate:indexes && pnpm --filter api db:migrate:sites && pnpm --filter api db:migrate:primary-login && pnpm --filter api db:migrate:session-security && pnpm --filter api db:migrate:subscriptions"
-  },
-  "dependencies": {
-    "mongodb": "^7.5.0"
   }
 }
