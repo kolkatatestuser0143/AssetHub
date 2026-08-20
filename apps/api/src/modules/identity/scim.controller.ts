@@ -28,31 +28,38 @@ export class ScimController {
     return this.scim.listUsers(token, Number(startIndex), Number(count), filter);
   }
 
-  @Get('Users/:id') async get(@Headers('authorization') authorization: string | undefined, @Param('id') id: string) {
+  @Get('Users/:id') async get(@Headers('authorization') authorization: string | undefined, @Param('id') id: string, @Res({ passthrough: true }) response: Response) {
     const token = await this.scim.authenticate(authorization);
-    return this.scim.getUser(token, id);
+    const user = await this.scim.getUser(token, id);
+    response.setHeader('ETag', user.meta.version);
+    return user;
   }
 
   @Post('Users') async create(@Headers('authorization') authorization: string | undefined, @Body() body: any, @Res({ passthrough: true }) response: Response) {
     const token = await this.scim.authenticate(authorization);
     const user = await this.scim.createUser(token, body);
     response.status(201);
+    response.setHeader('ETag', user.meta.version);
     return user;
   }
 
-  @Put('Users/:id') async replace(@Headers('authorization') authorization: string | undefined, @Param('id') id: string, @Body() body: any) {
+  @Put('Users/:id') async replace(@Headers('authorization') authorization: string | undefined, @Param('id') id: string, @Body() body: any, @Headers('if-match') ifMatch?: string, @Res({ passthrough: true }) response: Response) {
     const token = await this.scim.authenticate(authorization);
-    return this.scim.replaceUser(token, id, body);
+    const user = await this.scim.replaceUser(token, id, body, ifMatch);
+    response.setHeader('ETag', user.meta.version);
+    return user;
   }
 
-  @Patch('Users/:id') async patch(@Headers('authorization') authorization: string | undefined, @Param('id') id: string, @Body() body: any) {
+  @Patch('Users/:id') async patch(@Headers('authorization') authorization: string | undefined, @Param('id') id: string, @Body() body: any, @Headers('if-match') ifMatch?: string, @Res({ passthrough: true }) response: Response) {
     const token = await this.scim.authenticate(authorization);
-    return this.scim.patchUser(token, id, body);
+    const user = await this.scim.patchUser(token, id, body, ifMatch);
+    response.setHeader('ETag', user.meta.version);
+    return user;
   }
 
-  @Delete('Users/:id') async remove(@Headers('authorization') authorization: string | undefined, @Param('id') id: string, @Res({ passthrough: true }) response: Response) {
+  @Delete('Users/:id') async remove(@Headers('authorization') authorization: string | undefined, @Param('id') id: string, @Headers('if-match') ifMatch?: string, @Res({ passthrough: true }) response: Response) {
     const token = await this.scim.authenticate(authorization);
-    await this.scim.deleteUser(token, id);
+    await this.scim.deleteUser(token, id, ifMatch);
     response.status(204);
     return undefined;
   }
