@@ -1,113 +1,19 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { MongooseDatabaseService } from '../../common/mongoose-database.service';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../common/database/prisma.service';
 import { AuthContext } from '../../common/guards/tenant-context.guard';
 import { EntitlementService } from '../billing/entitlement.service';
 import { AssetExcelReportFilters } from './asset-excel-report.service';
 
-export interface AssetReportTemplate {
-  id: string;
-  name: string;
-  description?: string | null;
-  filters: AssetExcelReportFilters;
-  createdBy: string;
-  createdAt?: Date;
-  updatedAt?: Date;
-}
+export interface AssetReportTemplate { id: string; name: string; description?: string | null; filters: AssetExcelReportFilters; createdBy: string; createdAt?: Date; updatedAt?: Date; }
 
 @Injectable()
 export class AssetReportTemplateService {
-  constructor(
-    private readonly db: MongooseDatabaseService,
-    private readonly entitlements: EntitlementService,
-  ) {}
-
-  private async requireAccess(auth: AuthContext) {
-    await this.entitlements.requireFeature(auth.tenantId, 'advanced_reports_enabled');
-  }
-
-  async list(auth: AuthContext) {
-    await this.requireAccess(auth);
-    const docs = await this.db.assetReportTemplate
-      .find({ tenantId: auth.tenantId })
-      .sort({ name: 1 })
-      .lean();
-    return docs.map((doc: any) => this.toDto(doc));
-  }
-
-  async create(auth: AuthContext, name: string, description: string | undefined, filters: AssetExcelReportFilters) {
-    await this.requireAccess(auth);
-    const cleanName = String(name ?? '').trim();
-    if (!cleanName) throw new BadRequestException('Template name is required');
-    if (cleanName.length > 120) throw new BadRequestException('Template name cannot exceed 120 characters');
-    const normalized = this.normalizeFilters(filters);
-    const exists = await this.db.assetReportTemplate.findOne({ tenantId: auth.tenantId, name: cleanName }).lean();
-    if (exists) throw new BadRequestException('A report template with this name already exists');
-    const doc = await this.db.assetReportTemplate.create({
-      tenantId: auth.tenantId,
-      name: cleanName,
-      description: description?.trim() || undefined,
-      filters: normalized,
-      createdBy: auth.userId,
-    });
-    return this.toDto(doc.toObject());
-  }
-
-  async update(auth: AuthContext, templateId: string, name: string, description: string | undefined, filters: AssetExcelReportFilters) {
-    await this.requireAccess(auth);
-    const cleanName = String(name ?? '').trim();
-    if (!cleanName) throw new BadRequestException('Template name is required');
-    const duplicate = await this.db.assetReportTemplate.findOne({
-      tenantId: auth.tenantId,
-      name: cleanName,
-      _id: { $ne: templateId },
-    }).lean();
-    if (duplicate) throw new BadRequestException('A report template with this name already exists');
-    const doc = await this.db.assetReportTemplate.findOneAndUpdate(
-      { _id: templateId, tenantId: auth.tenantId },
-      { $set: { name: cleanName, description: description?.trim() || undefined, filters: this.normalizeFilters(filters), updatedAt: new Date() } },
-      { new: true },
-    ).lean();
-    if (!doc) throw new NotFoundException('Report template not found');
-    return this.toDto(doc);
-  }
-
-  async remove(auth: AuthContext, templateId: string) {
-    await this.requireAccess(auth);
-    const result = await this.db.assetReportTemplate.deleteOne({ _id: templateId, tenantId: auth.tenantId });
-    if (!result.deletedCount) throw new NotFoundException('Report template not found');
-    return { ok: true };
-  }
-
-  async get(auth: AuthContext, templateId: string) {
-    await this.requireAccess(auth);
-    const doc = await this.db.assetReportTemplate.findOne({ _id: templateId, tenantId: auth.tenantId }).lean();
-    if (!doc) throw new NotFoundException('Report template not found');
-    return this.toDto(doc);
-  }
-
-  private normalizeFilters(filters: AssetExcelReportFilters = {}) {
-    const allowed = ['status', 'companyId', 'assetTypeId', 'locationId', 'fromDate', 'toDate'] as const;
-    const normalized: AssetExcelReportFilters = {};
-    for (const key of allowed) {
-      const value = filters[key];
-      if (value === undefined || value === null || String(value).trim() === '') continue;
-      normalized[key] = String(value).trim();
-    }
-    if (normalized.fromDate && normalized.toDate && new Date(normalized.fromDate).getTime() > new Date(normalized.toDate).getTime()) {
-      throw new BadRequestException('fromDate cannot be after toDate');
-    }
-    return normalized;
-  }
-
-  private toDto(doc: any): AssetReportTemplate {
-    return {
-      id: String(doc._id),
-      name: doc.name,
-      description: doc.description ?? null,
-      filters: doc.filters ?? {},
-      createdBy: String(doc.createdBy),
-      createdAt: doc.createdAt,
-      updatedAt: doc.updatedAt,
-    };
-  }
+  constructor(private readonly prisma: PrismaService, private readonly entitlements: EntitlementService) {}
+  private async requireAccess(auth: AuthContext) { await this.entitlements.requireFeature(auth.tenantId, 'advanced_reports_enabled'); }
+  async list(auth: AuthContext) { await this.requireAccess(auth); return this.prisma.withTenantContext(auth.tenantId, auth.companyId, tx => tx.assetReportTemplate.findMany({ where: { tenantId: auth.tenantId }, orderBy: { name: 'asc' } })); }
+  async create(auth: AuthContext, name: string, description: string | undefined, filters: AssetExcelReportFilters) { await this.requireAccess(auth); const cleanName=String(name??'').trim(); if(!cleanName)throw new BadRequestException('Template name is required'); if(cleanName.length>120)throw new BadRequestException('Template name cannot exceed 120 characters'); const normalized=this.normalizeFilters(filters); try{return await this.prisma.withTenantContext(auth.tenantId,auth.companyId,tx=>tx.assetReportTemplate.create({data:{tenantId:auth.tenantId,name:cleanName,description:description?.trim()||null,filters:normalized,createdBy:auth.userId}}));}catch(e:any){if(e?.code==='P2002')throw new BadRequestException('A report template with this name already exists');throw e;} }
+  async update(auth: AuthContext, templateId: string, name: string, description: string | undefined, filters: AssetExcelReportFilters) { await this.requireAccess(auth); const cleanName=String(name??'').trim(); if(!cleanName)throw new BadRequestException('Template name is required'); const duplicate=await this.prisma.withTenantContext(auth.tenantId,auth.companyId,tx=>tx.assetReportTemplate.findFirst({where:{tenantId:auth.tenantId,name:cleanName,id:{not:templateId}}})); if(duplicate)throw new BadRequestException('A report template with this name already exists'); const result=await this.prisma.withTenantContext(auth.tenantId,auth.companyId,tx=>tx.assetReportTemplate.updateMany({where:{id:templateId,tenantId:auth.tenantId},data:{name:cleanName,description:description?.trim()||null,filters:this.normalizeFilters(filters)}})); if(!result.count)throw new NotFoundException('Report template not found'); return this.prisma.withTenantContext(auth.tenantId,auth.companyId,tx=>tx.assetReportTemplate.findUniqueOrThrow({where:{id:templateId}})); }
+  async remove(auth: AuthContext, templateId: string) { await this.requireAccess(auth); const result=await this.prisma.withTenantContext(auth.tenantId,auth.companyId,tx=>tx.assetReportTemplate.deleteMany({where:{id:templateId,tenantId:auth.tenantId}})); if(!result.count)throw new NotFoundException('Report template not found'); return {ok:true}; }
+  async get(auth: AuthContext, templateId: string) { await this.requireAccess(auth); const doc=await this.prisma.withTenantContext(auth.tenantId,auth.companyId,tx=>tx.assetReportTemplate.findFirst({where:{id:templateId,tenantId:auth.tenantId}})); if(!doc)throw new NotFoundException('Report template not found'); return doc; }
+  private normalizeFilters(filters:AssetExcelReportFilters={}){const allowed=['status','companyId','assetTypeId','locationId','fromDate','toDate'] as const;const normalized:AssetExcelReportFilters={};for(const key of allowed){const value=filters[key];if(value!==undefined&&value!==null&&String(value).trim()!=='')normalized[key]=String(value).trim();}if(normalized.fromDate&&normalized.toDate&&new Date(normalized.fromDate).getTime()>new Date(normalized.toDate).getTime())throw new BadRequestException('fromDate cannot be after toDate');return normalized;}
 }
