@@ -1,60 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Types } from 'mongoose';
-import { MongooseDatabaseService } from '../../common/mongoose-database.service';
+import { PrismaService } from '../../common/database/prisma.service';
 import { AuthContext } from '../../common/guards/tenant-context.guard';
-import { TenantScopedRepository } from '../../common/tenant-scoped.repository';
-import { toDto } from '../../common/mongoose.utils';
 
 @Injectable()
-export class UserAsset360Service extends TenantScopedRepository {
-  constructor(private readonly db: MongooseDatabaseService) { super(); }
-
-  private async scopedUser(auth: AuthContext, userId: string) {
-    if (!Types.ObjectId.isValid(userId)) throw new NotFoundException('User not found');
-    const user = await this.db.user.findOne({ _id: userId, ...this.scope(auth), accountType: 'TENANT' }).lean();
-    if (!user) throw new NotFoundException('User not found');
-    return { id: String(user._id), employeeId: user.employeeId, email: user.email, firstName: user.firstName, lastName: user.lastName, jobTitle: user.jobTitle, phone: user.phone, companyId: user.companyId, departmentId: user.departmentId, locationId: user.locationId, isActive: user.isActive, forcePasswordReset: user.forcePasswordReset, roleIds: user.roleIds ?? [] };
-  }
-
-  private async assignedData(auth: AuthContext, userId: string) {
-    const assignments = await this.db.assetAssignment.find({ userId }).sort({ assignedAt: -1 }).lean();
-    if (!assignments.length) return { assets: [], assignments, typeById: new Map<string, any>() };
-    const assetIds = [...new Set(assignments.map((assignment: any) => String(assignment.assetId)).filter(Boolean))];
-    const assets = await this.db.asset.find({ ...this.scope(auth), _id: { $in: assetIds } }).select({ _id: 1, assetNumber: 1, status: 1, assetTypeId: 1, locationId: 1, departmentId: 1 }).lean();
-    const typeIds = [...new Set(assets.map((asset: any) => String(asset.assetTypeId)).filter(Boolean))];
-    const types = typeIds.length ? await this.db.assetType.find({ _id: { $in: typeIds }, companyId: auth.companyId }).select({ _id: 1, name: 1 }).lean() : [];
-    return { assets, assignments, typeById: new Map(types.map((type: any) => [String(type._id), type])) };
-  }
-
-  async overview(auth: AuthContext, userId: string) {
-    const user = await this.scopedUser(auth, userId);
-    const { assets, assignments, typeById } = await this.assignedData(auth, userId);
-    const assetById = new Map(assets.map((asset: any) => [String(asset._id), asset]));
-    const currentRows = assignments.filter((assignment: any) => !assignment.returnedAt).map((assignment: any) => {
-      const asset = assetById.get(String(assignment.assetId));
-      return asset ? { assignment: toDto(assignment), asset: { ...toDto(asset), assetType: typeById.get(String(asset.assetTypeId)) ? { name: typeById.get(String(asset.assetTypeId)).name } : undefined } } : null;
-    }).filter(Boolean);
-    const counts: Record<string, number> = {};
-    for (const row of currentRows as any[]) {
-      const name = row.asset.assetType?.name ?? 'Other';
-      counts[name] = (counts[name] ?? 0) + 1;
-    }
-    const assetIds = assets.map((asset: any) => String(asset._id));
-    const transfers = assetIds.length ? await this.db.assetTransfer.find({ tenantId: auth.tenantId, companyId: auth.companyId, assetId: { $in: assetIds }, $or: [{ fromUserId: userId }, { toUserId: userId }] }).sort({ requestedAt: -1 }).limit(50).lean() : [];
-    const activity = [
-      ...assignments.map((assignment: any) => ({ type: assignment.returnedAt ? 'RETURN' : 'ASSIGNMENT', timestamp: assignment.returnedAt ?? assignment.assignedAt, assetId: assignment.assetId, title: assignment.returnedAt ? 'Asset returned' : 'Asset assigned' })),
-      ...transfers.map((transfer: any) => ({ type: 'TRANSFER', timestamp: transfer.completedAt ?? transfer.requestedAt, assetId: transfer.assetId, title: `Transfer ${String(transfer.status).toLowerCase()}`, status: transfer.status })),
-    ].sort((a, b) => new Date(b.timestamp ?? 0).getTime() - new Date(a.timestamp ?? 0).getTime()).slice(0, 100);
-    return {
-      user,
-      assetSummary: { currentCount: currentRows.length, typeCounts: counts },
-      currentAssets: currentRows,
-      history: assignments.map((assignment: any) => {
-        const asset = assetById.get(String(assignment.assetId));
-        return asset ? { assignment: toDto(assignment), asset: { ...toDto(asset), assetType: typeById.get(String(asset.assetTypeId)) ? { name: typeById.get(String(asset.assetTypeId)).name } : undefined } } : null;
-      }).filter(Boolean),
-      transfers: transfers.map((transfer: any) => toDto(transfer)),
-      activity,
-    };
-  }
+export class UserAsset360Service {
+  constructor(private readonly prisma:PrismaService){}
+  async overview(auth:AuthContext,userId:string){const user=await this.prisma.withTenantContext(auth.tenantId,auth.companyId,tx=>tx.user.findFirst({where:{id:userId,tenantId:auth.tenantId,...(auth.crossCompany?{}:{companyId:auth.companyId})}}));if(!user)throw new NotFoundException('User not found');const assignments=await this.prisma.withTenantContext(auth.tenantId,auth.companyId,tx=>tx.assetAssignment.findMany({where:{userId,asset:{tenantId:auth.tenantId,...(auth.crossCompany?{}:{companyId:auth.companyId})}},orderBy:{assignedAt:'desc'}}));const ids=[...new Set(assignments.map(a=>a.assetId))];const assets=ids.length?await this.prisma.withTenantContext(auth.tenantId,auth.companyId,tx=>tx.asset.findMany({where:{id:{in:ids},tenantId:auth.tenantId,...(auth.crossCompany?{}:{companyId:auth.companyId})},include:{assetType:{select:{name:true}}}})):[];const assetMap=new Map(assets.map(a=>[a.id,a]));const current=assignments.filter(a=>!a.returnedAt);const typeCounts:Record<string,number>={};for(const a of current){const asset=assetMap.get(a.assetId);const type=asset?.assetType?.name??'Other';typeCounts[type]=(typeCounts[type]??0)+1;}const transfers=ids.length?await this.prisma.withTenantContext(auth.tenantId,auth.companyId,tx=>tx.assetTransfer.findMany({where:{tenantId:auth.tenantId,assetId:{in:ids},...(auth.crossCompany?{}:{companyId:auth.companyId}),OR:[{fromUserId:userId},{toUserId:userId}]},orderBy:{requestedAt:'desc'},take:50})):[];const activity=[...assignments.map(a=>({type:a.returnedAt?'RETURN':'ASSIGNMENT',timestamp:a.returnedAt??a.assignedAt,assetId:a.assetId,title:a.returnedAt?'Asset returned':'Asset assigned'})),...transfers.map(t=>({type:'TRANSFER',timestamp:t.completedAt??t.requestedAt,assetId:t.assetId,title:`Transfer ${t.status.toLowerCase()}`,status:t.status}))].sort((a,b)=>new Date(String(b.timestamp)).getTime()-new Date(String(a.timestamp)).getTime()).slice(0,100);const dtoUser={id:user.id,employeeId:user.id,email:user.email,firstName:user.firstName,lastName:user.lastName,jobTitle:null,phone:null,companyId:user.companyId,departmentId:null,locationId:null,isActive:user.isActive,forcePasswordReset:user.forcePasswordReset,roleIds:[]};const row=(a:any)=>{const asset=assetMap.get(a.assetId);return asset?{assignment:a,asset:{...asset,assetType:asset.assetType?{name:asset.assetType.name}:undefined}}:null;};return{user:dtoUser,assetSummary:{currentCount:current.length,typeCounts},currentAssets:current.map(row).filter(Boolean),history:assignments.map(row).filter(Boolean),transfers,activity};}
 }
