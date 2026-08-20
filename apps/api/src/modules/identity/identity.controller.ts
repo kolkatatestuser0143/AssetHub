@@ -1,18 +1,6 @@
-import {
-  Body,
-  Controller,
-  ForbiddenException,
-  Get,
-  Param,
-  Post,
-  Query,
-  Redirect,
-  Req,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Param, Post, Query, Redirect, Req, UseGuards } from '@nestjs/common';
 import { IsIn, IsObject, IsString } from 'class-validator';
 import { IdentityService } from './identity.service';
-import { MongooseDatabaseService } from '../../common/mongoose-database.service';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 import { RbacGuard } from '../../common/guards/rbac.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
@@ -26,12 +14,22 @@ class CreateIdpConfigDto {
 
 @Controller('identity-providers')
 export class IdentityController {
-  constructor(
-    private readonly identity: IdentityService,
-    private readonly db: MongooseDatabaseService,
-  ) {}
+  constructor(private readonly identity: IdentityService) {}
 
-  // --- Admin config management: guarded, tenant-scoped ---
+  @Get('catalog')
+  catalog() {
+    return [
+      { id: 'entra-id', name: 'Microsoft Entra ID', sso: ['SAML', 'OIDC'], provisioning: ['SCIM'] },
+      { id: 'jumpcloud', name: 'JumpCloud', sso: ['SAML', 'OIDC'], provisioning: ['SCIM'] },
+      { id: 'okta', name: 'Okta', sso: ['SAML', 'OIDC'], provisioning: ['SCIM'] },
+      { id: 'onelogin', name: 'OneLogin', sso: ['SAML', 'OIDC'], provisioning: ['SCIM'] },
+      { id: 'google-workspace', name: 'Google Workspace', sso: ['SAML', 'OIDC'], provisioning: [] },
+      { id: 'ping', name: 'Ping Identity', sso: ['SAML', 'OIDC'], provisioning: ['SCIM'] },
+      { id: 'generic-saml', name: 'Generic SAML', sso: ['SAML'], provisioning: ['SCIM'] },
+      { id: 'generic-oidc', name: 'Generic OIDC', sso: ['OIDC'], provisioning: ['SCIM'] },
+      { id: 'ldap', name: 'Custom LDAP / LDAPS', sso: ['LDAP'], provisioning: ['LDAP'] },
+    ];
+  }
 
   @Post(':companyId')
   @UseGuards(TenantContextGuard, RbacGuard)
@@ -40,18 +38,8 @@ export class IdentityController {
     if (!req.authContext.crossCompany && req.authContext.companyId !== companyId) {
       throw new ForbiddenException('Company out of scope');
     }
-    const doc = await this.db.identityProviderConfig.create({
-      companyId,
-      protocol: dto.protocol,
-      name: dto.name,
-      config: dto.config,
-      attributeMapping: dto.attributeMapping,
-      isEnabled: true,
-    });
-    return { id: String(doc._id), ...doc.toObject() };
+    return this.identity.createConfig(req.authContext, companyId, dto);
   }
-
-  // --- Public SSO flow: unauthenticated by definition, this IS the login ---
 
   @Get(':companyId/:idpConfigId/login')
   @Redirect()
@@ -61,24 +49,12 @@ export class IdentityController {
   }
 
   @Post(':companyId/:idpConfigId/callback/saml')
-  async samlCallback(
-    @Param('companyId') companyId: string,
-    @Param('idpConfigId') idpConfigId: string,
-    @Body() body: { SAMLResponse: string },
-    @Req() req: any,
-  ) {
-    // Returns real { accessToken, refreshToken } now — same shape as
-    // POST /auth/login. Frontend should treat this identically.
+  async samlCallback(@Param('companyId') companyId: string, @Param('idpConfigId') idpConfigId: string, @Body() body: { SAMLResponse: string }, @Req() req: any) {
     return this.identity.handleCallback(companyId, idpConfigId, body, req.ip, req.headers['user-agent'] ?? '');
   }
 
   @Get(':companyId/:idpConfigId/callback/oidc')
-  async oidcCallback(
-    @Param('companyId') companyId: string,
-    @Param('idpConfigId') idpConfigId: string,
-    @Query() query: { code: string; state: string },
-    @Req() req: any,
-  ) {
+  async oidcCallback(@Param('companyId') companyId: string, @Param('idpConfigId') idpConfigId: string, @Query() query: { code: string; state: string }, @Req() req: any) {
     return this.identity.handleCallback(companyId, idpConfigId, query, req.ip, req.headers['user-agent'] ?? '');
   }
 }
