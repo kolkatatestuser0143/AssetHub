@@ -1,208 +1,225 @@
-# ITAM SaaS — Foundation Scaffold
+# ITAM SaaS — PostgreSQL / Prisma
 
-This is a **working foundation**, not a finished product. It covers the
-master prompt's Phases 1–7 with real (not pseudo-) code, and defines
-clean interfaces for the phases that need dedicated, careful
-implementation rather than speculative scaffolding.
+This branch is the **PostgreSQL migration** of the ITAM SaaS application. It uses **Prisma** as the database access layer and is intended to run against PostgreSQL providers such as **Neon** during development and AWS PostgreSQL/RDS later in production.
 
-## What's real and functional here
+> **Status:** PostgreSQL migration is implemented in this branch. Local/Neon database execution and end-to-end verification are still pending.
 
-- **DB schema** (`apps/api/src/models/*.schemas.ts`) — full multi-tenant
-  model as Mongoose schemas (MongoDB Atlas).
-- **Tenant isolation** — MongoDB has no row-level-security equivalent,
-  so isolation is application-level filtering only, enforced via
-  `TenantScopedRepository`/`scope()` in every service. See
-  `apps/api/src/common/tenant-scoped.repository.ts` for the full
-  rationale — there is no backstop layer, so this is the whole story.
-- **Tenant context + RBAC guards** (`common/guards/`) — every mutating
-  route resolves auth context from a verified JWT and re-checks
-  permissions server-side.
-- **Auth** (`modules/auth/`) — Argon2id hashing, short-lived JWT access
-  tokens, rotating single-use refresh tokens, login history, lockout
-  hook points. **MFA (TOTP) enforcement is not yet wired into the login
-  flow** — see the NOTE in `auth.service.ts`.
-- **Assets** (`modules/assets/`) — asset numbering via an atomic
-  `findOneAndUpdate`/`$inc` on the numbering rule (prevents duplicate
-  numbers under concurrent creates — MongoDB has no `SELECT ... FOR
-  UPDATE`, so two concurrent requests serialize on this instead) and
-  lifecycle-transition audit events.
-- **Seed script** (`apps/api/db/seed.ts`) — system roles/permissions +
-  a demo tenant/company/admin user.
-- **Tenancy** (`modules/tenancy/`) — Company/BusinessUnit/Plant/Location/
-  Department CRUD, each write re-verifying the caller's company scope
-  server-side before touching the DB (not just trusting RLS).
-- **RBAC** (`modules/rbac/`) — list permissions, create custom tenant
-  roles, assign roles to users.
-- **Assets controller** — exposes `AssetsService` (create + lifecycle
-  transition) over HTTP with permission guards.
-- **Next.js shell** (`apps/web/`) — login, dashboard with nav, and
-  working CRUD screens for Companies, Roles (with permission
-  checkboxes), and Assets (asset types + create + lifecycle
-  transitions) — all wired to the real API endpoints below.
+## Architecture
 
-## What's deliberately stubbed, not built
+- **API:** NestJS
+- **Database:** PostgreSQL
+- **ORM:** Prisma
+- **Development database:** Neon PostgreSQL
+- **Future AWS database:** PostgreSQL on AWS/RDS or PostgreSQL on EC2, depending on deployment requirements
+- **Object/document storage:** storage abstraction currently supports Uploadcare; production can be moved to Amazon S3 without coupling database persistence to storage
+- **Authentication:** JWT access tokens + rotating refresh sessions
+- **Identity:** SAML/OIDC providers
+- **Provisioning:** SCIM support
+- **Authorization:** RBAC + tenant/company scope checks
+- **Database security:** PostgreSQL Row-Level Security (RLS) groundwork is included
+- **Cache/security state:** Redis
 
-These are exactly the sections flagged as highest-risk earlier — the
-kind of code where a plausible-looking but subtly wrong implementation
-is worse than an honest gap:
+## PostgreSQL migration
 
-- **SAML/OIDC** (`modules/identity/`) — real implementation now, not
-  just an interface: `@node-saml/node-saml` for SAML (signature,
-  audience/issuer, and assertion-window validation — not hand-rolled),
-  `openid-client` for OIDC (state+nonce+PKCE always, ID token signature/
-  issuer/audience validated by the library). Both feed into the shared
-  `ProvisioningService` so there's one place that creates/updates users
-  from an external identity, matching architecture doc §8.
-- **SCIM** — not scaffolded yet; schema exists (`ScimToken`,
-  `ScimSyncLog`), service/controller do not.
-- **AD/Entra connector-agent** — not scaffolded; architecture doc §10
-  covers the outbound-only design.
-- **Integrations** (`modules/integrations/`) — interface + mock
-  connector only. Real adapters (JumpCloud first, per your infra) TODO.
-- **Billing/entitlements** — schema exists, no service logic yet.
-- **Notifications, platform-admin, audit reporting UI** — not started.
+The `Postgresql` branch replaces the previous MongoDB/Mongoose persistence layer with Prisma/PostgreSQL.
 
-## Before this touches real data
+The Prisma schema covers the major application domains, including:
 
-1. Rotate the seeded demo admin password immediately
-   (`forcePasswordReset: true` is set, but don't rely on that alone).
-2. Wire MFA enforcement into `AuthService.login()` before exposing this
-   past a local dev environment.
-3. Run the cross-tenant isolation suite against a disposable MongoDB
-   test database before every deploy — `pnpm test:security` (see
-   below). It already caught and fixed one real gap during authoring
-   (see `test/security/tenant-isolation.spec.ts` comments): `AssetType`
-   was reachable by ID substitution across tenants because it had no
-   app-level ownership check. MongoDB has no RLS equivalent, so this
-   suite is the *only* thing that catches a missing `scope()` call —
-   treat any future failure here as a security incident, not a normal
-   test failure.
-4. Rotate any credentials that were ever committed to `.env` in this
-   repo's history (Atlas URI, Redis token, JWT secret) before using
-   this past local dev — see `.env.example` for the variables that
-   should be filled with fresh secrets, never the committed ones.
+- Tenants and companies
+- Users, sessions and login history
+- Sites, locations and departments
+- Asset types and assets
+- Asset assignments and transfers
+- Maintenance, warranties and documents
+- Custom fields
+- Asset acknowledgements and report templates
+- Audit events
+- SAML/OIDC identity-provider configuration
+- SCIM tokens and synchronization logs
+- Integration instances
+- Plans, subscriptions and entitlements
 
-## Prerequisites (no Docker)
+The old Mongo/Mongoose runtime layer has been removed from this branch.
 
-- **MongoDB Atlas** (or any MongoDB 6+) — put the connection string in
-  `MONGODB_URI` (see `.env.example`). There is no RLS-equivalent role
-  split here — the app connects with one role, and isolation is
-  entirely the application-level `scope()` filtering described above.
-- **Redis 7** (managed or self-hosted, reachable via `REDIS_URL`). This
-  project uses **Upstash Redis** by default. Redis backs the identity
-  module's OIDC state/nonce store and SAML assertion-ID replay
-  protection — it is a hard runtime dependency of the API.
-  - `.env` uses Upstash's wire-protocol URL (`rediss://…:6379`), which
-    `ioredis` connects to over TLS. See `.env.example` for the exact
-    variables (`REDIS_URL`, `UPSTASH_REDIS_REST_URL`,
-    `UPSTASH_REDIS_REST_TOKEN`) — get the values from Upstash console
-    → Database → **Connect**.
-  - Any Redis 7+ works: set `REDIS_URL` to your instance. Local
-    `redis://localhost:6379` also works if no `REDIS_URL` is set.
+## RLS and tenant isolation
 
-## Setting up MongoDB
+PostgreSQL RLS is used as a database-level backstop for tenant/company isolation. Application-level authorization checks remain in place; RLS is **not** intended to replace controller/service authorization.
 
-### Option A — MongoDB Atlas (recommended, matches `.env` default)
+The API's Prisma layer provides tenant-context support using PostgreSQL transaction-local settings such as:
 
-1. Create a free/shared cluster at https://cloud.mongodb.com.
-2. Database Access → add a user with a strong generated password
-   (read/write on this project's database only — don't reuse the
-   Atlas org admin credentials here).
-3. Network Access → add your current IP (or `0.0.0.0/0` only for
-   throwaway local dev, never for anything shared).
-4. Connect → Drivers → copy the `mongodb+srv://...` connection string
-   into `MONGODB_URI` in `.env`, and set `MONGODB_DB` to your database
-   name (e.g. `itam`).
-5. Seed it:
+- `app.tenant_id`
+- `app.company_id`
 
-   ```
-   pnpm --filter api exec ts-node db/seed.ts
-   ```
+Before enabling RLS against a real development or production database, run the application test suite and verify that every RLS-protected query is executed with the appropriate tenant context.
 
-### Option B — local MongoDB
+## Prerequisites
 
-Run MongoDB 6+ locally or via a container image, then point
-`MONGODB_URI` at it, e.g. `mongodb://localhost:27017/itam`. Everything
-else (seed script, app startup) is identical to Option A.
+- Node.js / pnpm matching the repository toolchain
+- PostgreSQL 14+ recommended
+- Neon PostgreSQL for development, or another PostgreSQL instance
+- Redis 7+
+- Node dependencies installed with pnpm
 
-Unlike the old Postgres setup, there's no owner-vs-app role split to
-worry about — MongoDB isolation is entirely the application-level
-`scope()` filtering in the service layer, not a DB-level grant, so one
-connection string covers migrations/seed and the running app.
+## Neon development setup
 
-## Running locally
+Create a Neon project and database, then copy the PostgreSQL connection details into `.env`.
 
+The application expects:
+
+```env
+DATABASE_URL="postgresql://..."
+DIRECT_URL="postgresql://..."
 ```
-cp .env.example .env      # fill in real secrets; point at your MongoDB Atlas + Redis
+
+`DATABASE_URL` is used by Prisma for normal application access. `DIRECT_URL` is intended for direct database operations such as migrations when required by the Prisma configuration.
+
+Do **not** commit real database credentials, JWT secrets, Redis credentials, or other secrets.
+
+## Prisma commands
+
+From the repository root:
+
+```bash
 pnpm install
-pnpm --filter api exec ts-node db/seed.ts   # seed roles/permissions + demo tenant
+pnpm --filter api exec prisma generate
+pnpm --filter api exec prisma validate
+```
+
+For a development database after the Neon connection is configured:
+
+```bash
+pnpm --filter api exec prisma migrate dev
+```
+
+For a deployment/CI environment where migrations already exist:
+
+```bash
+pnpm --filter api exec prisma migrate deploy
+```
+
+Run the API with:
+
+```bash
 pnpm dev:api
 ```
 
-The API's `IdentitySecurityCacheService` defaults to
-`redis://localhost:6379` when `REDIS_URL` is unset.
+## Database migrations
 
-## Running the cross-tenant isolation test suite
+Prisma migrations are the source of truth for PostgreSQL schema changes on this branch.
 
+Before applying migrations to any shared database:
+
+1. Review the migration SQL.
+2. Confirm the target database is the intended environment.
+3. Back up production data when applicable.
+4. Run the migration against a disposable/local database first.
+5. Verify RLS policies after migration.
+
+Do not manually edit the production database to compensate for an incomplete Prisma migration.
+
+## RLS testing
+
+RLS has been prepared in the PostgreSQL branch, but it should be validated against a real PostgreSQL database before being considered production-ready.
+
+Test at minimum:
+
+- A tenant cannot read another tenant's records.
+- A tenant cannot modify another tenant's records.
+- A company cannot access another company inside the same tenant when company isolation is required.
+- Cross-company administrative flows still work when explicitly authorized.
+- Requests without a valid tenant context cannot bypass RLS.
+- Background/system operations use an explicitly controlled database context rather than accepting tenant IDs directly from untrusted clients.
+
+## CI validation
+
+The PostgreSQL validation workflow checks the Prisma layer and API compilation. It runs the equivalent of:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm --filter api exec prisma validate
+pnpm --filter api exec prisma generate
+pnpm --filter api build
 ```
-# Point at a DISPOSABLE test database, never the dev/prod one —
-# the suite creates and deletes real tenants/companies/users.
-MONGODB_URI=mongodb+srv://.../itam_test \
-  pnpm --filter api test:security
+
+CI validation is useful for catching schema and TypeScript/build errors, but it does **not** replace running the application against a real PostgreSQL database.
+
+## Local testing checklist
+
+When testing this branch locally with Neon:
+
+1. Configure `DATABASE_URL` and `DIRECT_URL`.
+2. Configure Redis.
+3. Run `prisma validate` and `prisma generate`.
+4. Apply Prisma migrations.
+5. Run the seed script if/when the PostgreSQL seed is ready.
+6. Start the API.
+7. Test authentication and sessions.
+8. Test tenant/company isolation.
+9. Test asset CRUD and lifecycle transitions.
+10. Test SSO/SCIM and billing flows.
+11. Verify RLS directly with PostgreSQL queries.
+
+## AWS migration path
+
+The application should remain PostgreSQL-provider agnostic.
+
+The intended path is:
+
+```text
+Development
+    Neon PostgreSQL
+         |
+         v
+Production
+    AWS PostgreSQL
+    +
+    Amazon S3 for documents/files
 ```
 
-Run this in CI on every PR that touches a module, guard, or the schema
-— it's the single test suite in this repo where a failure means stop,
-not "flaky, retry."
+Moving from Neon to AWS should primarily require changing the database connection/deployment infrastructure, not rewriting application persistence code.
 
-## SAML/OIDC — what's genuinely done vs. what's not
+For S3 migration, keep using the application's document-storage abstraction so database records store storage metadata/keys rather than embedding provider-specific implementation throughout the asset modules.
 
-- **Session issuance is now real.** SSO callbacks (`IdentityController`)
-  provision the user via `ProvisioningService`, then issue a real
-  session via the same `SessionService` password login uses
-  (`AuthService` and `IdentityService` both depend on it — no
-  circular import, no parallel session logic). The callback returns
-  `{ accessToken, refreshToken }`, identical shape to `/auth/login`.
-- **Test coverage added** (`test/security/identity.spec.ts`) for the
-  primitives that matter most: replay protection (an assertion/state
-  key can only be consumed once), OIDC state forgery/expiry rejection,
-  and SAML config refusing to proceed without an IdP certificate.
-- **Still not covered**: a full signature-mismatch test against a real
-  signed SAML response. That needs either a live test IdP or a
-  hand-built, properly-signed XML fixture — deliberately not faked
-  here, since a fake fixture would test nothing real. This is the
-  next thing to add before trusting SAML with production traffic.
-- **Refresh-token reuse detection is per-session, not per-family** —
-  noted directly in `auth.service.ts`. A stolen-and-replayed refresh
-  token is caught (its row is already revoked), but a fuller
-  implementation would revoke every session descended from the same
-  original login on detected reuse, not just the one row.
+## Security notes
 
-## Next steps, in roadmap order
+- Never commit `.env` or real credentials.
+- Use strong, unique JWT and database credentials.
+- Keep Redis protected and encrypted in production.
+- Do not trust client-provided tenant/company IDs for authorization.
+- Keep application authorization checks even with RLS enabled.
+- Validate RLS policies with negative cross-tenant tests before production use.
+- Rotate any credentials that may have been exposed in repository history.
 
-Signed-fixture SAML test → refresh-token family revocation → SCIM
-(natural next step, shares `ProvisioningService`) → audit query API →
-QR/barcode → import/export → AD/Entra connector.
+## Current migration status
 
-## Known gaps to be aware of before real usage
+### Completed in this branch
 
-- `access_token` handling in `apps/web/src/lib/api-client.ts` is an
-  in-memory placeholder — refresh-on-401 is a TODO, and the refresh
-  token should be an httpOnly cookie set by the API, not handled by
-  frontend JS at all.
-- `ForbiddenException` in `tenancy.service.ts` scope checks — confirm
-  this surfaces as a clean 403 through Nest's exception filters (it
-  should by default, but verify once other modules add custom filters).
-- `AssetsService.listAssetTypes` filters by `companyId` only, doesn't
-  go through `scope()`/`TenantScopedRepository`, and isn't covered by
-  `test/security/tenant-isolation.spec.ts`. Not currently exploitable
-  (Mongo `companyId`s are globally-unique ObjectIds) but inconsistent
-  with the rest of the service layer and untested — fix before relying
-  on it.
-- `AssetsService` reimplements its own private `scope()` instead of
-  extending `TenantScopedRepository` like `TenancyService` does — two
-  copies of the same logic that can silently drift apart.
-- `assetAuditEvent` documents carry no `tenantId`/`companyId`. Fine
-  today since nothing queries the collection directly, but the
-  planned "audit query API" (see Next steps) will need those fields
-  added before it can be scoped safely.
+- Prisma/PostgreSQL persistence layer
+- PostgreSQL Prisma schema for core ITAM domains
+- Identity/SCIM persistence models
+- Billing/subscription/entitlement persistence
+- Prisma-backed identity service
+- Prisma-backed entitlement service
+- Prisma-backed subscription/audit services
+- Mongo/Mongoose runtime cleanup
+- PostgreSQL RLS foundation
+- Prisma + API build CI validation
+
+### Still requires local/Neon verification
+
+- Prisma migrations against a real PostgreSQL database
+- Seed execution
+- Full API startup
+- End-to-end CRUD tests
+- RLS behavior under real PostgreSQL sessions
+- SAML/OIDC/SCIM integration testing
+- Billing/entitlement integration testing
+
+## Next steps
+
+1. Configure Neon locally.
+2. Run Prisma validation/generation and migrations.
+3. Fix any migration or TypeScript/runtime errors discovered locally.
+4. Run the tenant-isolation/RLS test suite.
+5. Complete S3 storage migration when moving toward AWS.
+6. Deploy PostgreSQL infrastructure to AWS after the Neon-backed branch is stable.
