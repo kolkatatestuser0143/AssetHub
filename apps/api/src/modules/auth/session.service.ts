@@ -140,15 +140,17 @@ export class SessionService {
 
   private async resolveTenantAccess(tenantId: string, companyId: string, roleIds: string[]): Promise<TenantAccess> {
     if (!roleIds.length) return { permissions: [], crossCompany: false };
-    const rows: TenantRolePermissionRow[] = await this.prisma.$queryRaw`
-      SELECT r.company_id AS "companyId", p.key AS "permissionKey"
-      FROM roles r
-      LEFT JOIN role_permissions rp ON rp.role_id = r.id
-      LEFT JOIN permissions p ON p.id = rp.permission_id
-      WHERE r.id = ANY(${roleIds}::uuid[])
-        AND r.tenant_id = ${tenantId}::uuid
-        AND (r.company_id = ${companyId}::uuid OR r.company_id IS NULL)
-    `;
+    const rows = await this.prisma.withTenantContext(tenantId, companyId, async tx =>
+      tx.$queryRaw<TenantRolePermissionRow[]>`
+        SELECT r.company_id AS "companyId", p.key AS "permissionKey"
+        FROM roles r
+        LEFT JOIN role_permissions rp ON rp.role_id = r.id
+        LEFT JOIN permissions p ON p.id = rp.permission_id
+        WHERE r.id = ANY(${roleIds}::uuid[])
+          AND r.tenant_id = ${tenantId}::uuid
+          AND (r.company_id = ${companyId}::uuid OR r.company_id IS NULL)
+      `,
+    );
     const perms = new Set<string>();
     let crossCompany = false;
     for (const row of rows) {
