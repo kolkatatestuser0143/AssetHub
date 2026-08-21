@@ -1,33 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
-
+import { asPrismaJson } from '../../common/prisma-json';
 @Injectable()
 export class SystemEntitlementAuditService {
   constructor(private readonly db: PrismaService) {}
-
-  async getTenantEntitlements(tenantId: string) {
-    const subscription = await this.db.subscription.findFirst({ where: { tenantId }, orderBy: { startedAt: 'desc' } });
-    if (!subscription) throw new NotFoundException('Tenant subscription not found');
-    const plan = await this.db.plan.findUnique({ where: { id: subscription.planId } });
-    const entitlements = await this.db.entitlement.findMany({ where: { subscriptionId: subscription.id }, orderBy: { key: 'asc' } });
-    const planFeatures = (plan?.features ?? {}) as Record<string, unknown>;
-    const keys = new Set([...Object.keys(planFeatures), ...entitlements.map((e) => e.key)]);
-    return {
-      subscription: { id: subscription.id, status: subscription.status, planId: subscription.planId, planName: plan?.name ?? null, startedAt: subscription.startedAt, endsAt: subscription.endsAt },
-      entitlements: [...keys].sort().map((key) => {
-        const record = entitlements.find((e) => e.key === key);
-        const planValue = planFeatures[key];
-        return { key, value: record?.value ?? planValue, planValue, source: record?.source === 'override' ? 'override' : 'plan', overridden: record?.source === 'override', updatedAt: null };
-      }),
-    };
-  }
-
-  async history(tenantId: string, limit = 200) {
-    const safeLimit = Math.min(Math.max(limit, 1), 500);
-    return this.db.auditEvent.findMany({ where: { tenantId, action: { in: ['billing.entitlement_changed', 'billing.plan_changed', 'billing.subscription_changed'] } }, orderBy: { occurredAt: 'desc' }, take: safeLimit });
-  }
-
-  async recordChange(tenantId: string, actorUserId: string | undefined, metadata: Record<string, unknown>) {
-    await this.db.auditEvent.create({ data: { tenantId, actorUserId: actorUserId ?? null, action: 'billing.entitlement_changed', targetType: 'tenant_entitlement', targetId: String(metadata.key ?? ''), metadata, occurredAt: new Date() } });
-  }
+  async getTenantEntitlements(tenantId: string) { const subscription = await this.db.subscription.findFirst({ where: { tenantId }, orderBy: { startedAt: 'desc' } }); if (!subscription) throw new NotFoundException('Tenant subscription not found'); const plan = await this.db.plan.findUnique({ where: { id: subscription.planId } }); const entitlements = await this.db.entitlement.findMany({ where: { subscriptionId: subscription.id }, orderBy: { key: 'asc' } }); const planFeatures = (plan?.features ?? {}) as Record<string, unknown>; const keys = new Set([...Object.keys(planFeatures), ...entitlements.map((e) => e.key)]); return { subscription: { id: subscription.id, status: subscription.status, planId: subscription.planId, planName: plan?.name ?? null, startedAt: subscription.startedAt, endsAt: subscription.endsAt }, entitlements: [...keys].sort().map((key) => { const record = entitlements.find((e) => e.key === key); const planValue = planFeatures[key]; return { key, value: record?.value ?? planValue, planValue, source: record?.source === 'override' ? 'override' : 'plan', overridden: record?.source === 'override', updatedAt: null }; }) }; }
+  async history(tenantId: string, limit = 200) { const safeLimit = Math.min(Math.max(limit, 1), 500); return this.db.auditEvent.findMany({ where: { tenantId, action: { in: ['billing.entitlement_changed', 'billing.plan_changed', 'billing.subscription_changed'] } }, orderBy: { occurredAt: 'desc' }, take: safeLimit }); }
+  async recordChange(tenantId: string, actorUserId: string | undefined, metadata: Record<string, unknown>) { await this.db.auditEvent.create({ data: { tenantId, actorUserId: actorUserId ?? null, action: 'billing.entitlement_changed', targetType: 'tenant_entitlement', targetId: String(metadata.key ?? ''), metadata: asPrismaJson(metadata), occurredAt: new Date() } }); }
 }
