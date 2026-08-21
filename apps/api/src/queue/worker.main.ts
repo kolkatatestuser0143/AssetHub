@@ -3,7 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { Worker, Queue, Job } from 'bullmq';
 import IORedis from 'ioredis';
 import { AppModule } from '../app.module';
-import { PrismaService } from '../common/prisma.service';
+import { PrismaService } from '../common/database/prisma.service';
 import { asPrismaJson } from '../common/prisma-json';
 import { AuditService } from '../modules/audit/audit.service';
 const QUEUE_NAME='assethub-maintenance',JOB_NAME='license-maintenance',EVERY_MS=24*60*60*1000,GRACE_DAYS=Number(process.env.LICENSE_GRACE_DAYS??7),GRACE_MS=GRACE_DAYS*24*60*60*1000;
