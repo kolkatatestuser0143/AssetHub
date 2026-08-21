@@ -126,21 +126,12 @@ async function main() {
   const tenantAdminRole = await ensureRole(tenant.id, company.id, 'Tenant Admin', [
     'role:read', 'role:write', 'asset:read', 'asset:write', 'asset:delete', 'user:read', 'user:write',
     'vendor:read', 'vendor:write', 'report:read', 'report:write', 'audit:read',
+    'company:read', 'company:write', 'billing:read',
   ]);
   const platformPermissions = [
-    'platform:console:access',
-    'platform:overview:read',
-    'platform:tenants:read',
-    'platform:tenants:manage',
-    'platform:users:read',
-    'platform:users:manage',
-    'platform:roles:read',
-    'platform:roles:manage',
-    'platform:audit:read',
-    'platform:health:read',
-    'platform:analytics:read',
-    'platform:billing:read',
-    'platform:billing:manage',
+    'platform:console:access', 'platform:overview:read', 'platform:tenants:read', 'platform:tenants:manage',
+    'platform:users:read', 'platform:users:manage', 'platform:roles:read', 'platform:roles:manage',
+    'platform:audit:read', 'platform:health:read', 'platform:analytics:read', 'platform:billing:read', 'platform:billing:manage',
   ];
   const platformAdminRole = await ensureRole(tenant.id, null, 'Platform Admin', platformPermissions, true);
 
