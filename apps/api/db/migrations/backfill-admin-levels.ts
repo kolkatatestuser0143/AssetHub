@@ -1,56 +1,59 @@
 import '../../src/bootstrap-dns';
-import 'dotenv/config';
 import { config as loadEnv } from 'dotenv';
 import { resolve } from 'path';
-import mongoose from 'mongoose';
-import { UserAdminLevel } from '../../src/models/user.schemas';
+import { PrismaClient } from '@prisma/client';
 
 loadEnv({ path: resolve(__dirname, '../../../../.env') });
 
+const prisma = new PrismaClient();
+
 async function main() {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) throw new Error('Missing required environment variable: MONGODB_URI');
-  const connection = await mongoose.createConnection(uri).asPromise();
-  try {
-    const db = connection.db;
-    if (!db) throw new Error('Mongo connection failed');
+  console.log('[ADMIN LEVELS] Applying Tenant Admin and Employee levels...');
 
-    const roles = db.collection('roles');
-    const users = db.collection('users');
+  const tenantAdminRoles = await prisma.$queryRawUnsafe<{ id: string }[]>(
+    `SELECT id FROM roles WHERE name = 'Tenant Admin'`,
+  );
+  const tenantAdminRoleIds = tenantAdminRoles.map((role) => role.id);
 
-    console.log('[ADMIN LEVELS] Applying Tenant Admin and Employee levels...');
-
-    // Tenant Admin is tenant-wide by definition; Company Admin remains company-scoped.
-    const tenantAdminRoles = await roles.find({ name: 'Tenant Admin' }).toArray();
-    const tenantAdminRoleIds = tenantAdminRoles.map((role) => String(role._id));
-    if (tenantAdminRoleIds.length) {
-      await roles.updateMany(
-        { _id: { $in: tenantAdminRoles.map((role) => role._id) } },
-        { $set: { companyId: null, updatedAt: new Date() } },
-      );
-      await users.updateMany(
-        { accountType: 'TENANT', roleIds: { $in: tenantAdminRoleIds } },
-        { $set: { adminLevel: UserAdminLevel.TENANT_ADMIN, updatedAt: new Date() } },
-      );
-    }
-
-    // Existing tenant users without the field are normal employees unless promoted above.
-    await users.updateMany(
-      { accountType: 'TENANT', adminLevel: { $exists: false } },
-      { $set: { adminLevel: UserAdminLevel.EMPLOYEE, updatedAt: new Date() } },
+  if (tenantAdminRoleIds.length) {
+    await prisma.$executeRawUnsafe(
+      `UPDATE roles SET company_id = NULL, updated_at = now() WHERE id = ANY($1::uuid[])`,
+      tenantAdminRoleIds,
     );
 
-    const tenantAdminUsers = await users.countDocuments({ accountType: 'TENANT', adminLevel: UserAdminLevel.TENANT_ADMIN, isActive: true });
-    const employeeUsers = await users.countDocuments({ accountType: 'TENANT', adminLevel: UserAdminLevel.EMPLOYEE, isActive: true });
-    console.log(`[ADMIN LEVELS] Active Tenant Admins: ${tenantAdminUsers}`);
-    console.log(`[ADMIN LEVELS] Active Employees: ${employeeUsers}`);
-    console.log(`[ADMIN LEVELS] Complete. Tenant Admin roles normalized: ${tenantAdminRoleIds.length}`);
-  } finally {
-    await connection.close();
+    await prisma.$executeRawUnsafe(
+      `UPDATE users
+       SET admin_level = 'TENANT_ADMIN', updated_at = now()
+       WHERE account_type = 'TENANT'
+         AND role_ids && $1::text[]`,
+      tenantAdminRoleIds,
+    );
   }
+
+  await prisma.$executeRawUnsafe(
+    `UPDATE users
+     SET admin_level = 'EMPLOYEE', updated_at = now()
+     WHERE account_type = 'TENANT'
+       AND (admin_level IS NULL OR admin_level = '')`,
+  );
+
+  const tenantAdminUsers = await prisma.user.count({
+    where: { accountType: 'TENANT', adminLevel: 'TENANT_ADMIN', isActive: true },
+  });
+  const employeeUsers = await prisma.user.count({
+    where: { accountType: 'TENANT', adminLevel: 'EMPLOYEE', isActive: true },
+  });
+
+  console.log(`[ADMIN LEVELS] Active Tenant Admins: ${tenantAdminUsers}`);
+  console.log(`[ADMIN LEVELS] Active Employees: ${employeeUsers}`);
+  console.log(`[ADMIN LEVELS] Complete. Tenant Admin roles normalized: ${tenantAdminRoleIds.length}`);
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+main()
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });
