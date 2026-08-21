@@ -1,18 +1,17 @@
 import { Controller, Get, HttpCode, HttpStatus, ServiceUnavailableException } from '@nestjs/common';
-import { InjectConnection } from '@nestjs/mongoose';
-import { Connection } from 'mongoose';
+import { PrismaService } from '../../common/prisma.service';
 import IORedis from 'ioredis';
 
 @Controller('health')
 export class HealthController {
-  constructor(@InjectConnection() private readonly mongo: Connection) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   @Get()
   @HttpCode(HttpStatus.OK)
   async health() {
-    const mongo = this.mongo.readyState === 1;
+    const postgres = await this.postgresStatus();
     const redis = await this.redisStatus();
-    return { status: mongo && redis ? 'ok' : 'degraded', uptimeSeconds: Math.floor(process.uptime()), timestamp: new Date().toISOString(), checks: { mongodb: mongo ? 'healthy' : 'unhealthy', redis: redis ? 'healthy' : 'unhealthy' } };
+    return { status: postgres && redis ? 'ok' : 'degraded', uptimeSeconds: Math.floor(process.uptime()), timestamp: new Date().toISOString(), checks: { postgresql: postgres ? 'healthy' : 'unhealthy', redis: redis ? 'healthy' : 'unhealthy' } };
   }
 
   @Get('live')
@@ -21,13 +20,15 @@ export class HealthController {
 
   @Get('ready')
   async ready() {
-    const mongo = this.mongo.readyState === 1;
+    const postgres = await this.postgresStatus();
     const redis = await this.redisStatus();
-    const checks = { mongodb: mongo ? 'healthy' : 'unhealthy', redis: redis ? 'healthy' : 'unhealthy' };
-    if (!mongo || !redis) {
-      throw new ServiceUnavailableException({ status: 'not_ready', checks });
-    }
+    const checks = { postgresql: postgres ? 'healthy' : 'unhealthy', redis: redis ? 'healthy' : 'unhealthy' };
+    if (!postgres || !redis) throw new ServiceUnavailableException({ status: 'not_ready', checks });
     return { status: 'ready', checks };
+  }
+
+  private async postgresStatus() {
+    try { await this.prisma.$queryRaw`SELECT 1`; return true; } catch { return false; }
   }
 
   private async redisStatus() {
