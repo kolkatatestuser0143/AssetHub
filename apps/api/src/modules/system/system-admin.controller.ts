@@ -42,7 +42,7 @@ export class SystemAdminController {
   @Patch('tenants/:tenantId/suspend') @SystemPermission('platform:tenants:manage') suspend(@Param('tenantId') tenantId: string, @Body() body: { reason?: string }, @Req() req: any) { return this.service.setTenantStatus(tenantId, false, req.systemAuth?.sub, body?.reason); }
   @Patch('tenants/:tenantId/activate') @SystemPermission('platform:tenants:manage') activate(@Param('tenantId') tenantId: string, @Req() req: any) { return this.service.setTenantStatus(tenantId, true, req.systemAuth?.sub); }
   @Get('users') @SystemPermission('platform:users:read') users() { return this.service.platformUsers(); }
-  @Patch('users/:userId/roles') @SystemPermission('platform:users:manage') updatePlatformUserRoles(@Param('userId') userId: string, @Body() dto: PlatformRolesDto, @Req() req: any) { return this.service.setPlatformUserRoles(userId, dto.roleIds, req.systemAuth?.sub); }
+  @Patch('users/:userId/roles') @SystemPermission('platform:users:manage') updatePlatformUserRoles(@Param('userId') userId: string, @Body() dto: PlatformRolesDto, @Req() req: any) { return this.rbac.setPlatformUserRoles(userId, dto.roleIds, req.systemAuth?.sub); }
   @Get('roles/permissions') @SystemPermission('platform:roles:read') rolePermissions() { return this.rbac.listPlatformPermissions(); }
   @Get('roles') @SystemPermission('platform:roles:read') roles() { return this.service.platformRoles(); }
   @Post('roles') @SystemPermission('platform:roles:manage') createPlatformRole(@Body() dto: CreatePlatformRoleDto, @Req() req: any) { return this.rbac.createPlatformRole(dto.name, dto.permissionKeys, req.systemAuth?.sub); }
