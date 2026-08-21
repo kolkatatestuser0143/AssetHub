@@ -61,6 +61,16 @@ export class AuthService {
 
   private async registerFailedLogin(userId: string) { const now = new Date(); const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { failedLoginAttempts: true, lockedUntil: true } }); if (!user) return; if (user.lockedUntil && user.lockedUntil.getTime() <= now.getTime()) { await this.prisma.user.update({ where: { id: userId }, data: { failedLoginAttempts: 1, lockedUntil: null } }); return; } const attempts = user.failedLoginAttempts + 1; await this.prisma.user.update({ where: { id: userId }, data: { failedLoginAttempts: attempts, ...(attempts >= MAX_FAILED_LOGINS ? { lockedUntil: new Date(now.getTime() + LOCKOUT_MS) } : {}) } }); }
   private async clearFailedLogins(userId: string) { await this.prisma.user.update({ where: { id: userId }, data: { failedLoginAttempts: 0, lockedUntil: null } }); }
-  private async resolveSystemPermissions(roleIds: string[]): Promise<string[]> { if (!roleIds.length) return []; const roles: any[] = await this.prisma.$queryRaw`SELECT permissions FROM roles WHERE id = ANY(${roleIds}::uuid[])`; const perms = new Set<string>(); for (const role of roles) for (const permission of (role.permissions ?? [])) if (permission.permissionKey) perms.add(permission.permissionKey); return [...perms]; }
+  private async resolveSystemPermissions(roleIds: string[]): Promise<string[]> {
+    if (!roleIds.length) return [];
+    const rows = await this.prisma.$queryRaw<Array<{ permission_key: string | null }>>`
+      SELECT DISTINCT p.key AS permission_key
+      FROM roles r
+      INNER JOIN role_permissions rp ON rp.role_id = r.id
+      INNER JOIN permissions p ON p.id = rp.permission_id
+      WHERE r.id = ANY(${roleIds}::uuid[])
+    `;
+    return rows.flatMap((row) => row.permission_key ? [row.permission_key] : []);
+  }
   private async recordLoginAttempt(userId: string | null, success: boolean, ip: string, userAgent: string, reason: string | null) { if (!userId) return; await this.prisma.loginHistory.create({ data: { userId, success, ipAddress: ip, userAgent, reason, occurredAt: new Date() } }); }
 }
