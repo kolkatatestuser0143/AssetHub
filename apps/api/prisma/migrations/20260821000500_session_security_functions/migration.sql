@@ -3,15 +3,20 @@
 -- allowing bearer-token based session operations to resolve/revoke only exact rows.
 CREATE OR REPLACE FUNCTION app.revoke_session(p_id uuid, p_user_id uuid, p_reason text)
 RETURNS boolean
-LANGUAGE sql
+LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 VOLATILE
 AS $$
+DECLARE
+  affected integer;
+BEGIN
   UPDATE sessions
      SET revoked_at = now(), revoked_reason = p_reason, updated_at = now()
    WHERE id = p_id AND user_id = p_user_id AND revoked_at IS NULL;
-  SELECT FOUND;
+  GET DIAGNOSTICS affected = ROW_COUNT;
+  RETURN affected > 0;
+END;
 $$;
 
 CREATE OR REPLACE FUNCTION app.revoke_session_family(p_family_id text, p_reason text)
@@ -21,7 +26,8 @@ SECURITY DEFINER
 SET search_path = public
 VOLATILE
 AS $$
-DECLARE affected integer;
+DECLARE
+  affected integer;
 BEGIN
   UPDATE sessions
      SET revoked_at = now(), revoked_reason = p_reason, updated_at = now()
