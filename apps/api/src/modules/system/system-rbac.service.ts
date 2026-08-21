@@ -1,4 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import * as argon2 from 'argon2';
+import * as crypto from 'crypto';
 import { PrismaService } from '../../common/database/prisma.service';
 
 @Injectable()
@@ -8,9 +10,9 @@ export class SystemRbacService {
   private async getPlatformActor(actorUserId: string) {
     const actor = await this.prisma.user.findFirst({
       where: { id: actorUserId, accountType: 'SYSTEM', isActive: true },
-      select: { tenantId: true },
+      select: { tenantId: true, companyId: true },
     });
-    if (!actor?.tenantId) throw new NotFoundException('Platform administration scope was not found');
+    if (!actor?.tenantId || !actor.companyId) throw new NotFoundException('Platform administration scope was not found');
     return actor;
   }
 
@@ -86,6 +88,86 @@ export class SystemRbacService {
         ...created,
         permissions: permissions.map((permission) => ({ permissionId: permission.id, permissionKey: permission.key })),
       };
+    });
+  }
+
+  async createPlatformUser(
+    input: { email: string; firstName: string; lastName: string; roleIds: string[] },
+    actorUserId?: string,
+  ) {
+    if (!actorUserId) throw new BadRequestException('System administrator context is required');
+    const email = String(input.email ?? '').trim().toLowerCase();
+    const firstName = String(input.firstName ?? '').trim();
+    const lastName = String(input.lastName ?? '').trim();
+    const normalized = [...new Set((input.roleIds ?? []).map(String))];
+    if (!email) throw new BadRequestException('Email is required');
+    if (!firstName || !lastName) throw new BadRequestException('First name and last name are required');
+    if (!normalized.length) throw new BadRequestException('Select at least one platform role');
+    if (normalized.some((id) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id))) {
+      throw new BadRequestException('Invalid role id');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const actor = await tx.user.findFirst({
+        where: { id: actorUserId, accountType: 'SYSTEM', isActive: true },
+        select: { tenantId: true, companyId: true },
+      });
+      if (!actor?.tenantId || !actor.companyId) throw new NotFoundException('Platform administration scope was not found');
+
+      const duplicate = await tx.user.findFirst({ where: { tenantId: actor.tenantId, email }, select: { id: true } });
+      if (duplicate) throw new ConflictException('A platform user with this email already exists');
+
+      const roles: any[] = await tx.$queryRawUnsafe(
+        `SELECT r.id::text AS id,
+                EXISTS (
+                  SELECT 1 FROM role_permissions rp
+                  JOIN permissions p ON p.id = rp.permission_id
+                  WHERE rp.role_id = r.id AND p.key = 'platform:console:access'
+                ) AS "hasConsoleAccess"
+         FROM roles r
+         WHERE r.id = ANY($1::uuid[])
+           AND r.tenant_id = $2::uuid
+           AND r.company_id IS NULL
+           AND EXISTS (
+             SELECT 1 FROM role_permissions rp
+             JOIN permissions p ON p.id = rp.permission_id
+             WHERE rp.role_id = r.id AND p.key LIKE 'platform:%'
+           )`,
+        normalized,
+        actor.tenantId,
+      );
+      if (roles.length !== normalized.length) throw new BadRequestException('One or more roles are not platform roles');
+      if (!roles.some((role) => role.hasConsoleAccess)) throw new BadRequestException('At least one selected role must grant platform console access');
+
+      const temporaryPassword = `Ah-${crypto.randomBytes(9).toString('base64url')}`;
+      const passwordHash = await argon2.hash(temporaryPassword, { type: argon2.argon2id });
+      const user = await tx.user.create({
+        data: {
+          tenantId: actor.tenantId,
+          companyId: actor.companyId,
+          accountType: 'SYSTEM',
+          adminLevel: 'PLATFORM_ADMIN',
+          email,
+          passwordHash,
+          firstName,
+          lastName,
+          jobTitle: 'Platform Administrator',
+          roleIds: normalized,
+          forcePasswordReset: true,
+          isActive: true,
+        },
+        select: { id: true, email: true, firstName: true, lastName: true, isActive: true, roleIds: true, forcePasswordReset: true },
+      });
+
+      await tx.$executeRawUnsafe(
+        `INSERT INTO system_audit_events (actor_user_id, action, target_type, target_id, metadata, result, occurred_at)
+         VALUES ($1::uuid, 'platform.user_created', 'user', $2::uuid, $3::jsonb, 'success', NOW())`,
+        actorUserId,
+        user.id,
+        JSON.stringify({ tenantId: actor.tenantId, email, roleIds: normalized }),
+      );
+
+      return { ...user, temporaryPassword };
     });
   }
 
