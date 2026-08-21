@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/database/prisma.service';
 
 @Injectable()
@@ -23,8 +23,15 @@ export class SystemRbacService {
       throw new BadRequestException('System roles may only contain platform permissions');
     }
     if (!keys.length) throw new BadRequestException('Select at least one platform permission');
+    if (!actorUserId) throw new BadRequestException('System administrator context is required');
 
     return this.prisma.$transaction(async (tx) => {
+      const actor = await tx.user.findFirst({
+        where: { id: actorUserId, accountType: 'SYSTEM', isActive: true },
+        select: { tenantId: true },
+      });
+      if (!actor?.tenantId) throw new NotFoundException('Platform administration scope was not found');
+
       const permissions = await tx.$queryRawUnsafe<Array<{ id: string; key: string }>>(
         `SELECT id::text AS id, key FROM permissions WHERE key = ANY($1::text[]) AND key LIKE 'platform:%'`,
         keys,
@@ -37,8 +44,9 @@ export class SystemRbacService {
       try {
         role = await tx.$queryRawUnsafe<Array<{ id: string; name: string; isSystem: boolean }>>(
           `INSERT INTO roles (tenant_id, company_id, name, is_system)
-           VALUES (NULL, NULL, $1, false)
+           VALUES ($1::uuid, NULL, $2, false)
            RETURNING id::text AS id, name, is_system AS "isSystem"`,
+          actor.tenantId,
           cleanName,
         );
       } catch (error: any) {
@@ -50,7 +58,7 @@ export class SystemRbacService {
       for (const permission of permissions) {
         await tx.$executeRawUnsafe(
           `INSERT INTO role_permissions (role_id, permission_id)
-           SELECT $1::uuid, id FROM permissions WHERE id = $2::uuid
+           VALUES ($1::uuid, $2::uuid)
            ON CONFLICT DO NOTHING`,
           created.id,
           permission.id,
@@ -60,9 +68,9 @@ export class SystemRbacService {
       await tx.$executeRawUnsafe(
         `INSERT INTO system_audit_events (actor_user_id, action, target_type, target_id, metadata, result, occurred_at)
          VALUES ($1::uuid, 'platform.role_created', 'role', $2::uuid, $3::jsonb, 'success', NOW())`,
-        actorUserId ?? null,
+        actorUserId,
         created.id,
-        JSON.stringify({ name: cleanName, permissionKeys: keys }),
+        JSON.stringify({ tenantId: actor.tenantId, name: cleanName, permissionKeys: keys }),
       );
 
       return {
