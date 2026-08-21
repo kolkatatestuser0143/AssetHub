@@ -26,6 +26,12 @@ class BrandingDto {
 class PrimaryLoginEmailDto { @IsEmail() email!: string; }
 class PlatformRolesDto { @IsArray() @IsString({ each: true }) roleIds!: string[]; }
 class CreatePlatformRoleDto { @IsString() @MinLength(2) name!: string; @IsArray() @IsString({ each: true }) permissionKeys!: string[]; }
+class CreatePlatformUserDto {
+  @IsEmail() email!: string;
+  @IsString() @MinLength(1) firstName!: string;
+  @IsString() @MinLength(1) lastName!: string;
+  @IsArray() @IsString({ each: true }) roleIds!: string[];
+}
 
 @Controller('system')
 @UseGuards(SystemAdminGuard)
@@ -42,6 +48,7 @@ export class SystemAdminController {
   @Patch('tenants/:tenantId/suspend') @SystemPermission('platform:tenants:manage') suspend(@Param('tenantId') tenantId: string, @Body() body: { reason?: string }, @Req() req: any) { return this.service.setTenantStatus(tenantId, false, req.systemAuth?.sub, body?.reason); }
   @Patch('tenants/:tenantId/activate') @SystemPermission('platform:tenants:manage') activate(@Param('tenantId') tenantId: string, @Req() req: any) { return this.service.setTenantStatus(tenantId, true, req.systemAuth?.sub); }
   @Get('users') @SystemPermission('platform:users:read') users() { return this.service.platformUsers(); }
+  @Post('users') @SystemPermission('platform:users:manage') createPlatformUser(@Body() dto: CreatePlatformUserDto, @Req() req: any) { return this.rbac.createPlatformUser(dto, req.systemAuth?.sub); }
   @Patch('users/:userId/roles') @SystemPermission('platform:users:manage') updatePlatformUserRoles(@Param('userId') userId: string, @Body() dto: PlatformRolesDto, @Req() req: any) { return this.rbac.setPlatformUserRoles(userId, dto.roleIds, req.systemAuth?.sub); }
   @Get('roles/permissions') @SystemPermission('platform:roles:read') rolePermissions() { return this.rbac.listPlatformPermissions(); }
   @Get('roles') @SystemPermission('platform:roles:read') roles() { return this.service.platformRoles(); }
