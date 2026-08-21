@@ -1,82 +1,10 @@
 import 'dotenv/config';
-
 import { NestFactory } from '@nestjs/core';
 import { Worker, Queue, Job } from 'bullmq';
 import IORedis from 'ioredis';
 import { AppModule } from '../app.module';
-import { MongooseDatabaseService } from '../common/mongoose-database.service';
+import { PrismaService } from '../common/prisma.service';
 import { AuditService } from '../modules/audit/audit.service';
-
-const QUEUE_NAME = 'assethub-maintenance';
-const JOB_NAME = 'license-maintenance';
-const EVERY_MS = 24 * 60 * 60 * 1000;
-const GRACE_DAYS = Number(process.env.LICENSE_GRACE_DAYS ?? 7);
-const GRACE_MS = GRACE_DAYS * 24 * 60 * 60 * 1000;
-
-async function main() {
-  const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-  const connection = new IORedis(redisUrl, { maxRetriesPerRequest: null });
-  const queue = new Queue(QUEUE_NAME, { connection });
-  await queue.upsertJobScheduler(JOB_NAME, { every: EVERY_MS }, { name: JOB_NAME, data: { source: 'scheduler' }, opts: { removeOnComplete: 10, removeOnFail: 50 } });
-
-  const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn', 'log'] });
-  const db = app.get(MongooseDatabaseService);
-  const audit = app.get(AuditService);
-
-  const worker = new Worker(QUEUE_NAME, async (_job: Job) => {
-    const now = new Date();
-    let trialExpired = 0;
-    let graceStarted = 0;
-    let expired = 0;
-    let auditEventsDeleted = 0;
-    let auditTenantsSkipped = 0;
-
-    const trialing = await db.subscription.find({ status: 'trialing', endsAt: { $lte: now } }).lean();
-    for (const subscription of trialing) {
-      const graceUntil = new Date(now.getTime() + GRACE_MS);
-      await db.subscription.updateOne({ _id: subscription._id, status: 'trialing' }, { $set: { status: 'past_due', graceUntil } });
-      await db.auditEvent.create({ tenantId: subscription.tenantId, action: 'subscription.trial_expired', targetType: 'subscription', targetId: String(subscription._id), metadata: { graceUntil, graceDays: GRACE_DAYS }, occurredAt: now });
-      trialExpired++;
-      graceStarted++;
-    }
-
-    const activeExpired = await db.subscription.find({ status: 'active', endsAt: { $lte: now } }).lean();
-    for (const subscription of activeExpired) {
-      const graceUntil = new Date(now.getTime() + GRACE_MS);
-      await db.subscription.updateOne({ _id: subscription._id, status: 'active' }, { $set: { status: 'past_due', graceUntil } });
-      await db.auditEvent.create({ tenantId: subscription.tenantId, action: 'subscription.grace_started', targetType: 'subscription', targetId: String(subscription._id), metadata: { graceUntil, graceDays: GRACE_DAYS }, occurredAt: now });
-      graceStarted++;
-    }
-
-    const graceExpired = await db.subscription.find({ status: 'past_due', graceUntil: { $lte: now } }).lean();
-    for (const subscription of graceExpired) {
-      await db.subscription.updateOne({ _id: subscription._id, status: 'past_due' }, { $set: { status: 'expired' } });
-      await db.auditEvent.create({ tenantId: subscription.tenantId, action: 'subscription.expired', targetType: 'subscription', targetId: String(subscription._id), metadata: { graceUntil: (subscription as any).graceUntil ?? null }, occurredAt: now });
-      expired++;
-    }
-
-    const tenants = await db.tenant.find({ status: { $ne: 'archived' } }).select({ _id: 1 }).lean();
-    for (const tenant of tenants) {
-      try {
-        const result = await audit.purgeExpired(String(tenant._id));
-        auditEventsDeleted += result.deleted;
-      } catch (error) {
-        // A tenant without an active license must not fail the entire maintenance job.
-        // Leave the tenant's audit retention untouched until a valid entitlement exists.
-        auditTenantsSkipped++;
-        console.warn(`[maintenance] audit purge skipped for tenant ${String(tenant._id)}:`, error instanceof Error ? error.message : error);
-      }
-    }
-    return { tenants: tenants.length, trialExpired, graceStarted, expired, auditEventsDeleted, auditTenantsSkipped };
-  }, { connection, concurrency: 1 });
-
-  worker.on('completed', (job, result) => console.log(`[maintenance] ${job.name} completed`, result));
-  worker.on('failed', (job, error) => console.error(`[maintenance] ${job?.name ?? JOB_NAME} failed`, error));
-
-  const shutdown = async () => { await worker.close(); await queue.close(); await connection.quit(); await app.close(); };
-  process.once('SIGINT', () => void shutdown().finally(() => process.exit(0)));
-  process.once('SIGTERM', () => void shutdown().finally(() => process.exit(0)));
-  console.log(`[maintenance] worker started; schedule=24h grace=${GRACE_DAYS}d redis=${redisUrl.replace(/:\/\/.*@/, '://***@')}`);
-}
-
-void main().catch((error) => { console.error('[maintenance] worker bootstrap failed', error); process.exit(1); });
+const QUEUE_NAME='assethub-maintenance',JOB_NAME='license-maintenance',EVERY_MS=24*60*60*1000,GRACE_DAYS=Number(process.env.LICENSE_GRACE_DAYS??7),GRACE_MS=GRACE_DAYS*24*60*60*1000;
+async function main(){const redisUrl=process.env.REDIS_URL||'redis://localhost:6379',connection=new IORedis(redisUrl,{maxRetriesPerRequest:null}),queue=new Queue(QUEUE_NAME,{connection});await queue.upsertJobScheduler(JOB_NAME,{every:EVERY_MS},{name:JOB_NAME,data:{source:'scheduler'},opts:{removeOnComplete:10,removeOnFail:50}});const app=await NestFactory.createApplicationContext(AppModule,{logger:['error','warn','log']}),db=app.get(PrismaService),audit=app.get(AuditService);const worker=new Worker(QUEUE_NAME,async(_job:Job)=>{const now=new Date();let trialExpired=0,graceStarted=0,expired=0,auditEventsDeleted=0,auditTenantsSkipped=0;const trialing=await db.subscription.findMany({where:{status:'trialing',endsAt:{lte:now}}});for(const subscription of trialing){const graceUntil=new Date(now.getTime()+GRACE_MS);await db.subscription.updateMany({where:{id:subscription.id,status:'trialing'},data:{status:'past_due',graceUntil}});await db.auditEvent.create({data:{tenantId:subscription.tenantId,action:'subscription.trial_expired',targetType:'subscription',targetId:subscription.id,metadata:{graceUntil,graceDays:GRACE_DAYS},occurredAt:now}});trialExpired++;graceStarted++;}const activeExpired=await db.subscription.findMany({where:{status:'active',endsAt:{lte:now}}});for(const subscription of activeExpired){const graceUntil=new Date(now.getTime()+GRACE_MS);await db.subscription.updateMany({where:{id:subscription.id,status:'active'},data:{status:'past_due',graceUntil}});await db.auditEvent.create({data:{tenantId:subscription.tenantId,action:'subscription.grace_started',targetType:'subscription',targetId:subscription.id,metadata:{graceUntil,graceDays:GRACE_DAYS},occurredAt:now}});graceStarted++;}const graceExpired=await db.subscription.findMany({where:{status:'past_due',graceUntil:{lte:now}}});for(const subscription of graceExpired){await db.subscription.updateMany({where:{id:subscription.id,status:'past_due'},data:{status:'expired'}});await db.auditEvent.create({data:{tenantId:subscription.tenantId,action:'subscription.expired',targetType:'subscription',targetId:subscription.id,metadata:{graceUntil:subscription.graceUntil??null},occurredAt:now}});expired++;}const tenants=await db.tenant.findMany({where:{status:{not:'archived'}},select:{id:true}});for(const tenant of tenants){try{const result=await audit.purgeExpired(tenant.id);auditEventsDeleted+=result.deleted;}catch(error){auditTenantsSkipped++;console.warn(`[maintenance] audit purge skipped for tenant ${tenant.id}:`,error instanceof Error?error.message:error);}}return{tenants:tenants.length,trialExpired,graceStarted,expired,auditEventsDeleted,auditTenantsSkipped};},{connection,concurrency:1});worker.on('completed',(job,result)=>console.log(`[maintenance] ${job.name} completed`,result));worker.on('failed',(job,error)=>console.error(`[maintenance] ${job?.name??JOB_NAME} failed`,error));const shutdown=async()=>{await worker.close();await queue.close();await connection.quit();await app.close();};process.once('SIGINT',()=>void shutdown().finally(()=>process.exit(0)));process.once('SIGTERM',()=>void shutdown().finally(()=>process.exit(0)));console.log(`[maintenance] worker started; schedule=24h grace=${GRACE_DAYS}d redis=${redisUrl.replace(/:\/\/.*@/,'://***@')}`);}
+void main().catch(error=>{console.error('[maintenance] worker bootstrap failed',error);process.exit(1);});
