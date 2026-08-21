@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nest
 import { IsArray, IsEmail, IsOptional, IsString, Matches, MinLength } from 'class-validator';
 import { SystemAdminGuard } from '../../common/guards/system-admin.guard';
 import { SystemAdminService } from './system-admin.service';
+import { SystemRbacService } from './system-rbac.service';
 import { SystemSecurityService } from './system-security.service';
 import { PrimaryLoginEmailService } from './primary-login-email.service';
 import { SystemTenantProvisioningService } from './system-tenant-provisioning.service';
@@ -24,11 +25,12 @@ class BrandingDto {
 
 class PrimaryLoginEmailDto { @IsEmail() email!: string; }
 class PlatformRolesDto { @IsArray() @IsString({ each: true }) roleIds!: string[]; }
+class CreatePlatformRoleDto { @IsString() @MinLength(2) name!: string; @IsArray() @IsString({ each: true }) permissionKeys!: string[]; }
 
 @Controller('system')
 @UseGuards(SystemAdminGuard)
 export class SystemAdminController {
-  constructor(private readonly service: SystemAdminService, private readonly security: SystemSecurityService, private readonly primaryEmail: PrimaryLoginEmailService, private readonly provisioning: SystemTenantProvisioningService) {}
+  constructor(private readonly service: SystemAdminService, private readonly rbac: SystemRbacService, private readonly security: SystemSecurityService, private readonly primaryEmail: PrimaryLoginEmailService, private readonly provisioning: SystemTenantProvisioningService) {}
 
   @Get('overview') @SystemPermission('platform:overview:read') overview() { return this.service.overview(); }
   @Get('tenants') @SystemPermission('platform:tenants:read') tenants() { return this.service.tenants(); }
@@ -41,7 +43,9 @@ export class SystemAdminController {
   @Patch('tenants/:tenantId/activate') @SystemPermission('platform:tenants:manage') activate(@Param('tenantId') tenantId: string, @Req() req: any) { return this.service.setTenantStatus(tenantId, true, req.systemAuth?.sub); }
   @Get('users') @SystemPermission('platform:users:read') users() { return this.service.platformUsers(); }
   @Patch('users/:userId/roles') @SystemPermission('platform:users:manage') updatePlatformUserRoles(@Param('userId') userId: string, @Body() dto: PlatformRolesDto, @Req() req: any) { return this.service.setPlatformUserRoles(userId, dto.roleIds, req.systemAuth?.sub); }
+  @Get('roles/permissions') @SystemPermission('platform:roles:read') rolePermissions() { return this.rbac.listPlatformPermissions(); }
   @Get('roles') @SystemPermission('platform:roles:read') roles() { return this.service.platformRoles(); }
+  @Post('roles') @SystemPermission('platform:roles:manage') createPlatformRole(@Body() dto: CreatePlatformRoleDto, @Req() req: any) { return this.rbac.createPlatformRole(dto.name, dto.permissionKeys, req.systemAuth?.sub); }
   @Get('audit') @SystemPermission('platform:audit:read') audit() { return this.service.audit(); }
   @Get('security/sessions') @SystemPermission('platform:audit:read') securitySessions() { return this.security.sessions(); }
   @Post('security/sessions/:sessionId/revoke') @SystemPermission('platform:users:manage') revokeSecuritySession(@Param('sessionId') sessionId: string, @Req() req: any) { return this.security.revokeSession(sessionId, req.systemAuth?.sub); }
