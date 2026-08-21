@@ -1,89 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { MongooseDatabaseService } from '../../common/mongoose-database.service';
+import { PrismaService } from '../../common/database/prisma.service';
 import { AuthContext } from '../../common/guards/tenant-context.guard';
-
 const THEME_PRESETS = ['trial', 'starter', 'professional', 'enterprise', 'restricted'] as const;
 type ThemePreset = typeof THEME_PRESETS[number];
-
-function resolveThemePreset(plan: { themePreset?: string; name?: string }, status: string): ThemePreset {
-  if (['expired', 'revoked'].includes(status)) return 'restricted';
-  if (plan.themePreset && (THEME_PRESETS as readonly string[]).includes(plan.themePreset)) return plan.themePreset as ThemePreset;
-  // Backward-compatible fallback for plans created before themePreset was added.
-  const normalized = String(plan.name ?? '').trim().toLowerCase();
-  if (normalized.includes('enterprise')) return 'enterprise';
-  if (normalized.includes('professional') || normalized.includes('pro')) return 'professional';
-  if (normalized.includes('trial')) return 'trial';
-  return 'starter';
-}
-
+function resolveThemePreset(plan: { themePreset?: string; name?: string }, status: string): ThemePreset { if (['expired', 'revoked'].includes(status)) return 'restricted'; if (plan.themePreset && (THEME_PRESETS as readonly string[]).includes(plan.themePreset)) return plan.themePreset as ThemePreset; const normalized = String(plan.name ?? '').trim().toLowerCase(); if (normalized.includes('enterprise')) return 'enterprise'; if (normalized.includes('professional') || normalized.includes('pro')) return 'professional'; if (normalized.includes('trial')) return 'trial'; return 'starter'; }
 @Injectable()
 export class TenantLicenseService {
-  constructor(private readonly db: MongooseDatabaseService) {}
-
-  async get(auth: AuthContext) {
-    const subscription = await this.db.subscription.findOne({ tenantId: auth.tenantId }).sort({ createdAt: -1 }).lean();
-    if (!subscription) {
-      return {
-        licensed: false,
-        status: 'unassigned',
-        message: 'No subscription or license has been assigned to this tenant.',
-        plan: null,
-        themePreset: 'restricted' as ThemePreset,
-        limits: {},
-        features: {},
-        usage: await this.usage(auth),
-      };
-    }
-
-    const plan = await this.db.plan.findById(subscription.planId).lean();
-    if (!plan) throw new NotFoundException('Subscription plan not found');
-
-    const entitlements = await this.db.entitlement.find({ subscriptionId: String(subscription._id) }).lean();
-    const values: Record<string, unknown> = {};
-    for (const entitlement of entitlements) values[entitlement.key] = entitlement.value;
-
-    const now = new Date();
-    const ended = !!subscription.endsAt && new Date(subscription.endsAt) < now;
-    const status = ended ? 'expired' : String(subscription.status || 'active');
-
-    return {
-      licensed: ['active', 'trialing'].includes(status),
-      status,
-      subscriptionId: String(subscription._id),
-      startedAt: subscription.startedAt,
-      endsAt: subscription.endsAt ?? null,
-      plan: { id: String(plan._id), name: plan.name, themePreset: resolveThemePreset(plan, status) },
-      themePreset: resolveThemePreset(plan, status),
-      limits: this.pickLimits(plan.features ?? {}, values),
-      features: this.pickFeatures(plan.features ?? {}, values),
-      entitlements: values,
-      usage: await this.usage(auth),
-    };
-  }
-
-  private async usage(auth: AuthContext) {
-    const scope = { tenantId: auth.tenantId };
-    const [assets, users, companies] = await Promise.all([
-      this.db.asset.countDocuments(scope),
-      this.db.user.countDocuments({ ...scope, accountType: 'TENANT' }),
-      this.db.company.countDocuments(scope),
-    ]);
-    return { assets, users, companies };
-  }
-
-  private pickLimits(features: Record<string, unknown>, entitlements: Record<string, unknown>) {
-    const result: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries({ ...features, ...entitlements })) {
-      if (key.startsWith('max_') || key.endsWith('_limit') || key === 'user_limit' || key === 'asset_limit') result[key] = value;
-    }
-    return result;
-  }
-
-  private pickFeatures(features: Record<string, unknown>, entitlements: Record<string, unknown>) {
-    const result: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries({ ...features, ...entitlements })) {
-      if (!(key.startsWith('max_') || key.endsWith('_limit') || key === 'user_limit' || key === 'asset_limit')) result[key] = value;
-    }
-    return result;
-  }
+  constructor(private readonly db: PrismaService) {}
+  async get(auth: AuthContext) { const subscription = await this.db.subscription.findFirst({ where: { tenantId: auth.tenantId }, orderBy: { startedAt: 'desc' } }); if (!subscription) return { licensed:false,status:'unassigned',message:'No subscription or license has been assigned to this tenant.',plan:null,themePreset:'restricted' as ThemePreset,limits:{},features:{},usage:await this.usage(auth) }; const plan=await this.db.plan.findUnique({where:{id:subscription.planId}}); if(!plan)throw new NotFoundException('Subscription plan not found'); const entitlements=await this.db.entitlement.findMany({where:{subscriptionId:subscription.id}}); const values:Record<string,unknown>={}; for(const e of entitlements)values[e.key]=e.value; const now=new Date(); const ended=!!subscription.endsAt&&subscription.endsAt<now; const status=ended?'expired':String(subscription.status||'active'); return {licensed:['active','trialing'].includes(status),status,subscriptionId:subscription.id,startedAt:subscription.startedAt,endsAt:subscription.endsAt??null,plan:{id:plan.id,name:plan.name,themePreset:resolveThemePreset(plan,status)},themePreset:resolveThemePreset(plan,status),limits:this.pickLimits((plan.features??{}) as Record<string,unknown>,values),features:this.pickFeatures((plan.features??{}) as Record<string,unknown>,values),entitlements:values,usage:await this.usage(auth)}; }
+  private async usage(auth:AuthContext){const [assets,users,companies]=await Promise.all([this.db.asset.count({where:{tenantId:auth.tenantId}}),this.db.user.count({where:{tenantId:auth.tenantId,accountType:'TENANT'}}),this.db.company.count({where:{tenantId:auth.tenantId}})]);return{assets,users,companies};}
+  private pickLimits(features:Record<string,unknown>,entitlements:Record<string,unknown>){const result:Record<string,unknown>={};for(const[key,value]of Object.entries({...features,...entitlements}))if(key.startsWith('max_')||key.endsWith('_limit')||key==='user_limit'||key==='asset_limit')result[key]=value;return result;}
+  private pickFeatures(features:Record<string,unknown>,entitlements:Record<string,unknown>){const result:Record<string,unknown>={};for(const[key,value]of Object.entries({...features,...entitlements}))if(!(key.startsWith('max_')||key.endsWith('_limit')||key==='user_limit'||key==='asset_limit'))result[key]=value;return result;}
 }
