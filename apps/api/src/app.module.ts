@@ -3,8 +3,6 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './common/database/prisma.module';
-import { TenantStatusMigration } from './common/migrations/tenant-status.migration';
-import { CompanyAssignmentMigration } from './common/migrations/company-assignment.migration';
 import { AuditInterceptor } from './common/audit/audit.interceptor';
 import { TenantLicenseAccessInterceptor } from './common/billing/tenant-license-access.interceptor';
 import { FeatureGuard } from './common/guards/feature.guard';
@@ -83,39 +81,8 @@ import { UsersService } from './modules/users/users.service';
 import { UserAsset360Service } from './modules/users/user-asset-360.service';
 
 @Module({
-  imports: [
-    PrismaModule,
-    JwtModule.register({ secret: process.env.JWT_ACCESS_SECRET, signOptions: { algorithm: 'HS256' } }),
-    ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
-  ],
-  controllers: [
-    HealthController, AuthController, InviteController, AssetsController, AssetTypeManagementController,
-    AssetReportTemplateController, AssetMaintenanceController, AssetDocumentsController, WarrantyController,
-    CustomFieldsController, AssetAcknowledgementController, TenancyController, OrganizationManagementController,
-    RbacController, IdentityController, IdentityAdminController, ScimController, TenantLicenseController,
-    SystemSubscriptionController, SystemPlanController, SystemEntitlementController, SystemAdminController,
-    SystemOperationsController, AuditController, UsersController,
-  ],
-  providers: [
-    TenantStatusMigration, CompanyAssignmentMigration, MailService, AuthService, ProvisioningService, SessionService,
-    InviteService, AssetsService, AssetImportService, AssetExcelReportService, AssetPdfReportService,
-    AssetReportTemplateService, AssetTransferService, AssetAssignmentTransactionService, AssetTimelineService,
-    AssetMaintenanceService, AssetMaintenanceController, AssetDocumentsService, UploadcareDocumentStorage,
-    { provide: DOCUMENT_STORAGE, useFactory: () => {
-      const provider = (process.env.STORAGE_PROVIDER ?? 'uploadcare').trim().toLowerCase();
-      if (provider === 'uploadcare') return new UploadcareDocumentStorage();
-      throw new Error(`Unsupported document storage provider: ${provider}`);
-    } },
-    TenantPdfBrandingService, WarrantyService, CustomFieldsService, TenantLicenseService, EntitlementService,
-    TenancyService, TenantLogoService, OrganizationManagementService, RbacService, IdentitySecurityCacheService,
-    IdentitySecretCryptoService, IdentityService, ScimService, SystemSubscriptionService, PlanEntitlementSyncService,
-    SystemEntitlementAuditService, SystemAdminService, PrimaryLoginEmailService, SystemSecurityService,
-    SystemOperationsService, SystemTenantProvisioningService, AuditService, FeatureGuard, AssetTypeManagementService,
-    { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
-    { provide: APP_INTERCEPTOR, useClass: TenantLicenseAccessInterceptor },
-    { provide: APP_INTERCEPTOR, useClass: PasswordResetRequiredInterceptor },
-    UsersService, AssetSearchService, { provide: AssetListService, useClass: AssetListPostgresqlService },
-    AssetDetailService, UserAsset360Service, AssetAcknowledgementService,
-  ],
+  imports: [PrismaModule, JwtModule.register({ secret: process.env.JWT_ACCESS_SECRET, signOptions: { algorithm: 'HS256' } }), ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }])],
+  controllers: [HealthController, AuthController, InviteController, AssetsController, AssetTypeManagementController, AssetReportTemplateController, AssetMaintenanceController, AssetDocumentsController, WarrantyController, CustomFieldsController, AssetAcknowledgementController, TenancyController, OrganizationManagementController, RbacController, IdentityController, IdentityAdminController, ScimController, TenantLicenseController, SystemSubscriptionController, SystemPlanController, SystemEntitlementController, SystemAdminController, SystemOperationsController, AuditController, UsersController],
+  providers: [MailService, AuthService, ProvisioningService, SessionService, InviteService, AssetsService, AssetImportService, AssetExcelReportService, AssetPdfReportService, AssetReportTemplateService, AssetTransferService, AssetAssignmentTransactionService, AssetTimelineService, AssetMaintenanceService, AssetMaintenanceController, AssetDocumentsService, UploadcareDocumentStorage, { provide: DOCUMENT_STORAGE, useFactory: () => { const provider = (process.env.STORAGE_PROVIDER ?? 'uploadcare').trim().toLowerCase(); if (provider === 'uploadcare') return new UploadcareDocumentStorage(); throw new Error(`Unsupported document storage provider: ${provider}`); } }, TenantPdfBrandingService, WarrantyService, CustomFieldsService, TenantLicenseService, EntitlementService, TenancyService, TenantLogoService, OrganizationManagementService, RbacService, IdentitySecurityCacheService, IdentitySecretCryptoService, IdentityService, ScimService, SystemSubscriptionService, PlanEntitlementSyncService, SystemEntitlementAuditService, SystemAdminService, PrimaryLoginEmailService, SystemSecurityService, SystemOperationsService, SystemTenantProvisioningService, AuditService, FeatureGuard, AssetTypeManagementService, { provide: APP_INTERCEPTOR, useClass: AuditInterceptor }, { provide: APP_INTERCEPTOR, useClass: TenantLicenseAccessInterceptor }, { provide: APP_INTERCEPTOR, useClass: PasswordResetRequiredInterceptor }, UsersService, AssetSearchService, { provide: AssetListService, useClass: AssetListPostgresqlService }, AssetDetailService, UserAsset360Service, AssetAcknowledgementService],
 })
 export class AppModule {}
