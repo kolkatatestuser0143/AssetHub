@@ -2,7 +2,7 @@ import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from
 import { JwtService } from '@nestjs/jwt';
 import { TENANT_ACCESS_COOKIE, readCookie } from '../auth/auth-cookies';
 import { PrismaService } from '../database/prisma.service';
-import { TenantStatus } from '../../models/tenancy.schemas';
+import { TenantStatus } from '../domain/tenancy.enums';
 
 export interface AuthContext {
   userId: string;
