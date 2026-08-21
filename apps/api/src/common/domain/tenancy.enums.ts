@@ -6,7 +6,7 @@ export enum TenantStatus {
 
 export enum SiteType {
   PLANT = 'plant',
-  OFFICE = 'office',
-  WAREHOUSE = 'warehouse',
+  BRANCH_OFFICE = 'branch_office',
+  HEAD_OFFICE = 'head_office',
   OTHER = 'other',
 }
