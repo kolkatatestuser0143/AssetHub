@@ -72,7 +72,7 @@ async function ensureRole(tenantId: string, companyId: string | null, name: stri
   }
 
   for (const key of permissionKeys) {
-    await prisma.$executeRawUnsafe(`INSERT INTO permissions (key, name) VALUES ($1,$1) ON CONFLICT (key) DO NOTHING`, key);
+    await prisma.$executeRawUnsafe(`INSERT INTO permissions (key) VALUES ($1) ON CONFLICT (key) DO NOTHING`, key);
     await prisma.$executeRawUnsafe(`INSERT INTO role_permissions (role_id, permission_id) SELECT $1::uuid, id FROM permissions WHERE key=$2 ON CONFLICT DO NOTHING`, roleId, key);
   }
   return roleId;
@@ -180,8 +180,8 @@ async function main() {
 
   const vendor = await prisma.vendor.upsert({
     where: { companyId_name: { companyId: company.id, name: 'Demo IT Supplies' } },
-    create: { companyId: company.id, name: 'Demo IT Supplies', contact: 'sales@demo.local' },
-    update: { contact: 'sales@demo.local' },
+    create: { tenantId: tenant.id, companyId: company.id, name: 'Demo IT Supplies', contact: 'sales@demo.local' },
+    update: { tenantId: tenant.id, contact: 'sales@demo.local' },
   });
 
   const laptopType = await prisma.assetType.findUnique({ where: { companyId_name: { companyId: company.id, name: 'Laptop' } } });
