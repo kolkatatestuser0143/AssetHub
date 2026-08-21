@@ -45,10 +45,11 @@ CREATE POLICY asset_isolation ON assets
   USING (tenant_id = app_current_tenant_id() AND (app_current_company_id() IS NULL OR company_id = app_current_company_id()))
   WITH CHECK (tenant_id = app_current_tenant_id() AND (app_current_company_id() IS NULL OR company_id = app_current_company_id()));
 
-ALTER TABLE sites ENABLE ROW LEVEL SECURITY;
-ALTER TABLE sites FORCE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS site_isolation ON sites;
-CREATE POLICY site_isolation ON sites
+-- Prisma model Site maps to the PostgreSQL table plants.
+ALTER TABLE plants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE plants FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS site_isolation ON plants;
+CREATE POLICY site_isolation ON plants
   USING (tenant_id = app_current_tenant_id() AND (app_current_company_id() IS NULL OR company_id = app_current_company_id()))
   WITH CHECK (tenant_id = app_current_tenant_id() AND (app_current_company_id() IS NULL OR company_id = app_current_company_id()));
 
