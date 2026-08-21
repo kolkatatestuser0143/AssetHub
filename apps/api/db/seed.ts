@@ -127,7 +127,22 @@ async function main() {
     'role:read', 'role:write', 'asset:read', 'asset:write', 'asset:delete', 'user:read', 'user:write',
     'vendor:read', 'vendor:write', 'report:read', 'report:write', 'audit:read',
   ]);
-  const platformAdminRole = await ensureRole(tenant.id, null, 'Platform Admin', ['platform:console:access'], true);
+  const platformPermissions = [
+    'platform:console:access',
+    'platform:overview:read',
+    'platform:tenants:read',
+    'platform:tenants:manage',
+    'platform:users:read',
+    'platform:users:manage',
+    'platform:roles:read',
+    'platform:roles:manage',
+    'platform:audit:read',
+    'platform:health:read',
+    'platform:analytics:read',
+    'platform:billing:read',
+    'platform:billing:manage',
+  ];
+  const platformAdminRole = await ensureRole(tenant.id, null, 'Platform Admin', platformPermissions, true);
 
   const plan = await prisma.plan.upsert({
     where: { name: 'Professional' },
