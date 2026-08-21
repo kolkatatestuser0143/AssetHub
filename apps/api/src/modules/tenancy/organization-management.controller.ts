@@ -4,7 +4,7 @@ import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 import { RbacGuard } from '../../common/guards/rbac.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { OrganizationManagementService } from './organization-management.service';
-import { SiteType } from '../../models/tenancy.schemas';
+import { SiteType } from '../../common/domain/tenancy.enums';
 
 class CompanyEditDto { @IsString() @MinLength(1) name!: string; @IsString() @MinLength(2) code!: string; }
 class NameEditDto { @IsString() @MinLength(1) name!: string; }
