@@ -16,13 +16,15 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
 };
 
 async function main() {
-  if (!PLATFORM_TENANT_ID) throw new Error('Missing SYSTEM_RBAC_TENANT_ID');
-  const tenant = await prisma.tenant.findUnique({ where: { id: PLATFORM_TENANT_ID } });
-  if (!tenant) throw new Error(`System RBAC tenant ${PLATFORM_TENANT_ID} does not exist`);
+  const tenant = PLATFORM_TENANT_ID
+    ? await prisma.tenant.findUnique({ where: { id: PLATFORM_TENANT_ID } })
+    : await prisma.tenant.findUnique({ where: { slug: 'demo' } });
+
+  if (!tenant) throw new Error(PLATFORM_TENANT_ID ? `System RBAC tenant ${PLATFORM_TENANT_ID} does not exist` : 'Demo tenant does not exist; run db:seed first');
 
   const allPermissions = [...new Set(Object.values(ROLE_PERMISSIONS).flat())];
   for (const key of allPermissions) {
-    await prisma.$executeRawUnsafe(`INSERT INTO permissions (key, name) VALUES ($1,$2) ON CONFLICT (key) DO NOTHING`, key, key);
+    await prisma.$executeRawUnsafe(`INSERT INTO permissions (key, name) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET name=EXCLUDED.name`, key, key);
   }
 
   for (const [name, keys] of Object.entries(ROLE_PERMISSIONS)) {
@@ -30,15 +32,16 @@ async function main() {
       `INSERT INTO roles (tenant_id, company_id, name, is_system) VALUES ($1::uuid,NULL,$2,true)
        ON CONFLICT (tenant_id, company_id, name) DO UPDATE SET is_system=true, updated_at=now()
        RETURNING id`,
-      PLATFORM_TENANT_ID,
+      tenant.id,
       name,
     );
+    await prisma.$executeRawUnsafe(`DELETE FROM role_permissions WHERE role_id=$1::uuid`, role[0].id);
     for (const key of keys) {
       await prisma.$executeRawUnsafe(`INSERT INTO role_permissions (role_id, permission_id) SELECT $1::uuid,id FROM permissions WHERE key=$2 ON CONFLICT DO NOTHING`, role[0].id, key);
     }
   }
 
-  console.log(`Seeded ${Object.keys(ROLE_PERMISSIONS).length} platform roles under tenant scope ${PLATFORM_TENANT_ID}.`);
+  console.log(`Seeded ${Object.keys(ROLE_PERMISSIONS).length} platform roles under tenant scope ${tenant.id}.`);
 }
 
 main().catch(error => { console.error(error); process.exit(1); }).finally(() => prisma.$disconnect());
