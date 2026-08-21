@@ -26,7 +26,7 @@ export class SessionService {
     if (!system) {
       const tenant = await this.prisma.tenant.findUnique({ where: { id: user.tenantId }, select: { status: true } });
       if (!tenant) throw new UnauthorizedException('This tenant account is unavailable. Please contact your system administrator.');
-      if (tenant.status !== 'active') throw new UnauthorizedException(tenant.status === 'suspended' ? 'This tenant is suspended. Please contact your system administrator.' : tenant.status === 'archived' ? 'This tenant is archived. Please contact your system administrator.' : 'This tenant account is unavailable. Please contact your system administrator.');
+      if (tenant.status !== 'active') throw new UnauthorizedException(tenant.status === 'suspended' ? 'This tenant account is suspended. Please contact your system administrator.' : tenant.status === 'archived' ? 'Please contact your system administrator.' : 'This tenant account is unavailable. Please contact your system administrator.');
       const company = await this.prisma.company.findFirst({ where: { id: user.companyId, tenantId: user.tenantId }, select: { id: true } });
       if (!company) throw new UnauthorizedException('Your tenant account is not assigned to a valid company. Please contact your tenant administrator.');
       const maxSessionDays = await this.entitlements.getNumber(user.tenantId, 'session_max_days');
@@ -46,7 +46,20 @@ export class SessionService {
 
     const rawRefreshToken = crypto.randomBytes(48).toString('hex');
     const tokenFamilyId = familyId ?? crypto.randomUUID();
-    const session = await this.prisma.session.create({ data: { userId, refreshTokenHash: this.hashToken(rawRefreshToken), familyId: tokenFamilyId, parentTokenHash, ipAddress: ip, userAgent, lastSeenAt: new Date(), expiresAt: new Date(Date.now() + refreshTokenTtlMs) } });
+    const session = await this.prisma.withTenantContext(user.tenantId, user.companyId, tx =>
+      tx.session.create({
+        data: {
+          userId,
+          refreshTokenHash: this.hashToken(rawRefreshToken),
+          familyId: tokenFamilyId,
+          parentTokenHash,
+          ipAddress: ip,
+          userAgent,
+          lastSeenAt: new Date(),
+          expiresAt: new Date(Date.now() + refreshTokenTtlMs),
+        },
+      }),
+    );
     const claims: Record<string, any> = { sub: userId, sessionId: session.id, permissions: access.permissions, accountType: user.accountType, authVersion: user.authVersion };
     if (system) claims.systemAdmin = true;
     else { claims.tenantId = user.tenantId; claims.companyId = user.companyId; claims.crossCompany = access.crossCompany; claims.adminLevel = user.adminLevel; claims.forcePasswordReset = user.forcePasswordReset; }
@@ -55,7 +68,7 @@ export class SessionService {
   }
 
   async isSystemUser(userId: string): Promise<boolean> { const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { accountType: true } }); return user?.accountType === 'SYSTEM'; }
-  async revokeSession(sessionId: string, userId: string, reason: string) { await this.prisma.session.updateMany({ where: { id: sessionId, userId, revokedAt: null }, data: { revokedAt: new Date(), revokedReason: reason } }); }
+  async revokeSession(sessionId: string, userId: string, reason: string) { await this.prisma.updateMany({ where: { id: sessionId, userId, revokedAt: null }, data: { revokedAt: new Date(), revokedReason: reason } } as any); }
   async revokeFamily(familyId: string, reason: string) { if (!familyId) return; await this.prisma.session.updateMany({ where: { familyId, revokedAt: null }, data: { revokedAt: new Date(), revokedReason: reason } }); }
   async rotateRefreshToken(rawRefreshToken: string, ip: string, userAgent: string) {
     const hash = this.hashToken(rawRefreshToken);
