@@ -5,6 +5,7 @@ import '../styles/modal-compat.css';
 import '../styles/ui-refresh.css';
 import '../styles/ui-polish.css';
 import '../styles/back-to-top.css';
+import '../styles/search-polish.css';
 import ThemeDialogBridge from '../components/theme-dialog-bridge';
 import AssetCreateBridge from '../components/assets/asset-create-bridge';
 import BackToTop from '../components/back-to-top';
