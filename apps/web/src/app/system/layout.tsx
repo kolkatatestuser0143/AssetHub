@@ -10,6 +10,7 @@ import { NetworkStatus, ProductivityHub } from '../../components/productivity-hu
 import { ConnectionBanner } from '../../components/enterprise-ux';
 import { systemBootstrap, systemLogout } from '../../lib/system-api';
 import '../../styles/system-ui-polish.css';
+import '../../styles/system-shared-ui.css';
 
 type NavItem={label:string;href:string;icon:typeof LayoutDashboard;exact?:boolean};type NavGroup={label:string;items:NavItem[]};
 const groups:NavGroup[]=[{label:'Overview',items:[{label:'Dashboard',href:'/system',icon:LayoutDashboard,exact:true},{label:'Analytics',href:'/system/analytics',icon:BarChart3}]},{label:'Tenant Operations',items:[{label:'Tenants',href:'/system/tenants',icon:Building2},{label:'Platform Users',href:'/system/users',icon:Users}]},{label:'Billing & Plans',items:[{label:'Plans',href:'/system/plans',icon:CreditCard},{label:'Subscriptions',href:'/system/subscriptions',icon:CreditCard},{label:'Usage',href:'/system/usage',icon:Activity}]},{label:'Security & Access',items:[{label:'Roles & Permissions',href:'/system/roles',icon:ShieldCheck},{label:'Audit & Security',href:'/system/audit',icon:FileSearch},{label:'Sessions & Security',href:'/system/security',icon:ShieldAlert}]},{label:'Operations',items:[{label:'System Health',href:'/system/health',icon:Activity},{label:'Background Jobs',href:'/system/operations',icon:ServerCog}]}];
