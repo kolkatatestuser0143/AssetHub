@@ -1,17 +1,17 @@
 import { Body, Controller, ForbiddenException, Get, NotFoundException, Param, Patch, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { IsArray, IsEmail, IsIn, IsOptional, IsString, MinLength } from 'class-validator';
-import { UsersService, UserAdminLevel } from './users.service';
+import { UsersService, UserAdminLevel, UserAuthSource } from './users.service';
 import { UserAsset360Service } from './user-asset-360.service';
 import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 import { RbacGuard } from '../../common/guards/rbac.guard';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { PrismaService } from '../../common/database/prisma.service';
 
-class CreateUserDto { @IsEmail() email!:string; @IsString() @MinLength(1) firstName!:string; @IsString() @MinLength(1) lastName!:string; @IsOptional() @IsString() employeeId?:string; @IsOptional() @IsString() companyId?:string; @IsOptional() @IsString() jobTitle?:string; @IsOptional() @IsString() phone?:string; @IsOptional() @IsString() departmentId?:string; @IsOptional() @IsString() locationId?:string; @IsOptional() @IsIn(['EMPLOYEE','COMPANY_ADMIN','TENANT_ADMIN']) adminLevel?:UserAdminLevel; @IsOptional() @IsArray() @IsString({each:true}) roleIds?:string[]; @IsOptional() @IsIn(['LOCAL','SSO']) authSource?:'LOCAL'|'SSO'; }
+class CreateUserDto { @IsEmail() email!:string; @IsString() @MinLength(1) firstName!:string; @IsString() @MinLength(1) lastName!:string; @IsOptional() @IsString() employeeId?:string; @IsOptional() @IsString() companyId?:string; @IsOptional() @IsString() jobTitle?:string; @IsOptional() @IsString() phone?:string; @IsOptional() @IsString() departmentId?:string; @IsOptional() @IsString() locationId?:string; @IsOptional() @IsIn(['EMPLOYEE','COMPANY_ADMIN','TENANT_ADMIN']) adminLevel?:UserAdminLevel; @IsOptional() @IsArray() @IsString({each:true}) roleIds?:string[]; @IsOptional() @IsIn(['LOCAL','SSO']) authSource?:UserAuthSource; }
 class UpdateUserDto { @IsOptional() @IsEmail() email?:string; @IsOptional() @IsString() @MinLength(1) firstName?:string; @IsOptional() @IsString() @MinLength(1) lastName?:string; @IsOptional() @IsString() employeeId?:string; @IsOptional() @IsString() jobTitle?:string; @IsOptional() @IsString() phone?:string; @IsOptional() @IsString() departmentId?:string; @IsOptional() @IsString() locationId?:string; }
 class AccessEmailDto { @IsString() @IsIn(['invite','reset']) action!: 'invite'|'reset'; }
 class UpdateRolesDto { @IsArray() @IsString({each:true}) roleIds!:string[]; }
-class AdminLevelDto { @IsIn(['EMPLOYEE','COMPANY_ADMIN','TENANT_ADMIN']) adminLevel!:UserAdminLevel; @IsOptional() @IsIn(['LOCAL','SSO']) authSource?:'LOCAL'|'SSO'; }
+class AdminLevelDto { @IsIn(['EMPLOYEE','COMPANY_ADMIN','TENANT_ADMIN']) adminLevel!:UserAdminLevel; @IsOptional() @IsIn(['LOCAL','SSO']) authSource?:UserAuthSource; }
 
 @Controller('users') @UseGuards(TenantContextGuard,RbacGuard)
 export class UsersController {
