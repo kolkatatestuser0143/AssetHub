@@ -1,245 +1,45 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Copy, KeyRound, Plus, RefreshCw, Search, ShieldCheck, UserCheck, UserPlus, UserX, Users, X } from 'lucide-react';
+import { KeyRound, Pencil, Plus, RefreshCw, ShieldCheck, UserCheck, UserRound, UserX, Users, X } from 'lucide-react';
 import { systemFetch } from '../../../lib/system-api';
-import { PermissionChip } from '../../../components/rbac/PermissionPresentation';
+import { Button, EmptyState, ErrorState, LoadingState } from '../../../components/ui';
+import { ConfirmDialog } from '../../../components/confirm-dialog';
+import { Modal, ModalBody } from '../../../components/modal';
+import { useToast } from '../../../components/toast';
 
-type Role = {
-  id: string;
-  name: string;
-  isSystem: boolean;
-  permissions: { permissionId: string; permissionKey: string }[];
-};
+type Role={id:string;name:string;isSystem:boolean;permissions:{permissionId:string;permissionKey:string}[]};
+type User={id:string;email:string;firstName:string;lastName:string;isActive:boolean;roleIds:string[];forcePasswordReset?:boolean};
+type Form={email:string;firstName:string;lastName:string;roleIds:string[]};
+const empty:Form={email:'',firstName:'',lastName:'',roleIds:[]};
 
-type User = {
-  id: string;
-  email: string;
-  firstName: string;
-  lastName: string;
-  isActive: boolean;
-  roleIds: string[];
-};
-
-type CreatedUser = User & { forcePasswordReset: boolean; temporaryPassword: string };
-
-export default function SystemUsersPage() {
-  const [items, setItems] = useState<User[]>([]);
-  const [roles, setRoles] = useState<Role[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [query, setQuery] = useState('');
-  const [status, setStatus] = useState<'all' | 'active' | 'inactive'>('all');
-  const [editing, setEditing] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [createdUser, setCreatedUser] = useState<CreatedUser | null>(null);
-  const [form, setForm] = useState({ email: '', firstName: '', lastName: '', roleIds: [] as string[] });
-
-  async function load() {
-    setLoading(true);
-    setError('');
-    try {
-      const [usersData, rolesData] = await Promise.all([systemFetch('/system/users'), systemFetch('/system/roles')]);
-      setItems(Array.isArray(usersData) ? usersData : []);
-      setRoles(Array.isArray(rolesData) ? rolesData : []);
-    } catch (e: any) {
-      setError(e?.message ?? 'Unable to load platform users.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => { void load(); }, []);
-
-  const filtered = useMemo(() => items.filter((user) => {
-    const text = `${user.firstName} ${user.lastName} ${user.email}`.toLowerCase();
-    return (!query || text.includes(query.toLowerCase())) && (status === 'all' || (status === 'active' ? user.isActive : !user.isActive));
-  }), [items, query, status]);
-
-  const active = items.filter((user) => user.isActive).length;
-
-  function toggleRole(roleId: string) {
-    setForm((current) => ({ ...current, roleIds: current.roleIds.includes(roleId) ? current.roleIds.filter((id) => id !== roleId) : [...current.roleIds, roleId] }));
-  }
-
-  function resetCreate() {
-    setForm({ email: '', firstName: '', lastName: '', roleIds: [] });
-    setCreateOpen(false);
-    setCreatedUser(null);
-  }
-
-  async function createUser() {
-    const email = form.email.trim();
-    const firstName = form.firstName.trim();
-    const lastName = form.lastName.trim();
-    if (!email || !firstName || !lastName) {
-      setError('Email, first name and last name are required.');
-      return;
-    }
-    if (!form.roleIds.length) {
-      setError('Select at least one platform role.');
-      return;
-    }
-
-    setCreating(true);
-    setError('');
-    try {
-      const created = await systemFetch('/system/users', { method: 'POST', body: JSON.stringify({ email, firstName, lastName, roleIds: form.roleIds }) });
-      setCreatedUser(created as CreatedUser);
-      await load();
-      setForm({ email: '', firstName: '', lastName: '', roleIds: [] });
-    } catch (e: any) {
-      setError(e?.message ?? 'Unable to create platform user.');
-    } finally {
-      setCreating(false);
-    }
-  }
-
-  async function saveRoles(userId: string, roleIds: string[]) {
-    setSaving(true);
-    setError('');
-    try {
-      await systemFetch(`/system/users/${userId}/roles`, { method: 'PATCH', body: JSON.stringify({ roleIds }) });
-      setItems((current) => current.map((user) => user.id === userId ? { ...user, roleIds } : user));
-      setEditing(null);
-    } catch (e: any) {
-      setError(e?.message ?? 'Unable to update platform access.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="space-y-6">
-      <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[var(--theme-link,#2563eb)]">Platform</p>
-          <h2 className="mt-1 text-2xl font-bold text-slate-950">Platform Users</h2>
-          <p className="mt-2 max-w-2xl text-sm text-slate-500">System administrator accounts and privileged platform access. These users are separate from tenant employees.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={() => void load()} disabled={loading} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50">
-            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />Refresh
-          </button>
-          <button onClick={() => { setError(''); setCreatedUser(null); setCreateOpen(true); }} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800">
-            <Plus className="h-4 w-4" />Create platform user
-          </button>
-        </div>
-      </header>
-
-      {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"><span>{error}</span><button onClick={() => void load()} className="font-semibold underline">Retry</button></div>}
-
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Metric icon={<Users size={18} />} label="Total administrators" value={items.length} />
-        <Metric icon={<UserCheck size={18} />} label="Active" value={active} />
-        <Metric icon={<UserX size={18} />} label="Inactive" value={items.length - active} />
-      </div>
-
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-slate-100 p-4 md:flex-row md:items-center md:justify-between">
-          <div className="relative w-full max-w-md">
-            <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name or email" className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-[var(--theme-link,#2563eb)]" aria-label="Search platform users" />
-          </div>
-          <div className="flex rounded-xl border border-slate-200 bg-slate-50 p-1">
-            <FilterButton active={status === 'all'} onClick={() => setStatus('all')}>All</FilterButton>
-            <FilterButton active={status === 'active'} onClick={() => setStatus('active')}>Active</FilterButton>
-            <FilterButton active={status === 'inactive'} onClick={() => setStatus('inactive')}>Inactive</FilterButton>
-          </div>
-        </div>
-
-        {loading ? <div className="divide-y divide-slate-100">{[1, 2, 3, 4].map((value) => <div key={value} className="h-20 animate-pulse bg-slate-50/70" />)}</div> : filtered.length === 0 ? <EmptyState /> : <div className="divide-y divide-slate-100">
-          {filtered.map((user) => <div key={user.id} className="p-5 transition hover:bg-slate-50">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-violet-50 text-violet-700"><ShieldCheck size={18} /></div>
-                <div className="min-w-0">
-                  <p className="truncate font-semibold text-slate-950">{user.firstName} {user.lastName}</p>
-                  <p className="mt-1 truncate text-sm text-slate-500">{user.email}</p>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-                <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${user.isActive ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-600'}`}>{user.isActive ? 'Active' : 'Inactive'}</span>
-                <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-500">{user.roleIds.length} role{user.roleIds.length === 1 ? '' : 's'}</span>
-                <button onClick={() => setEditing(editing === user.id ? null : user.id)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Manage access</button>
-              </div>
-            </div>
-            {user.roleIds.length > 0 && <div className="mt-4 flex flex-wrap gap-2">{user.roleIds.map((roleId) => {
-              const role = roles.find((item) => item.id === roleId);
-              return <span key={roleId} className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-700">{role?.name ?? 'Assigned role'}</span>;
-            })}</div>}
-            {editing === user.id && <RoleEditor user={user} roles={roles} saving={saving} onCancel={() => setEditing(null)} onSave={(roleIds) => void saveRoles(user.id, roleIds)} />}
-          </div>)}
-        </div>}
-      </section>
-
-      {createOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" role="dialog" aria-modal="true">
-        <div className="max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl">
-          <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-            <div><p className="text-base font-semibold text-slate-950">Create platform user</p><p className="mt-1 text-xs text-slate-500">Create a system administrator account and assign platform access.</p></div>
-            <button type="button" onClick={resetCreate} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100" aria-label="Close"><X className="h-5 w-5" /></button>
-          </div>
-
-          {createdUser ? <div className="space-y-5 p-6">
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
-              <div className="flex items-start gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-100 text-emerald-700"><UserCheck size={18} /></div><div><p className="font-semibold text-emerald-900">Platform user created</p><p className="mt-1 text-sm text-emerald-800">The user must change this temporary password during first login.</p></div></div>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <CredentialCard label="Email" value={createdUser.email} />
-              <CredentialCard label="Temporary password" value={createdUser.temporaryPassword} copyable />
-            </div>
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><div className="flex items-start gap-2"><KeyRound className="mt-0.5 h-4 w-4 shrink-0" /><p>Show or copy the temporary password now. It is returned only at creation time.</p></div></div>
-            <div className="flex justify-end"><button onClick={resetCreate} className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white">Done</button></div>
-          </div> : <div className="max-h-[calc(92vh-76px)] space-y-5 overflow-y-auto p-6">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="First name" value={form.firstName} onChange={(value) => setForm((current) => ({ ...current, firstName: value }))} placeholder="Aditi" />
-              <Field label="Last name" value={form.lastName} onChange={(value) => setForm((current) => ({ ...current, lastName: value }))} placeholder="Sharma" />
-              <div className="sm:col-span-2"><Field label="Email address" value={form.email} onChange={(value) => setForm((current) => ({ ...current, email: value }))} placeholder="admin@example.com" type="email" /></div>
-            </div>
-
-            <div>
-              <div className="flex items-end justify-between gap-3"><div><p className="text-sm font-semibold text-slate-900">Platform roles</p><p className="mt-1 text-xs text-slate-500">At least one selected role must allow System Console access.</p></div><span className="text-xs font-semibold text-slate-500">Selected: {form.roleIds.length}</span></div>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                {roles.map((role) => { const selected = form.roleIds.includes(role.id); return <button key={role.id} type="button" onClick={() => toggleRole(role.id)} className={`rounded-2xl border p-4 text-left transition ${selected ? 'border-violet-300 bg-violet-50/70 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
-                  <div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{role.name}</p><p className="mt-1 text-xs text-slate-500">{role.permissions.length} permission{role.permissions.length === 1 ? '' : 's'}</p></div><span className={`grid h-6 w-6 place-items-center rounded-full border ${selected ? 'border-violet-600 bg-violet-600 text-white' : 'border-slate-300 bg-white text-transparent'}`}><Check size={14} /></span></div>
-                  {selected && role.permissions.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{role.permissions.slice(0, 4).map((permission) => <PermissionChip key={permission.permissionId} permissionKey={permission.permissionKey} />)}{role.permissions.length > 4 && <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-500">+{role.permissions.length - 4} more</span>}</div>}
-                </button>; })}
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3 border-t border-slate-200 pt-5"><button type="button" onClick={resetCreate} disabled={creating} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700">Cancel</button><button type="button" onClick={() => void createUser()} disabled={creating || !form.email.trim() || !form.firstName.trim() || !form.lastName.trim() || !form.roleIds.length} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">{creating && <RefreshCw className="h-4 w-4 animate-spin" />}{creating ? 'Creating…' : 'Create platform user'}</button></div>
-          </div>}
-        </div>
-      </div>}
-    </div>
-  );
+export default function SystemUsersPage(){
+ const {toast}=useToast();
+ const [items,setItems]=useState<User[]>([]),[roles,setRoles]=useState<Role[]>([]),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[query,setQuery]=useState(''),[status,setStatus]=useState<'all'|'active'|'inactive'>('all');
+ const [modal,setModal]=useState<'create'|'edit'|'reset'|null>(null),[selected,setSelected]=useState<User|null>(null),[form,setForm]=useState<Form>(empty),[confirm,setConfirm]=useState<{kind:'deactivate'|'activate';user:User}|null>(null),[credentials,setCredentials]=useState<{email:string;temporaryPassword:string}|null>(null);
+ async function load(){setLoading(true);setError('');try{const [u,r]=await Promise.all([systemFetch('/system/users'),systemFetch('/system/roles')]);setItems(Array.isArray(u)?u:[]);setRoles(Array.isArray(r)?r:[])}catch(e:any){setError(e?.message??'Unable to load platform users.')}finally{setLoading(false)}}
+ useEffect(()=>{void load()},[]);
+ const filtered=useMemo(()=>items.filter(u=>{const text=`${u.firstName} ${u.lastName} ${u.email}`.toLowerCase();return(!query||text.includes(query.toLowerCase()))&&(status==='all'||(status==='active'?u.isActive:!u.isActive))}),[items,query,status]);
+ const active=items.filter(u=>u.isActive).length;
+ function openCreate(){setSelected(null);setForm(empty);setCredentials(null);setModal('create')}
+ function openEdit(u:User){setSelected(u);setForm({email:u.email,firstName:u.firstName,lastName:u.lastName,roleIds:u.roleIds});setModal('edit')}
+ function toggleRole(id:string){setForm(f=>({...f,roleIds:f.roleIds.includes(id)?f.roleIds.filter(x=>x!==id):[...f.roleIds,id]}))}
+ async function saveUser(){if(!form.email.trim()||!form.firstName.trim()||!form.lastName.trim()||!form.roleIds.length){setError('Email, first name, last name and at least one platform role are required.');return}setSaving(true);setError('');try{if(modal==='create'){const r=await systemFetch('/system/users',{method:'POST',body:JSON.stringify(form)});setCredentials({email:r.email,temporaryPassword:r.temporaryPassword});toast({title:'Platform user created',message:r.email,tone:'success'});}else if(selected){await systemFetch(`/system/users/${selected.id}`,{method:'PATCH',body:JSON.stringify({email:form.email,firstName:form.firstName,lastName:form.lastName})});await systemFetch(`/system/users/${selected.id}/roles`,{method:'PATCH',body:JSON.stringify({roleIds:form.roleIds})});toast({title:'Platform user updated',message:`${form.firstName} ${form.lastName}`,tone:'success'});setModal(null)}await load()}catch(e:any){setError(e?.message??'Unable to save platform user.');toast({title:'Update failed',message:e?.message??'Unable to save platform user.',tone:'error'})}finally{setSaving(false)}}
+ async function changeStatus(){if(!confirm)return;setSaving(true);try{await systemFetch(`/system/users/${confirm.user.id}/status`,{method:'PATCH',body:JSON.stringify({isActive:confirm.kind==='activate'})});toast({title:confirm.kind==='activate'?'Platform user activated':'Platform user deactivated',message:confirm.user.email,tone:'success'});setConfirm(null);await load()}catch(e:any){toast({title:'Status update failed',message:e?.message??'Unable to update user status.',tone:'error'})}finally{setSaving(false)}}
+ async function resetPassword(u:User){setSaving(true);try{const r=await systemFetch(`/system/users/${u.id}/reset-password`,{method:'POST'});setCredentials({email:r.email,temporaryPassword:r.temporaryPassword});setModal('reset');toast({title:'Temporary password generated',message:u.email,tone:'success'})}catch(e:any){toast({title:'Password reset failed',message:e?.message??'Unable to reset password.',tone:'error'})}finally{setSaving(false)}}
+ if(loading)return <LoadingState label="Loading platform users…"/>;
+ if(error&&items.length===0)return <ErrorState title="Unable to load platform users" message={error} onRetry={()=>void load()}/>;
+ return <div className="space-y-6">
+  <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-[var(--theme-link)]">Platform</p><h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">Platform Users</h1><p className="mt-2 text-sm text-slate-500">Manage platform administrator identity, access, lifecycle and credentials.</p></div><div className="flex gap-2"><Button variant="secondary" onClick={()=>void load()} loading={loading} icon={<RefreshCw size={15}/>}>Refresh</Button><Button onClick={openCreate} icon={<Plus size={16}/>}>Create platform user</Button></div></header>
+  {error?<div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>:null}
+  <div className="grid gap-4 sm:grid-cols-3"><Metric icon={<Users size={18}/>} label="Total administrators" value={items.length}/><Metric icon={<UserCheck size={18}/>} label="Active" value={active}/><Metric icon={<UserX size={18}/>} label="Inactive" value={items.length-active}/></div>
+  <section className="panel overflow-hidden"><div className="flex flex-col gap-3 border-b border-slate-100 p-4 md:flex-row md:items-center md:justify-between"><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search name or email" className="field h-11 max-w-md" aria-label="Search platform users"/><div className="flex gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">{(['all','active','inactive'] as const).map(s=><button key={s} onClick={()=>setStatus(s)} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${status===s?'bg-white text-slate-900 shadow-sm':'text-slate-500'}`}>{s[0].toUpperCase()+s.slice(1)}</button>)}</div></div>
+   {filtered.length===0?<EmptyState title="No platform users found" text={query?'Try another search term.':'Create your first platform administrator.'} action="Create platform user" onAction={openCreate}/>:<div className="divide-y divide-slate-100">{filtered.map(u=><div key={u.id} className="p-5 ui-table-row"><div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between"><div className="flex min-w-0 items-center gap-3"><div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[var(--theme-primary-soft)] text-[var(--theme-link)]"><UserRound size={18}/></div><div className="min-w-0"><p className="truncate font-semibold text-slate-950">{u.firstName} {u.lastName}</p><p className="truncate text-sm text-slate-500">{u.email}</p>{u.forcePasswordReset?<p className="mt-1 text-[11px] font-semibold text-amber-600">Password change required</p>:null}</div></div><div className="flex flex-wrap items-center gap-2"><span className={u.isActive?'badge badge-success':'badge badge-neutral'}>{u.isActive?'Active':'Inactive'}</span><span className="badge badge-brand">{u.roleIds.length} role{u.roleIds.length===1?'':'s'}</span><Button size="sm" variant="secondary" onClick={()=>openEdit(u)} icon={<Pencil size={14}/>}>Edit</Button><Button size="sm" variant="secondary" onClick={()=>void resetPassword(u)} disabled={saving} icon={<KeyRound size={14}/>}>Reset password</Button><Button size="sm" variant={u.isActive?'danger':'primary'} onClick={()=>setConfirm({kind:u.isActive?'deactivate':'activate',user:u})} icon={u.isActive?<UserX size={14}/>:<UserCheck size={14}/>} >{u.isActive?'Deactivate':'Activate'}</Button></div></div><div className="mt-3 flex flex-wrap gap-2">{u.roleIds.map(id=><span key={id} className="badge badge-neutral">{roles.find(r=>r.id===id)?.name??'Assigned role'}</span>)}</div></div>)}</div>}
+  </section>
+  {(modal==='create'||modal==='edit')?<Modal open title={modal==='create'?'Create platform user':'Edit platform user'} description="Changes are saved to the System Admin backend." onClose={()=>!saving&&setModal(null)} size="lg"><ModalBody><div className="grid gap-4 sm:grid-cols-2"><Field label="First name" value={form.firstName} onChange={v=>setForm(f=>({...f,firstName:v}))}/><Field label="Last name" value={form.lastName} onChange={v=>setForm(f=>({...f,lastName:v}))}/><Field label="Email" value={form.email} onChange={v=>setForm(f=>({...f,email:v}))} type="email"/></div><div className="mt-5"><p className="text-sm font-semibold text-slate-900">Platform roles</p><div className="mt-3 grid gap-2 sm:grid-cols-2">{roles.map(r=><button type="button" key={r.id} onClick={()=>modal==='create'?toggleRole(r.id):toggleRole(r.id)} className={`rounded-xl border p-3 text-left transition ${form.roleIds.includes(r.id)?'border-[var(--theme-focus)] bg-[var(--theme-primary-soft)]':'border-slate-200 bg-white hover:bg-slate-50'}`}><div className="flex items-center justify-between"><span className="font-semibold text-sm text-slate-900">{r.name}</span><span className={form.roleIds.includes(r.id)?'text-[var(--theme-link)]':'text-slate-300'}>●</span></div><span className="mt-1 block text-xs text-slate-500">{r.permissions.length} permissions{r.isSystem?' · Built-in':''}</span></button>)}</div></div><div className="mt-6 flex justify-end gap-2"><Button variant="secondary" onClick={()=>setModal(null)} disabled={saving}>Cancel</Button><Button loading={saving} disabled={!form.email||!form.firstName||!form.lastName||!form.roleIds.length} onClick={()=>void saveUser()}>{modal==='create'?'Create user':'Save changes'}</Button></div></ModalBody></Modal>:null}
+  {credentials?<Modal open title={modal==='reset'?'Temporary password':'Platform user created'} description="This temporary password must be changed at first login." onClose={()=>{setCredentials(null);if(modal==='reset')setModal(null)}} size="md"><ModalBody><div className="rounded-2xl border border-amber-200 bg-amber-50 p-5"><p className="text-sm font-semibold text-amber-900">Login email</p><p className="mt-1 font-mono text-sm text-slate-900">{credentials.email}</p><p className="mt-4 text-sm font-semibold text-amber-900">Temporary password</p><code className="mt-1 block break-all rounded-xl bg-white p-3 text-sm text-slate-900">{credentials.temporaryPassword}</code></div><div className="mt-5 flex justify-end"><Button onClick={()=>{setCredentials(null);if(modal==='reset')setModal(null)}}>Done</Button></div></ModalBody></Modal>:null}
+  <ConfirmDialog open={!!confirm} title={confirm?.kind==='deactivate'?'Deactivate platform user':'Activate platform user'} message={confirm?`${confirm.user.firstName} ${confirm.user.lastName} (${confirm.user.email})` : undefined} confirmLabel={confirm?.kind==='deactivate'?'Deactivate':'Activate'} danger={confirm?.kind==='deactivate'} loading={saving} onCancel={()=>!saving&&setConfirm(null)} onConfirm={()=>void changeStatus()}/>
+ </div>;
 }
-
-function RoleEditor({ user, roles, saving, onCancel, onSave }: { user: User; roles: Role[]; saving: boolean; onCancel: () => void; onSave: (roleIds: string[]) => void }) {
-  const [selected, setSelected] = useState<string[]>(user.roleIds);
-  return <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5"><div><p className="font-semibold text-slate-900">Platform access</p><p className="mt-1 text-sm text-slate-500">Choose the platform roles this administrator should have. Tenant roles are separate.</p></div><div className="mt-4 grid gap-2 sm:grid-cols-2">{roles.map((role) => { const checked = selected.includes(role.id); return <button type="button" key={role.id} onClick={() => setSelected((current) => checked ? current.filter((id) => id !== role.id) : [...current, role.id])} className={`flex items-start gap-3 rounded-2xl border p-3 text-left transition ${checked ? 'border-violet-300 bg-white shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}`}><span className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-md border ${checked ? 'border-violet-600 bg-violet-600 text-white' : 'border-slate-300 bg-white text-transparent'}`}><Check size={13} /></span><span className="min-w-0"><span className="block text-sm font-semibold text-slate-900">{role.name}</span><span className="mt-1 block text-xs text-slate-500">{role.permissions.length} platform permission{role.permissions.length === 1 ? '' : 's'}</span></span></button>; })}</div><div className="mt-4 flex flex-wrap justify-end gap-2"><button type="button" onClick={onCancel} disabled={saving} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Cancel</button><button type="button" onClick={() => onSave(selected)} disabled={saving || selected.length === 0} className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{saving && <RefreshCw className="h-4 w-4 animate-spin" />}Save access</button></div></div>;
-}
-
-function Field({ label, value, onChange, placeholder, type = 'text' }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; type?: string }) {
-  return <label className="block"><span className="text-sm font-semibold text-slate-800">{label}</span><input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="mt-2 h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100" /></label>;
-}
-
-function CredentialCard({ label, value, copyable = false }: { label: string; value: string; copyable?: boolean }) {
-  const [copied, setCopied] = useState(false);
-  async function copy() { await navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1200); }
-  return <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p><div className="mt-2 flex items-center gap-2"><code className="min-w-0 flex-1 break-all rounded-lg bg-white px-3 py-2 text-sm text-slate-800">{value}</code>{copyable && <button type="button" onClick={() => void copy()} className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-100" aria-label={`Copy ${label}`}>{copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}</button>}</div></div>;
-}
-
-function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
-  return <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100 text-slate-700">{icon}</div><p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p><p className="mt-1 text-2xl font-bold text-slate-950">{value}</p></div>;
-}
-
-function FilterButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return <button onClick={onClick} className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${active ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>{children}</button>;
-}
-
-function EmptyState() {
-  return <div className="p-14 text-center"><div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-slate-100 text-slate-400"><UserPlus size={22} /></div><p className="mt-4 font-semibold text-slate-800">No platform users found</p><p className="mt-1 text-sm text-slate-500">Create a platform administrator or adjust your filters.</p></div>;
-}
+function Metric({icon,label,value}:{icon:React.ReactNode;label:string;value:number}){return <div className="panel p-5"><div className="grid h-10 w-10 place-items-center rounded-xl bg-[var(--theme-primary-soft)] text-[var(--theme-link)]">{icon}</div><p className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p><p className="mt-1 text-2xl font-bold text-slate-950">{value}</p></div>}
+function Field({label,value,onChange,type='text'}:{label:string;value:string;onChange:(v:string)=>void;type?:string}){return <label className="text-sm font-semibold text-slate-700">{label}<input type={type} value={value} onChange={e=>onChange(e.target.value)} className="field mt-2 h-11 w-full" /></label>}
