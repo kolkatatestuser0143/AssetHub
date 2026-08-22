@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { IsArray, IsEmail, IsOptional, IsString, Matches, MinLength } from 'class-validator';
 import { SystemAdminGuard } from '../../common/guards/system-admin.guard';
 import { SystemAdminService } from './system-admin.service';
@@ -8,30 +8,14 @@ import { PrimaryLoginEmailService } from './primary-login-email.service';
 import { SystemTenantProvisioningService } from './system-tenant-provisioning.service';
 import { SystemPermission } from '../../common/guards/system-permission.decorator';
 
-class CreateTenantDto {
-  @IsString() @MinLength(2) name!: string;
-  @IsString() @Matches(/^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?[a-z0-9]$/) slug!: string;
-  @IsEmail() email!: string;
-  @IsString() @MinLength(1) planId!: string;
-}
-
-class BrandingDto {
-  @IsOptional() @IsString() @MinLength(2) name?: string;
-  @IsOptional() @IsString() logoFileId?: string;
-  @IsOptional() @IsString() logoUrl?: string;
-  @IsOptional() @IsString() phone?: string;
-  @IsOptional() @IsString() website?: string;
-}
-
+class CreateTenantDto { @IsString() @MinLength(2) name!: string; @IsString() @Matches(/^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?[a-z0-9]$/) slug!: string; @IsEmail() email!: string; @IsString() @MinLength(1) planId!: string; }
+class BrandingDto { @IsOptional() @IsString() @MinLength(2) name?: string; @IsOptional() @IsString() logoFileId?: string; @IsOptional() @IsString() logoUrl?: string; @IsOptional() @IsString() phone?: string; @IsOptional() @IsString() website?: string; }
 class PrimaryLoginEmailDto { @IsEmail() email!: string; }
 class PlatformRolesDto { @IsArray() @IsString({ each: true }) roleIds!: string[]; }
 class CreatePlatformRoleDto { @IsString() @MinLength(2) name!: string; @IsArray() @IsString({ each: true }) permissionKeys!: string[]; }
-class CreatePlatformUserDto {
-  @IsEmail() email!: string;
-  @IsString() @MinLength(1) firstName!: string;
-  @IsString() @MinLength(1) lastName!: string;
-  @IsArray() @IsString({ each: true }) roleIds!: string[];
-}
+class UpdatePlatformRoleDto { @IsString() @MinLength(2) name!: string; @IsArray() @IsString({ each: true }) permissionKeys!: string[]; }
+class CreatePlatformUserDto { @IsEmail() email!: string; @IsString() @MinLength(1) firstName!: string; @IsString() @MinLength(1) lastName!: string; @IsArray() @IsString({ each: true }) roleIds!: string[]; }
+class UpdatePlatformUserDto { @IsOptional() @IsEmail() email?: string; @IsOptional() @IsString() @MinLength(1) firstName?: string; @IsOptional() @IsString() @MinLength(1) lastName?: string; }
 
 @Controller('system')
 @UseGuards(SystemAdminGuard)
@@ -47,12 +31,20 @@ export class SystemAdminController {
   @Patch('tenants/:tenantId/branding') @SystemPermission('platform:tenants:manage') branding(@Param('tenantId') tenantId: string, @Body() body: BrandingDto, @Req() req: any) { return this.service.updateTenantBranding(tenantId, body, req.systemAuth?.sub); }
   @Patch('tenants/:tenantId/suspend') @SystemPermission('platform:tenants:manage') suspend(@Param('tenantId') tenantId: string, @Body() body: { reason?: string }, @Req() req: any) { return this.service.setTenantStatus(tenantId, false, req.systemAuth?.sub, body?.reason); }
   @Patch('tenants/:tenantId/activate') @SystemPermission('platform:tenants:manage') activate(@Param('tenantId') tenantId: string, @Req() req: any) { return this.service.setTenantStatus(tenantId, true, req.systemAuth?.sub); }
+
   @Get('users') @SystemPermission('platform:users:read') users() { return this.service.platformUsers(); }
   @Post('users') @SystemPermission('platform:users:manage') createPlatformUser(@Body() dto: CreatePlatformUserDto, @Req() req: any) { return this.rbac.createPlatformUser(dto, req.systemAuth?.sub); }
+  @Patch('users/:userId') @SystemPermission('platform:users:manage') updatePlatformUser(@Param('userId') userId: string, @Body() dto: UpdatePlatformUserDto, @Req() req: any) { return this.rbac.updatePlatformUser(userId, dto, req.systemAuth?.sub); }
   @Patch('users/:userId/roles') @SystemPermission('platform:users:manage') updatePlatformUserRoles(@Param('userId') userId: string, @Body() dto: PlatformRolesDto, @Req() req: any) { return this.rbac.setPlatformUserRoles(userId, dto.roleIds, req.systemAuth?.sub); }
+  @Patch('users/:userId/status') @SystemPermission('platform:users:manage') updatePlatformUserStatus(@Param('userId') userId: string, @Body() body: { isActive: boolean }, @Req() req: any) { return this.rbac.setPlatformUserStatus(userId, !!body?.isActive, req.systemAuth?.sub); }
+  @Post('users/:userId/reset-password') @SystemPermission('platform:users:manage') resetPlatformUserPassword(@Param('userId') userId: string, @Req() req: any) { return this.rbac.resetPlatformUserPassword(userId, req.systemAuth?.sub); }
+
   @Get('roles/permissions') @SystemPermission('platform:roles:read') rolePermissions() { return this.rbac.listPlatformPermissions(); }
   @Get('roles') @SystemPermission('platform:roles:read') roles() { return this.service.platformRoles(); }
   @Post('roles') @SystemPermission('platform:roles:manage') createPlatformRole(@Body() dto: CreatePlatformRoleDto, @Req() req: any) { return this.rbac.createPlatformRole(dto.name, dto.permissionKeys, req.systemAuth?.sub); }
+  @Patch('roles/:roleId') @SystemPermission('platform:roles:manage') updatePlatformRole(@Param('roleId') roleId: string, @Body() dto: UpdatePlatformRoleDto, @Req() req: any) { return this.rbac.updatePlatformRole(roleId, dto.name, dto.permissionKeys, req.systemAuth?.sub); }
+  @Delete('roles/:roleId') @SystemPermission('platform:roles:manage') deletePlatformRole(@Param('roleId') roleId: string, @Req() req: any) { return this.rbac.deletePlatformRole(roleId, req.systemAuth?.sub); }
+
   @Get('audit') @SystemPermission('platform:audit:read') audit() { return this.service.audit(); }
   @Get('security/sessions') @SystemPermission('platform:audit:read') securitySessions() { return this.security.sessions(); }
   @Post('security/sessions/:sessionId/revoke') @SystemPermission('platform:users:manage') revokeSecuritySession(@Param('sessionId') sessionId: string, @Req() req: any) { return this.security.revokeSession(sessionId, req.systemAuth?.sub); }
