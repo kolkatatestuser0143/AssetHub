@@ -8,5 +8,11 @@
 .ui-loading-skeleton-lines span:first-child{height:.72rem;width:48%}
 .ui-loading-skeleton-lines span:last-child{height:.58rem;width:72%}
 [data-system-console] .ui-loading-skeleton-row{border-color:#dbe3ee;background:#fff}
+
+/* Compatibility layer for older page-local content loaders. Keep these visually identical
+   to LoadingSkeleton until their local JSX can be migrated without touching data logic. */
+div[role="status"]:has(.animate-pulse){display:grid;gap:.75rem;width:100%;padding:1.25rem;max-width:760px}
+div[role="status"]:has(.animate-pulse)>.animate-pulse{display:block;height:4rem;border:1px solid var(--theme-border,#e2e8f0);border-radius:1rem;background:linear-gradient(110deg,#e8edf3 8%,#f8fafc 18%,#e8edf3 33%);background-size:200% 100%;animation:ui-loading-shimmer 1.35s linear infinite}
+
 @keyframes ui-loading-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
-@media(prefers-reduced-motion:reduce){.ui-loading-skeleton-avatar,.ui-loading-skeleton-lines span{animation:none!important;background:#edf1f5}}
+@media(prefers-reduced-motion:reduce){.ui-loading-skeleton-avatar,.ui-loading-skeleton-lines span,div[role="status"]:has(.animate-pulse)>.animate-pulse{animation:none!important;background:#edf1f5}}
