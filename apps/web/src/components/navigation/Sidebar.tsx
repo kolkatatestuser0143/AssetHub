@@ -15,10 +15,10 @@ export function Sidebar({ groups, variant = 'tenant', mobileOpen = false, onMobi
   const panel = dark ? 'bg-slate-950 text-white' : 'bg-[var(--theme-sidebar)] text-[var(--theme-sidebar-text)]';
   const itemActive = dark
     ? 'bg-slate-800 text-white shadow-sm ring-1 ring-inset ring-slate-700/70 before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-r-full before:bg-blue-400'
-    : 'bg-[var(--theme-primary-soft)] text-[var(--theme-primary)] shadow-sm ring-1 ring-inset ring-[color-mix(in_srgb,var(--theme-primary)_18%,transparent)] before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-r-full before:bg-[var(--theme-primary)]';
+    : 'bg-[color-mix(in_srgb,var(--theme-primary-soft)_78%,var(--theme-sidebar))] text-[var(--theme-primary)] shadow-sm ring-1 ring-inset ring-[color-mix(in_srgb,var(--theme-primary)_24%,transparent)] before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-r-full before:bg-[var(--theme-primary)]';
   const itemIdle = dark
     ? 'text-slate-300 hover:bg-slate-900/90 hover:text-white hover:ring-1 hover:ring-inset hover:ring-slate-800'
-    : 'text-[var(--theme-sidebar-text)] hover:bg-[var(--theme-primary-soft)] hover:text-[var(--theme-link)] hover:ring-1 hover:ring-inset hover:ring-[color-mix(in_srgb,var(--theme-primary)_18%,transparent)]';
+    : 'text-[var(--theme-sidebar-text)] hover:bg-[color-mix(in_srgb,var(--theme-primary-soft)_46%,var(--theme-sidebar))] hover:text-[var(--theme-link)] hover:ring-1 hover:ring-inset hover:ring-[color-mix(in_srgb,var(--theme-primary)_14%,transparent)]';
   const content = <aside className={`flex h-screen min-h-0 w-full flex-col overflow-hidden shadow-2xl ${panel}`}>
     <div className="ui-sidebar-brand flex h-16 shrink-0 items-center border-b border-white/10 px-4">{brand}</div>
     {context ? <div className="ui-sidebar-context shrink-0 border-b border-white/10 px-4 py-3">{context}</div> : null}
