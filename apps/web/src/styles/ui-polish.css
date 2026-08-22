@@ -1,0 +1,22 @@
+:root{--ui-polish-radius:1rem;--ui-polish-border:#e2e8f0;--ui-polish-muted:#f8fafc;--ui-polish-shadow:0 8px 24px rgba(15,23,42,.055)}
+/* Organization workspace: companies, sites, locations, departments */
+main .max-w-\[1500px\]{isolation:isolate}main .max-w-\[1500px\] .panel{border-color:var(--ui-polish-border);box-shadow:var(--ui-polish-shadow)}
+main .max-w-\[1500px\] .grid.gap-3.sm\:grid-cols-2.xl\:grid-cols-4>.panel,main .max-w-\[1500px\] .grid.gap-3.sm\:grid-cols-2.xl\:grid-cols-4>div{background:linear-gradient(135deg,var(--theme-primary-soft),#fff 78%);border-color:color-mix(in srgb,var(--theme-primary) 12%,var(--ui-polish-border))}
+main .max-w-\[1500px\] .grid.gap-3.sm\:grid-cols-2.xl\:grid-cols-4>div:nth-child(2){background:linear-gradient(135deg,#ecfdf5,#fff 78%);border-color:#d1fae5}main .max-w-\[1500px\] .grid.gap-3.sm\:grid-cols-2.xl\:grid-cols-4>div:nth-child(3){background:linear-gradient(135deg,#eff6ff,#fff 78%);border-color:#dbeafe}main .max-w-\[1500px\] .grid.gap-3.sm\:grid-cols-2.xl\:grid-cols-4>div:nth-child(4){background:linear-gradient(135deg,#f5f3ff,#fff 78%);border-color:#e9d5ff}
+main .max-w-\[1500px\] .ui-table-row{transition:background-color .14s ease,box-shadow .14s ease}main .max-w-\[1500px\] .ui-table-row:hover{background:color-mix(in srgb,var(--theme-primary-soft) 40%,white)}
+main .max-w-\[1500px\] .panel>.border-b{background:linear-gradient(135deg,#f8fafc,#fff 75%)}
+main .max-w-\[1500px\] .panel .bg-slate-50{background:linear-gradient(135deg,#f8fafc,#fff)}
+main .max-w-\[1500px\] .panel button.ui-interactive{min-height:2.25rem}
+/* Detail dialogs */
+.ui-modal-panel .bg-slate-50{background:linear-gradient(135deg,#f8fafc,#fff)}.ui-modal-panel .border-slate-200{border-color:var(--ui-polish-border)}
+/* Identity and audit: security-console feel while remaining tenant themed */
+main [data-security-console],main .security-console{background:linear-gradient(135deg,#f8fafc,#fff);border:1px solid var(--ui-polish-border);box-shadow:var(--ui-polish-shadow);border-radius:var(--ui-polish-radius)}
+main [data-security-console] .danger,main .security-console .danger{background:#fef2f2;border-color:#fecaca;color:#991b1b}main [data-security-console] .success,main .security-console .success{background:#ecfdf5;border-color:#bbf7d0;color:#047857}
+/* Roles / permissions */
+main [data-permission-group],main .permission-group{border:1px solid var(--ui-polish-border);border-radius:var(--ui-polish-radius);background:#fff;box-shadow:var(--ui-polish-shadow);overflow:hidden}main [data-permission-group] header,main .permission-group header{background:linear-gradient(135deg,#f8fafc,#fff);border-bottom:1px solid var(--ui-polish-border)}main [data-permission-chip],main .permission-chip{border:1px solid #e2e8f0;border-radius:999px;background:#f8fafc;color:#475569;font-size:.72rem;font-weight:700;padding:.25rem .55rem}main [data-permission-chip][data-enabled=true],main .permission-chip.is-enabled{background:var(--theme-primary-soft);border-color:color-mix(in srgb,var(--theme-primary) 20%,#e2e8f0);color:var(--theme-link)}
+/* Native-looking browser controls should still fit the product */
+main input,main select,main textarea{accent-color:var(--theme-primary)}
+/* Toast positioning/surfaces */
+[data-sonner-toaster],.toast-viewport{z-index:1100}
+@media(max-width:767px){main .max-w-\[1500px\] .grid.gap-3.sm\:grid-cols-2.xl\:grid-cols-4{grid-template-columns:repeat(2,minmax(0,1fr))}main .max-w-\[1500px\] .panel{border-radius:.875rem}}
+@media(prefers-reduced-motion:reduce){main .ui-table-row{transition:none!important}}
