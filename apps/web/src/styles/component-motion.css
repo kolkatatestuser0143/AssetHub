@@ -8,5 +8,7 @@
 
 .ui-sticky-actions{position:sticky;bottom:.75rem;z-index:20;margin-top:1rem;border:1px solid var(--ui-border,#e2e8f0);border-radius:1rem;background:color-mix(in srgb,#fff 94%,var(--theme-primary-soft));padding:.7rem;box-shadow:0 12px 30px rgba(15,23,42,.09);backdrop-filter:blur(10px)}
 
+.ui-toast-progress{animation-name:ui-toast-progress;animation-timing-function:linear;animation-fill-mode:forwards}@keyframes ui-toast-progress{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+
 @media(max-width:639px){.ui-pagination{justify-content:space-between}.ui-page-btn{min-width:2.55rem;height:2.55rem}.ui-tab{min-height:2.65rem;padding-inline:.7rem}.ui-sticky-actions{bottom:.5rem;border-radius:.875rem}}
-@media(prefers-reduced-motion:reduce){.ui-tab,.ui-tab::after,.ui-page-btn,.ui-tooltip,.ui-sticky-actions{transition:none!important}.ui-tab:hover:not(:disabled),.ui-page-btn:hover:not(:disabled){transform:none}}
+@media(prefers-reduced-motion:reduce){.ui-tab,.ui-tab::after,.ui-page-btn,.ui-tooltip,.ui-sticky-actions,.ui-toast-progress{transition:none!important;animation:none!important}.ui-tab:hover:not(:disabled),.ui-page-btn:hover:not(:disabled){transform:none}}
