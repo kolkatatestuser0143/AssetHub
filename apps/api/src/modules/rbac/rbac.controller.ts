@@ -22,4 +22,5 @@ export class RbacController {
   @Put(':roleId/scopes') @RequirePermission('role:write') setScopes(@Param('roleId') roleId:string,@Body() dto:RoleScopesDto,@Req() req:any) { return this.rbac.setRoleScopes(req.authContext,roleId,dto.scopes as RoleScopeInput[]); }
   @Post(':roleId/assign/:userId') @RequirePermission('role:write') assignRole(@Param('roleId') roleId:string,@Param('userId') userId:string,@Req() req:any) { return this.rbac.assignRole(req.authContext,userId,roleId); }
   @Delete(':roleId/assign/:userId') @RequirePermission('role:write') unassignRole(@Param('roleId') roleId:string,@Param('userId') userId:string,@Req() req:any) { return this.rbac.unassignRole(req.authContext,userId,roleId); }
+  @Get('users/:userId/effective-access') @RequirePermission('role:read') effectiveAccess(@Param('userId') userId:string,@Req() req:any) { return this.rbac.effectiveAccess(req.authContext,userId); }
 }
