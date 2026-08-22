@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { AlertCircle, Archive, CheckCircle2, Info, Inbox, Loader2, PackageOpen, Plus, RefreshCw, Search, TriangleAlert, UsersRound, X } from 'lucide-react';
+import { AlertCircle, Archive, CheckCircle2, Info, Inbox, PackageOpen, Plus, RefreshCw, Search, TriangleAlert, UsersRound, X } from 'lucide-react';
 import { type ButtonHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type ComponentType } from 'react';
+import { LoadingSkeleton } from './loading-state';
 
 export { Modal, ModalBody, ModalFooter } from './modal';
 
@@ -33,7 +34,7 @@ export function Toolbar({ placeholder = 'Search…' }: { placeholder?: string })
 export function Button({ children, className = '', loading = false, variant = 'primary', size = 'md', icon, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { loading?: boolean; variant?: 'primary' | 'secondary' | 'ghost' | 'danger'; size?: 'sm' | 'md' | 'lg'; icon?: ReactNode }) {
   const variantClass = variant === 'secondary' ? 'btn-secondary' : variant === 'ghost' ? 'btn-ghost' : variant === 'danger' ? 'btn-danger' : 'btn-primary';
   const sizeClass = size === 'sm' ? 'btn-sm' : size === 'lg' ? 'btn-lg' : '';
-  return <button {...props} type={props.type ?? 'button'} disabled={loading || props.disabled} aria-busy={loading || undefined} className={`${variantClass} ${sizeClass} ui-interactive ${className}`}>{loading ? <Loader2 size={16} className="animate-spin" aria-hidden="true"/> : icon}{children}</button>;
+  return <button {...props} type={props.type ?? 'button'} disabled={loading || props.disabled} aria-busy={loading || undefined} className={`${variantClass} ${sizeClass} ui-interactive ${className}`}>{loading ? <span className="inline-flex animate-pulse items-center gap-1" aria-hidden="true">•••</span> : icon}{children}</button>;
 }
 
 export function IconButton({ label, children, className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { label: string; children: ReactNode }) {
@@ -74,6 +75,6 @@ export function EmptyState({ title, text, action, onAction, kind = 'default' }: 
   return <div className="panel empty-state p-10 text-center"><div className="empty-illustration mx-auto grid h-20 w-20 place-items-center rounded-[1.6rem] border border-[color-mix(in_srgb,var(--theme-primary)_18%,var(--ui-border))] bg-gradient-to-br from-[var(--theme-primary-soft)] via-white to-white text-[var(--theme-primary)] shadow-sm"><span className="grid h-12 w-12 place-items-center rounded-2xl bg-white/80 shadow-sm ring-1 ring-black/5"><Icon size={27} strokeWidth={1.8}/></span></div><h3 className="mt-4 text-base font-semibold text-slate-900">{title}</h3>{text ? <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-slate-500">{text}</p> : null}{action && onAction ? <Button variant="secondary" className="mt-5" onClick={onAction}><Plus size={15}/>{action}</Button> : null}</div>;
 }
 
-export function LoadingState({ label = 'Loading…' }: { label?: string }) {
-  return <div className="panel flex min-h-40 items-center justify-center p-8" role="status" aria-live="polite"><div className="flex items-center gap-3 text-sm font-medium text-slate-500"><Loader2 size={18} className="animate-spin text-[var(--theme-link)]"/>{label}</div></div>;
+export function LoadingState({ label = 'Loading content', rows = 6 }: { label?: string; rows?: number }) {
+  return <LoadingSkeleton rows={rows} label={label} />;
 }
