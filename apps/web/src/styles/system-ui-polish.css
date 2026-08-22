@@ -6,9 +6,19 @@ body:has([data-system-console]){background:radial-gradient(circle at 100% 0%,rgb
 [data-system-console] .panel,[data-system-console] .ui-section,[data-system-console] .ui-table-wrap,[data-system-console] .table-wrap{border-color:#dbe3ee;box-shadow:0 1px 3px rgba(15,23,42,.045);background:#fff}
 [data-system-console] .ui-section-header{background:linear-gradient(135deg,#e9eef5,#fff 78%)}
 [data-system-console] table thead{background:linear-gradient(135deg,#e9eef5,#f8fafc)}[data-system-console] table tbody tr:hover{background:#f8fafc}
-[data-system-console] nav a[aria-current=page]{background:#172033!important;color:#fff!important;box-shadow:0 2px 8px rgba(15,23,42,.12)}[data-system-console] nav a:not([aria-current=page]):hover{background:#f1f5f9}
+
+/* System navigation: dark, restrained states instead of bright white hover fills. */
+[data-system-console] nav a[aria-current=page]{background:#172033!important;color:#fff!important;box-shadow:inset 3px 0 0 #60a5fa,0 2px 8px rgba(15,23,42,.18)}
+[data-system-console] nav a:not([aria-current=page]){color:#cbd5e1!important;transition:background-color 150ms ease,color 150ms ease,transform 150ms ease}
+[data-system-console] nav a:not([aria-current=page]):hover{background:#0f172a!important;color:#fff!important;transform:translateX(1px)}
+[data-system-console] nav a:focus-visible{outline:2px solid #60a5fa;outline-offset:2px;background:#111827!important;color:#fff!important}
+[data-system-console] nav a[aria-current=page] svg,[data-system-console] nav a:hover svg{color:inherit!important}
+
 [data-system-console] header.sticky{border-color:#dbe3ee;background:rgba(255,255,255,.96)}
 [data-system-console] input,[data-system-console] select,[data-system-console] textarea{border-color:#dbe3ee;background:#fff}[data-system-console] input:focus,[data-system-console] select:focus,[data-system-console] textarea:focus{border-color:#64748b;box-shadow:0 0 0 4px rgba(71,85,105,.09)}
+[data-system-console] select{color:#0f172a!important;font-weight:600;appearance:auto}
+[data-system-console] select option{background:#fff;color:#0f172a}
+[data-system-console] select:focus{background:#fff;color:#0f172a;outline:none}
 [data-system-console] textarea.plan-json-editor{background:#020617!important;color:#f8fafc!important;border-color:#334155!important;caret-color:#fff!important;color-scheme:dark}
 [data-system-console] textarea.plan-json-editor::selection{background:#1e3a8a;color:#fff}
 [data-system-console] .system-primary{background:#172033;color:#fff;border-color:#172033}[data-system-console] .system-primary:hover{background:#0f172a}
@@ -24,4 +34,4 @@ body:has([data-system-console]){background:radial-gradient(circle at 100% 0%,rgb
 [data-system-console] code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 [data-system-console] .ui-modal-header{background:linear-gradient(135deg,#eef2f7,#fff 78%)}[data-system-console] .ui-modal-footer{background:#fbfcfe}
 @media(max-width:767px){[data-system-console] table{min-width:760px}[data-system-console] .ui-modal-panel{max-height:calc(100vh - 1.5rem);border-radius:1rem}}
-@media(prefers-reduced-motion:reduce){[data-system-console] button,[data-system-console] .ui-modal-backdrop,[data-system-console] .ui-modal-panel{transition:none!important;animation:none!important}}
+@media(prefers-reduced-motion:reduce){[data-system-console] button,[data-system-console] nav a,[data-system-console] .ui-modal-backdrop,[data-system-console] .ui-modal-panel{transition:none!important;animation:none!important}}
