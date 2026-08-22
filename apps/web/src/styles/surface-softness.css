@@ -1,12 +1,12 @@
-/* Shared surface softness: reduce harsh pure-white controls and workspace contrast. */
+/* Shared surface softness: keep the white visual language, but avoid stark pure-white contrast. */
 :root {
-  --ui-workspace:#f5f7fa;
-  --ui-surface-soft:#f9fafb;
-  --ui-control:#f8fafc;
-  --ui-control-hover:#f1f5f9;
-  --ui-control-border:#d9e1ea;
+  --ui-workspace:#f6f8fb;
+  --ui-surface-soft:#fcfdff;
+  --ui-control:#fbfcfe;
+  --ui-control-hover:#f5f8fb;
+  --ui-control-border:#dce4ed;
 }
-body{background:radial-gradient(circle at 100% 0%,color-mix(in srgb,var(--theme-primary-soft) 36%,transparent),transparent 30rem),var(--ui-workspace)}
+body{background:radial-gradient(circle at 100% 0%,color-mix(in srgb,var(--theme-primary-soft) 34%,transparent),transparent 30rem),var(--ui-workspace)}
 main .field, main input, main select, main textarea{background:var(--ui-control);border-color:var(--ui-control-border)}
 main .field:hover, main input:hover, main select:hover, main textarea:hover{background:var(--ui-control-hover)}
 main .field:focus, main input:focus, main select:focus, main textarea:focus{background:#fff}
@@ -15,10 +15,11 @@ main .field:focus, main input:focus, main select:focus, main textarea:focus{back
 /* Tenant console: theme-aware soft navigation and controls. */
 [data-system-console]{--system-bg:#eef2f7}
 
-/* System Admin: avoid stark white controls while retaining technical/editor surfaces. */
-[data-system-console] input,[data-system-console] select,[data-system-console] textarea{background:#f8fafc}
-[data-system-console] input:hover,[data-system-console] select:hover,[data-system-console] textarea:hover{background:#f1f5f9}
-[data-system-console] textarea.plan-json-editor{background:#020617!important}
+/* System Admin: keep controls softly white while retaining technical/editor surfaces. */
+[data-system-console] .panel,[data-system-console] .ui-section,[data-system-console] .ui-table-wrap,[data-system-console] .table-wrap{background:var(--ui-surface-soft)!important}
+[data-system-console] input,[data-system-console] select,[data-system-console] textarea{background:var(--ui-control)!important}
+[data-system-console] input:hover,[data-system-console] select:hover,[data-system-console] textarea:hover{background:var(--ui-control-hover)!important}
+[data-system-console] textarea.plan-json-editor{background:#020617!important;color:#f8fafc!important}
 
-/* Header surfaces stay slightly translucent instead of pure white. */
-header.sticky{background:color-mix(in srgb,#f8fafc 93%,transparent)!important}
+/* Header surfaces stay near-white with a soft translucency. */
+header.sticky{background:color-mix(in srgb,#fcfdff 94%,transparent)!important}
