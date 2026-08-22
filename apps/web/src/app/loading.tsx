@@ -1,5 +1,5 @@
-import { LoadingState } from '../components/loading-state';
+import { LoadingSkeleton } from '../components/loading-state';
 
 export default function Loading() {
-  return <LoadingState fullPage label="Loading AssetHub" description="Preparing your workspace…" />;
+  return <LoadingSkeleton fullPage rows={6} label="Loading AssetHub" />;
 }
