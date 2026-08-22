@@ -2,8 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
-import { Boxes, Command, FileText, LayoutDashboard, Loader2, Search, Settings, ShieldCheck, Users, X, SlidersHorizontal, FileKey2, ClipboardList } from 'lucide-react';
+import { FileText, LayoutDashboard, Loader2, Search, Settings, ShieldCheck, Users, X, SlidersHorizontal, FileKey2, ClipboardList, Boxes } from 'lucide-react';
 import { apiFetch } from '../../lib/api-client';
 import { useAuth } from '../../lib/auth-context';
 
@@ -22,7 +21,6 @@ const NAV_ITEMS = [
 type AssetRow = { id: string; assetNumber: string; status: string; assetType?: { name?: string } };
 
 export default function CommandPalette() {
-  const router = useRouter();
   const pathname = usePathname();
   const { hasFeature } = useAuth();
   const [open, setOpen] = useState(false);
@@ -76,25 +74,23 @@ export default function CommandPalette() {
     return needle ? visibleNav.filter(([, label]) => label.toLowerCase().includes(needle)) : visibleNav.slice(0, 5);
   }, [query, visibleNav]);
 
-  const go = (href: string) => { setOpen(false); setQuery(''); setAssets([]); router.push(href); };
   const close = () => { setOpen(false); setQuery(''); setAssets([]); };
-
-  if (!open) return <button aria-label="Open command palette" onClick={() => setOpen(true)} className="fixed bottom-4 right-4 z-40 hidden items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-3 py-2 text-xs font-semibold text-slate-600 shadow-lg backdrop-blur lg:flex"><Command size={14}/>⌘K</button>;
 
   const hasResults = matchingNav.length > 0 || assets.length > 0;
 
-  return <div className="ui-command-backdrop fixed inset-0 z-[80] bg-slate-950/40 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-label="Search AssetHub">
-    <div className="ui-command-panel mx-auto mt-[10vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-      <div className="flex items-center gap-3 border-b border-slate-100 px-4"><Search size={18} className="text-slate-400"/><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search pages or assets…" className="h-14 min-w-0 flex-1 border-0 bg-transparent text-sm outline-none"/><kbd className="rounded-md border bg-slate-50 px-2 py-1 text-[10px] text-slate-500">ESC</kbd><button aria-label="Close command palette" onClick={close} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X size={17}/></button></div>
-      <div className="max-h-[60vh] overflow-y-auto p-2">
-        <p className="px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Navigation</p>
-        {matchingNav.map(([href, label, Icon]) => <button key={href} onClick={() => go(href)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm hover:bg-slate-50 ${pathname === href ? 'bg-slate-50 font-semibold' : ''}`}><Icon size={17} className="text-[var(--theme-link)]"/><span className="flex-1">{label}</span></button>)}
-        {query.trim() && <p className="mt-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Assets</p>}
-        {searching && <div className="flex items-center gap-2 px-3 py-6 text-sm text-slate-500"><Loader2 size={16} className="animate-spin"/>Searching assets…</div>}
-        {!searching && assets.map((asset) => <Link key={asset.id} href={`/assets/${asset.id}`} onClick={close} className="flex items-center gap-3 rounded-xl px-3 py-3 hover:bg-slate-50"><Boxes size={17} className="text-[var(--theme-link)]"/><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-900">{asset.assetNumber}</span><span className="block text-xs text-slate-500">{asset.assetType?.name ?? 'Asset'} · {asset.status}</span></span></Link>)}
-        {query.trim() && !searching && !hasResults && <div className="p-10 text-center"><Search className="mx-auto text-slate-300" size={30}/><p className="mt-3 font-semibold text-slate-800">No matches</p><p className="mt-1 text-xs text-slate-500">Try an asset number, status, type, or page name.</p></div>}
+  return <>
+    {open ? <div className="ui-command-backdrop fixed inset-0 z-[80] bg-slate-950/40 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-label="Search AssetHub">
+      <div className="ui-command-panel mx-auto mt-[10vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-center gap-3 border-b border-slate-100 px-4"><Search size={18} className="text-slate-400"/><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search pages or assets…" className="h-14 min-w-0 flex-1 border-0 bg-transparent text-sm outline-none"/><kbd className="rounded-md border bg-slate-50 px-2 py-1 text-[10px] text-slate-500">ESC</kbd><button aria-label="Close command palette" onClick={close} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X size={17}/></button></div>
+        <div className="max-h-[60vh] overflow-y-auto p-2">
+          <p className="px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Navigation</p>
+          {matchingNav.map(([href, label, Icon]) => <button key={href} onClick={() => { close(); window.location.assign(href); }} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm hover:bg-slate-50 ${pathname === href ? 'bg-slate-50 font-semibold' : ''}`}><Icon size={17} className="text-[var(--theme-link)]"/><span className="flex-1">{label}</span></button>)}
+          {query.trim() && <p className="mt-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Assets</p>}
+          {searching && <div className="flex items-center gap-2 px-3 py-6 text-sm text-slate-500"><Loader2 size={16} className="animate-spin"/>Searching assets…</div>}
+          {!searching && assets.map((asset) => <Link key={asset.id} href={`/assets/${asset.id}`} onClick={close} className="flex items-center gap-3 rounded-xl px-3 py-3 hover:bg-slate-50"><Boxes size={17} className="text-[var(--theme-link)]"/><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-900">{asset.assetNumber}</span><span className="block text-xs text-slate-500">{asset.assetType?.name ?? 'Asset'} · {asset.status}</span></span></Link>)}
+          {query.trim() && !searching && !hasResults && <div className="p-10 text-center"><Search className="mx-auto text-slate-300" size={30}/><p className="mt-3 font-semibold text-slate-800">No matches</p><p className="mt-1 text-xs text-slate-500">Try an asset number, status, type, or page name.</p></div>}
+        </div>
       </div>
-      <div className="flex items-center justify-between border-t border-slate-100 px-4 py-2 text-[11px] text-slate-400"><span>Command palette</span><span>Ctrl/⌘ + K</span></div>
-    </div>
-  </div>;
+    </div> : null}
+  </>;
 }
