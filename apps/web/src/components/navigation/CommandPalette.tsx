@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { FileText, LayoutDashboard, Loader2, Search, Settings, ShieldCheck, Users, X, SlidersHorizontal, FileKey2, ClipboardList, Boxes } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
 import { apiFetch } from '../../lib/api-client';
 import { useAuth } from '../../lib/auth-context';
 
@@ -21,6 +22,7 @@ const NAV_ITEMS = [
 type AssetRow = { id: string; assetNumber: string; status: string; assetType?: { name?: string } };
 
 export default function CommandPalette() {
+  const router = useRouter();
   const pathname = usePathname();
   const { hasFeature } = useAuth();
   const [open, setOpen] = useState(false);
@@ -74,6 +76,7 @@ export default function CommandPalette() {
     return needle ? visibleNav.filter(([, label]) => label.toLowerCase().includes(needle)) : visibleNav.slice(0, 5);
   }, [query, visibleNav]);
 
+  const go = (href: string) => { setOpen(false); setQuery(''); setAssets([]); router.push(href); };
   const close = () => { setOpen(false); setQuery(''); setAssets([]); };
 
   const hasResults = matchingNav.length > 0 || assets.length > 0;
@@ -84,7 +87,7 @@ export default function CommandPalette() {
         <div className="flex items-center gap-3 border-b border-slate-100 px-4"><Search size={18} className="text-slate-400"/><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search pages or assets…" className="h-14 min-w-0 flex-1 border-0 bg-transparent text-sm outline-none"/><kbd className="rounded-md border bg-slate-50 px-2 py-1 text-[10px] text-slate-500">ESC</kbd><button aria-label="Close command palette" onClick={close} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"><X size={17}/></button></div>
         <div className="max-h-[60vh] overflow-y-auto p-2">
           <p className="px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Navigation</p>
-          {matchingNav.map(([href, label, Icon]) => <button key={href} onClick={() => { close(); window.location.assign(href); }} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm hover:bg-slate-50 ${pathname === href ? 'bg-slate-50 font-semibold' : ''}`}><Icon size={17} className="text-[var(--theme-link)]"/><span className="flex-1">{label}</span></button>)}
+          {matchingNav.map(([href, label, Icon]) => <button key={href} onClick={() => go(href)} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm hover:bg-slate-50 ${pathname === href ? 'bg-slate-50 font-semibold' : ''}`}><Icon size={17} className="text-[var(--theme-link)]"/><span className="flex-1">{label}</span></button>)}
           {query.trim() && <p className="mt-2 px-3 py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-400">Assets</p>}
           {searching && <div className="flex items-center gap-2 px-3 py-6 text-sm text-slate-500"><Loader2 size={16} className="animate-spin"/>Searching assets…</div>}
           {!searching && assets.map((asset) => <Link key={asset.id} href={`/assets/${asset.id}`} onClick={close} className="flex items-center gap-3 rounded-xl px-3 py-3 hover:bg-slate-50"><Boxes size={17} className="text-[var(--theme-link)]"/><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-900">{asset.assetNumber}</span><span className="block text-xs text-slate-500">{asset.assetType?.name ?? 'Asset'} · {asset.status}</span></span></Link>)}
