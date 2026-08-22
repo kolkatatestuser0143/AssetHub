@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { AlertCircle, CheckCircle2, Info, Loader2, Plus, RefreshCw, Search, TriangleAlert, X } from 'lucide-react';
-import { type ButtonHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react';
+import { AlertCircle, Archive, CheckCircle2, Info, Inbox, Loader2, PackageOpen, Plus, RefreshCw, Search, TriangleAlert, UsersRound, X } from 'lucide-react';
+import { type ButtonHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type ComponentType } from 'react';
 
 export { Modal, ModalBody, ModalFooter } from './modal';
 
@@ -19,7 +19,7 @@ export function Card({ children, className = '', tone = 'neutral' }: { children:
 }
 
 export function MetricCard({ label, value, hint, icon, tone = 'neutral', action }: { label: string; value: ReactNode; hint?: ReactNode; icon?: ReactNode; tone?: 'neutral' | 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'identity'; action?: ReactNode }) {
-  return <Card tone={tone} className="relative overflow-hidden p-5"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[.08em] text-slate-500">{label}</p><p className="mt-2 text-2xl font-bold tracking-tight text-slate-950">{value}</p>{hint ? <p className="mt-1 text-xs leading-5 text-slate-500">{hint}</p> : null}</div>{icon ? <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/80 text-[var(--theme-link)] shadow-sm ring-1 ring-black/5">{icon}</div> : null}</div>{action ? <div className="mt-4">{action}</div> : null}</Card>;
+  return <Card tone={tone} className="relative overflow-hidden p-5"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[.08em] text-slate-500">{label}</p><p className="mt-2 text-2xl font-bold tracking-tight text-slate-950">{value}</p>{hint ? <p className="mt-1 text-xs leading-5 text-slate-500">{hint}</p> : null}</div>{icon ? <div className="metric-icon grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/80 text-[var(--theme-link)] shadow-sm ring-1 ring-black/5">{icon}</div> : null}</div>{action ? <div className="mt-4">{action}</div> : null}</Card>;
 }
 
 export function Select({ className = '', ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
@@ -58,12 +58,20 @@ export function Alert({ title, message, tone = 'info', onClose }: { title: strin
   return <div className={`flex items-start gap-3 rounded-2xl border px-4 py-3.5 ${config.classes}`} role={tone === 'danger' ? 'alert' : 'status'}><div className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl shadow-sm ${config.iconClasses}`}><Icon size={17}/></div><div className="min-w-0 flex-1"><p className="text-sm font-semibold">{title}</p>{message ? <p className="mt-0.5 text-sm leading-5 opacity-80">{message}</p> : null}</div>{onClose ? <IconButton label="Dismiss" onClick={onClose}><X size={16}/></IconButton> : null}</div>;
 }
 
+const emptyStateIcons: Record<'default' | 'assets' | 'people' | 'archive', ComponentType<{ size?: number; strokeWidth?: number }>> = {
+  default: Inbox,
+  assets: PackageOpen,
+  people: UsersRound,
+  archive: Archive,
+};
+
 export function ErrorState({ title = 'Something went wrong', message = 'We could not complete this request. Please try again.', onRetry }: { title?: string; message?: string; onRetry?: () => void }) {
-  return <div className="panel empty-state p-10 text-center" role="alert"><div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-red-200 bg-red-50 text-red-600 shadow-sm"><AlertCircle size={24}/></div><h3 className="mt-4 text-base font-semibold text-slate-900">{title}</h3><p className="mx-auto mt-1 max-w-md text-sm leading-6 text-slate-500">{message}</p>{onRetry ? <Button variant="secondary" className="mt-5" onClick={onRetry}><RefreshCw size={15}/>Try again</Button> : null}</div>;
+  return <div className="panel empty-state p-10 text-center" role="alert"><div className="empty-illustration empty-illustration-danger mx-auto grid h-20 w-20 place-items-center rounded-[1.6rem] border border-red-200 bg-gradient-to-br from-red-100 via-red-50 to-white text-red-600"><AlertCircle size={28}/></div><h3 className="mt-4 text-base font-semibold text-slate-900">{title}</h3><p className="mx-auto mt-1 max-w-md text-sm leading-6 text-slate-500">{message}</p>{onRetry ? <Button variant="secondary" className="mt-5" onClick={onRetry}><RefreshCw size={15}/>Try again</Button> : null}</div>;
 }
 
-export function EmptyState({ title, text, action, onAction }: { title: string; text?: string; action?: string; onAction?: () => void }) {
-  return <div className="panel empty-state p-10 text-center"><div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-slate-200 bg-slate-50 text-slate-400"><AlertCircle size={24}/></div><h3 className="mt-4 text-base font-semibold text-slate-900">{title}</h3>{text ? <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-slate-500">{text}</p> : null}{action && onAction ? <Button variant="secondary" className="mt-5" onClick={onAction}><Plus size={15}/>{action}</Button> : null}</div>;
+export function EmptyState({ title, text, action, onAction, kind = 'default' }: { title: string; text?: string; action?: string; onAction?: () => void; kind?: 'default' | 'assets' | 'people' | 'archive' }) {
+  const Icon = emptyStateIcons[kind];
+  return <div className="panel empty-state p-10 text-center"><div className="empty-illustration mx-auto grid h-20 w-20 place-items-center rounded-[1.6rem] border border-[color-mix(in_srgb,var(--theme-primary)_18%,var(--ui-border))] bg-gradient-to-br from-[var(--theme-primary-soft)] via-white to-white text-[var(--theme-primary)] shadow-sm"><span className="grid h-12 w-12 place-items-center rounded-2xl bg-white/80 shadow-sm ring-1 ring-black/5"><Icon size={27} strokeWidth={1.8}/></span></div><h3 className="mt-4 text-base font-semibold text-slate-900">{title}</h3>{text ? <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-slate-500">{text}</p> : null}{action && onAction ? <Button variant="secondary" className="mt-5" onClick={onAction}><Plus size={15}/>{action}</Button> : null}</div>;
 }
 
 export function LoadingState({ label = 'Loading…' }: { label?: string }) {
