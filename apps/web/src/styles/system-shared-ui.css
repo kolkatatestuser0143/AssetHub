@@ -1,0 +1,53 @@
+/* System Admin shared UI adapter: same interaction language as Tenant, System-specific palette. */
+[data-system-console] main button:not(.ui-sidebar-item),
+[data-system-console] main a.rounded-xl,
+[data-system-console] main a.rounded-2xl,
+[data-system-console] main [role='button']{
+  transition:transform 160ms cubic-bezier(.2,.8,.2,1),box-shadow 160ms ease,background-color 160ms ease,border-color 160ms ease,color 160ms ease,opacity 160ms ease;
+}
+[data-system-console] main button:not(:disabled):hover,
+[data-system-console] main a.rounded-xl:hover,
+[data-system-console] main a.rounded-2xl:hover,
+[data-system-console] main [role='button']:hover{transform:translateY(-1px)}
+[data-system-console] main button:not(:disabled):active,
+[data-system-console] main a.rounded-xl:active,
+[data-system-console] main a.rounded-2xl:active,
+[data-system-console] main [role='button']:active{transform:translateY(0) scale(.985)}
+[data-system-console] main button:focus-visible,
+[data-system-console] main a:focus-visible,
+[data-system-console] main [role='button']:focus-visible{outline:2px solid rgba(59,130,246,.45);outline-offset:2px}
+
+/* Shared rounded control geometry */
+[data-system-console] main input:not([type='checkbox']):not([type='radio']),
+[data-system-console] main select,
+[data-system-console] main textarea{
+  min-height:42px;border-radius:12px;transition:border-color 160ms ease,box-shadow 160ms ease,background-color 160ms ease;
+}
+[data-system-console] main input:not([type='checkbox']):not([type='radio']):hover,
+[data-system-console] main select:hover,
+[data-system-console] main textarea:hover{border-color:#c4cfdd}
+[data-system-console] main input:not([type='checkbox']):not([type='radio']):focus,
+[data-system-console] main select:focus,
+[data-system-console] main textarea:focus{box-shadow:0 0 0 4px rgba(37,99,235,.09)}
+
+/* Select/dropdown triggers */
+[data-system-console] main select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,#64748b 50%),linear-gradient(135deg,#64748b 50%,transparent 50%);background-position:calc(100% - 17px) 50%,calc(100% - 12px) 50%;background-size:5px 5px,5px 5px;background-repeat:no-repeat;padding-right:2.5rem}
+
+/* Shared table rhythm */
+[data-system-console] main table thead th{font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#64748b}
+[data-system-console] main table tbody tr{transition:background-color 140ms ease,box-shadow 140ms ease}
+[data-system-console] main table tbody tr:hover{background:#f8fafc}
+
+/* Small status / action chips */
+[data-system-console] main .rounded-full{transition:background-color 140ms ease,border-color 140ms ease,color 140ms ease,transform 140ms ease}
+
+/* Shared reduced-motion contract */
+@media(prefers-reduced-motion:reduce){
+  [data-system-console] main button,
+  [data-system-console] main a,
+  [data-system-console] main [role='button'],
+  [data-system-console] main input,
+  [data-system-console] main select,
+  [data-system-console] main textarea,
+  [data-system-console] main table tbody tr{transition:none!important;transform:none!important}
+}
