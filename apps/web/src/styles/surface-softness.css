@@ -1,0 +1,24 @@
+/* Shared surface softness: reduce harsh pure-white controls and workspace contrast. */
+:root {
+  --ui-workspace:#f5f7fa;
+  --ui-surface-soft:#f9fafb;
+  --ui-control:#f8fafc;
+  --ui-control-hover:#f1f5f9;
+  --ui-control-border:#d9e1ea;
+}
+body{background:radial-gradient(circle at 100% 0%,color-mix(in srgb,var(--theme-primary-soft) 36%,transparent),transparent 30rem),var(--ui-workspace)}
+main .field, main input, main select, main textarea{background:var(--ui-control);border-color:var(--ui-control-border)}
+main .field:hover, main input:hover, main select:hover, main textarea:hover{background:var(--ui-control-hover)}
+main .field:focus, main input:focus, main select:focus, main textarea:focus{background:#fff}
+.panel,.ui-section,.ui-table-wrap,.table-wrap{background:var(--ui-surface-soft)}
+
+/* Tenant console: theme-aware soft navigation and controls. */
+[data-system-console]{--system-bg:#eef2f7}
+
+/* System Admin: avoid stark white controls while retaining technical/editor surfaces. */
+[data-system-console] input,[data-system-console] select,[data-system-console] textarea{background:#f8fafc}
+[data-system-console] input:hover,[data-system-console] select:hover,[data-system-console] textarea:hover{background:#f1f5f9}
+[data-system-console] textarea.plan-json-editor{background:#020617!important}
+
+/* Header surfaces stay slightly translucent instead of pure white. */
+header.sticky{background:color-mix(in srgb,#f8fafc 93%,transparent)!important}
