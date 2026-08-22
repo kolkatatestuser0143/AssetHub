@@ -75,6 +75,7 @@ model User {
   companyId String @db.Uuid
   accountType String @default("TENANT")
   adminLevel String @default("EMPLOYEE")
+  authSource String @default("LOCAL")
   employeeId String?
   email String
   passwordHash String?
@@ -107,6 +108,7 @@ model User {
   @@unique([tenantId, email])
   @@index([tenantId, companyId])
   @@index([tenantId, adminLevel, isActive])
+  @@index([tenantId, authSource, isActive])
   @@index([accountType, accessTokenHash])
   @@map("users")
 }
