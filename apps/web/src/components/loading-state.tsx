@@ -1,42 +1,24 @@
 'use client';
 
-import { Loader2 } from 'lucide-react';
-
-export type LoadingStateProps = {
-  label?: string;
-  description?: string;
+export type LoadingSkeletonProps = {
+  rows?: number;
   fullPage?: boolean;
-  compact?: boolean;
+  label?: string;
+  className?: string;
 };
 
-export function LoadingState({
-  label = 'Loading',
-  description = 'Preparing this workspace…',
+export function LoadingSkeleton({
+  rows = 5,
   fullPage = false,
-  compact = false,
-}: LoadingStateProps) {
+  label = 'Loading content',
+  className = '',
+}: LoadingSkeletonProps) {
   const content = (
-    <div className={`ui-loading-state${compact ? ' ui-loading-state-compact' : ''}`} role="status" aria-live="polite" aria-label={label}>
-      <div className="ui-loading-spinner" aria-hidden="true">
-        <Loader2 className="h-5 w-5 animate-spin" />
-      </div>
-      <div className="min-w-0">
-        <p className="ui-loading-label">{label}</p>
-        {!compact && description ? <p className="ui-loading-description">{description}</p> : null}
-      </div>
-    </div>
-  );
-
-  return fullPage ? <div className="ui-loading-page">{content}</div> : content;
-}
-
-export function LoadingSkeleton({ rows = 4 }: { rows?: number }) {
-  return (
-    <div className="ui-loading-skeleton" role="status" aria-label="Loading content">
+    <div className={`ui-loading-skeleton ${className}`.trim()} role="status" aria-live="polite" aria-label={label}>
       {Array.from({ length: rows }).map((_, index) => (
         <div key={index} className="ui-loading-skeleton-row">
-          <span className="ui-loading-skeleton-avatar" />
-          <span className="ui-loading-skeleton-lines">
+          <span className="ui-loading-skeleton-avatar" aria-hidden="true" />
+          <span className="ui-loading-skeleton-lines" aria-hidden="true">
             <span />
             <span />
           </span>
@@ -44,4 +26,6 @@ export function LoadingSkeleton({ rows = 4 }: { rows?: number }) {
       ))}
     </div>
   );
+
+  return fullPage ? <div className="ui-loading-skeleton-page">{content}</div> : content;
 }
