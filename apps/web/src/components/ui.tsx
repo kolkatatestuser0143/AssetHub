@@ -7,7 +7,19 @@ import { type ButtonHTMLAttributes, type ReactNode, type SelectHTMLAttributes } 
 export { Modal, ModalBody, ModalFooter } from './modal';
 
 export function PageHeader({ title, description, action, actionHref }: { title: string; description?: string; action?: string; actionHref?: string }) {
-  return <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between page-section-enter"><div className="min-w-0"><h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">{title}</h1>{description ? <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">{description}</p> : null}</div>{action ? actionHref ? <Link href={actionHref} className="btn-primary ui-interactive shrink-0"><Plus size={16}/>{action}</Link> : <button type="button" className="btn-primary ui-interactive shrink-0"><Plus size={16}/>{action}</button> : null}</div>;
+  return <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between page-section-enter"><div className="min-w-0"><h1 className="text-2xl font-bold tracking-tight text-slate-950 sm:text-3xl">{title}</h1>{description ? <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">{description}</p> : null}</div>{action ? actionHref ? <Link href={actionHref} className="btn-primary ui-interactive shrink-0"><Plus size={16}/>{action}</Link> : <button type="button" className="btn-primary ui-interactive shrink-0"><Plus size={16}/>{action}</button> : null} </div>;
+}
+
+export function SectionHeader({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
+  return <div className="ui-section-header flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-sm font-semibold tracking-tight text-slate-900">{title}</h2>{description ? <p className="mt-0.5 text-xs leading-5 text-slate-500">{description}</p> : null}</div>{action ? <div className="shrink-0">{action}</div> : null}</div>;
+}
+
+export function Card({ children, className = '', tone = 'neutral' }: { children: ReactNode; className?: string; tone?: 'neutral' | 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'identity' }) {
+  return <section data-card-tone={tone} className={`panel ui-surface-enter ${className}`}>{children}</section>;
+}
+
+export function MetricCard({ label, value, hint, icon, tone = 'neutral', action }: { label: string; value: ReactNode; hint?: ReactNode; icon?: ReactNode; tone?: 'neutral' | 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'identity'; action?: ReactNode }) {
+  return <Card tone={tone} className="relative overflow-hidden p-5"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[.08em] text-slate-500">{label}</p><p className="mt-2 text-2xl font-bold tracking-tight text-slate-950">{value}</p>{hint ? <p className="mt-1 text-xs leading-5 text-slate-500">{hint}</p> : null}</div>{icon ? <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/80 text-[var(--theme-link)] shadow-sm ring-1 ring-black/5">{icon}</div> : null}</div>{action ? <div className="mt-4">{action}</div> : null}</Card>;
 }
 
 export function Select({ className = '', ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
