@@ -1,1 +1,0 @@
-Temporary checkpoint artifacts are not part of the intended Phase 3 product surface.
