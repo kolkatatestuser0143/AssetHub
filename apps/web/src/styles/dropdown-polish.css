@@ -1,0 +1,46 @@
+/* Shared dropdown/select polish. Native option popovers remain OS/browser rendered. */
+main select,
+main .field select,
+[data-system-console] select {
+  appearance:none;
+  -webkit-appearance:none;
+  min-height:44px;
+  border:1px solid #dfe5ec;
+  border-radius:14px;
+  background:#fff;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23647585' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-position:right 13px center;
+  background-size:16px 16px;
+  padding:0 42px 0 14px;
+  color:#0f172a;
+  box-shadow:0 1px 2px rgba(15,23,42,.035);
+  transition:border-color 160ms ease,box-shadow 160ms ease,background-color 160ms ease,transform 160ms ease;
+}
+main select:hover:not(:disabled),
+main .field select:hover:not(:disabled),
+[data-system-console] select:hover:not(:disabled){
+  background-color:#fbfcfe;
+  border-color:#cbd5e1;
+  box-shadow:0 6px 16px rgba(15,23,42,.055);
+  transform:translateY(-1px);
+}
+main select:focus,
+main .field select:focus,
+[data-system-console] select:focus{
+  background-color:#fff;
+  border-color:var(--theme-primary,#2563eb);
+  box-shadow:0 0 0 4px color-mix(in srgb,var(--theme-primary,#2563eb) 12%,transparent),0 6px 18px rgba(15,23,42,.055);
+  outline:none;
+}
+main select:disabled,
+main .field select:disabled,
+[data-system-console] select:disabled{
+  background-color:#f1f5f9;
+  color:#94a3b8;
+  opacity:.72;
+  cursor:not-allowed;
+}
+main select option{padding:10px 12px;background:#fff;color:#0f172a}
+@media (max-width:767px){main select,main .field select,[data-system-console] select{border-radius:12px;min-height:44px}}
+@media (prefers-reduced-motion:reduce){main select,main .field select,[data-system-console] select{transition:none}}
