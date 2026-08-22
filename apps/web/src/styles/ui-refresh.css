@@ -16,14 +16,30 @@ main .animate-pulse{background:linear-gradient(90deg,#f1f5f9,#f8fafc,#f1f5f9);ba
 .ui-modal-panel>.ui-modal-header{background:linear-gradient(135deg,var(--theme-primary-soft),#fff 70%);border-bottom-color:color-mix(in srgb,var(--theme-primary) 10%,var(--ui-border))}.ui-modal-panel{border-color:var(--ui-border);box-shadow:0 24px 70px rgba(15,23,42,.18)}.ui-modal-panel .ui-modal-footer{background:#fff;border-top-color:var(--ui-border)}.ui-section{border:1px solid var(--ui-border);border-radius:1rem;background:#fff;box-shadow:var(--ui-shadow-sm);overflow:hidden}.ui-section-header{background:linear-gradient(135deg,var(--ui-surface-muted),#fff 75%);border-bottom:1px solid #e2e8f0}
 .badge-info{background:#eff6ff;color:#1d4ed8}.badge-success{background:#ecfdf5;color:#047857}.badge-warning{background:#fffbeb;color:#b45309}.badge-danger{background:#fef2f2;color:#b91c1c}.icon-button{border:1px solid transparent;transition:background-color 140ms ease,border-color 140ms ease,color 140ms ease,transform 140ms ease}.icon-button:hover:not(:disabled){border-color:#e2e8f0;background:#fff;box-shadow:var(--ui-shadow-sm)}
 a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--theme-focus);outline-offset:2px}
-/* Asset 360 / operational detail surfaces: keep the existing page markup, but give its repeated white panels a quieter hierarchy. */
+/* Asset 360 / operational detail surfaces */
 main .max-w-\[1400px\] > header.rounded-3xl{box-shadow:0 12px 32px rgba(15,23,42,.055)}
 main .max-w-\[1400px\] > header.rounded-3xl > div:first-child > div:last-child > label .field{background:linear-gradient(135deg,#fff,var(--ui-surface-muted))}
 main .max-w-\[1400px\] > header.rounded-3xl .rounded-2xl.border-slate-100.bg-slate-50{background:linear-gradient(135deg,#f8fafc,#fff);border-color:#e2e8f0}
-main .max-w-\[1400px\] > header.rounded-3xl + div section.rounded-2xl.border-slate-200.bg-white{box-shadow:var(--ui-shadow-sm)}
+main .max-w-\[1400px\] section.rounded-2xl.border-slate-200.bg-white{box-shadow:var(--ui-shadow-sm)}
 main .max-w-\[1400px\] section.rounded-2xl.border-slate-200.bg-white > div:first-child{border-color:var(--ui-border)}
 main .max-w-\[1400px\] .rounded-2xl.border-slate-100.bg-slate-50{background:linear-gradient(135deg,#f8fafc,#fff)}
 main .max-w-\[1400px\] .rounded-2xl.border-dashed{background:linear-gradient(135deg,#f8fafc,#fff)}
 main .max-w-\[1400px\] .sticky.top-16 button[aria-current=page]{box-shadow:0 1px 3px rgba(15,23,42,.04)}
-@media(max-width:767px){.panel,.ui-section,.ui-table-wrap,.table-wrap{border-radius:.875rem}main table{min-width:760px}}
+/* People & operations */
+main .max-w-\[1500px\] > header{border-radius:1.25rem}
+main .max-w-\[1500px\] > header + .grid > button{border-color:var(--ui-border);background:linear-gradient(135deg,#fff,var(--ui-surface-muted));box-shadow:var(--ui-shadow-sm)}
+main .max-w-\[1500px\] > header + .grid > button:nth-child(1){background:linear-gradient(135deg,#ecfdf5,#fff 78%);border-color:#d1fae5}
+main .max-w-\[1500px\] > header + .grid > button:nth-child(2){background:linear-gradient(135deg,#eff6ff,#fff 78%);border-color:#dbeafe}
+main .max-w-\[1500px\] > header + .grid > button:nth-child(3){background:linear-gradient(135deg,#f5f3ff,#fff 78%);border-color:#e9d5ff}
+main .max-w-\[1500px\] > header + .grid > button:nth-child(4){background:linear-gradient(135deg,#f8fafc,#fff 78%);border-color:#e2e8f0}
+main .max-w-\[1500px\] section.rounded-2xl.border-slate-200.bg-white{box-shadow:var(--ui-shadow-sm)}
+main .max-w-\[1500px\] section.rounded-2xl.border-slate-200.bg-white > div:first-child{background:linear-gradient(135deg,#f8fafc,#fff 78%)}
+main .max-w-\[1500px\] table thead{background:linear-gradient(135deg,#f8fafc,#f1f5f9)}
+main .max-w-\[1500px\] table tbody tr:hover{background:color-mix(in srgb,var(--theme-primary-soft) 38%,white)}
+main .max-w-\[1500px\] .fixed.inset-0.z-50{background:rgba(15,23,42,.42);backdrop-filter:blur(4px)}
+main .max-w-\[1500px\] .fixed.inset-0.z-50 > div{border:1px solid var(--ui-border);border-radius:1.25rem;box-shadow:0 24px 70px rgba(15,23,42,.18)}
+main .max-w-\[1500px\] .fixed.inset-0.z-50 > div > div:first-child{background:linear-gradient(135deg,var(--theme-primary-soft),#fff 72%);border-color:color-mix(in srgb,var(--theme-primary) 10%,var(--ui-border))}
+main .max-w-\[1500px\] > .grid.sm\:grid-cols-3 > .panel{background:linear-gradient(135deg,#fff,var(--ui-surface-muted));border-color:var(--ui-border)}
+main [role=alert]{border-radius:1rem}main [role=status]{border-radius:1rem}
+@media(max-width:767px){.panel,.ui-section,.ui-table-wrap,.table-wrap{border-radius:.875rem}main table{min-width:760px}main .max-w-\[1500px\] .fixed.inset-0.z-50{align-items:flex-end}main .max-w-\[1500px\] .fixed.inset-0.z-50 > div{max-height:92vh;border-radius:1.25rem 1.25rem 0 0}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}
