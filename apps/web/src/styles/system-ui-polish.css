@@ -1,0 +1,25 @@
+/* System Admin console visual contract: authoritative chrome, calm light data surfaces. */
+[data-system-console]{--system-bg:#eef2f7;--system-panel:#fff;--system-muted:#f8fafc;--system-border:#dbe3ee;--system-text:#0b1220;--system-accent:#172033;color:var(--system-text)}
+body:has([data-system-console]){background:radial-gradient(circle at 100% 0%,rgba(51,65,85,.08),transparent 30rem),#eef2f7}
+[data-system-console] main{background:#eef2f7!important}
+[data-system-console] h1{letter-spacing:-.035em}[data-system-console] h2{letter-spacing:-.02em}[data-system-console] h3{letter-spacing:-.015em}
+[data-system-console] .panel,[data-system-console] .ui-section,[data-system-console] .ui-table-wrap,[data-system-console] .table-wrap{border-color:#dbe3ee;box-shadow:0 1px 3px rgba(15,23,42,.045);background:#fff}
+[data-system-console] .ui-section-header{background:linear-gradient(135deg,#e9eef5,#fff 78%)}
+[data-system-console] table thead{background:linear-gradient(135deg,#e9eef5,#f8fafc)}[data-system-console] table tbody tr:hover{background:#f8fafc}
+[data-system-console] nav a[aria-current=page]{background:#172033!important;color:#fff!important;box-shadow:0 2px 8px rgba(15,23,42,.12)}[data-system-console] nav a:not([aria-current=page]):hover{background:#f1f5f9}
+[data-system-console] header.sticky{border-color:#dbe3ee;background:rgba(255,255,255,.96)}
+[data-system-console] input,[data-system-console] select,[data-system-console] textarea{border-color:#dbe3ee;background:#fff}[data-system-console] input:focus,[data-system-console] select:focus,[data-system-console] textarea:focus{border-color:#64748b;box-shadow:0 0 0 4px rgba(71,85,105,.09)}
+[data-system-console] .system-primary{background:#172033;color:#fff;border-color:#172033}[data-system-console] .system-primary:hover{background:#0f172a}
+[data-system-console] .system-critical{background:#fff1f2;border-color:#fecdd3;color:#9f1239}[data-system-console] .system-warning{background:#fffbeb;border-color:#fde68a;color:#92400e}[data-system-console] .system-success{background:#ecfdf5;border-color:#bbf7d0;color:#065f46}[data-system-console] .system-info{background:#eff6ff;border-color:#bfdbfe;color:#1e40af}
+[data-system-console] [role=alert]{background:#fff1f2;border:1px solid #fecdd3;color:#9f1239}[data-system-console] [role=status]{background:#ecfdf5;border:1px solid #bbf7d0;color:#065f46}
+[data-system-console] .animate-pulse{background:linear-gradient(90deg,#e5eaf0,#f8fafc,#e5eaf0);background-size:200% 100%;animation:system-ui-shimmer 1.5s ease-in-out infinite}@keyframes system-ui-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+/* System dashboard KPI palette. */
+[data-system-console] [aria-label='Platform metrics']>*:nth-child(1){background:linear-gradient(135deg,#e9eef5,#fff 78%);border-color:#dbe3ee}
+[data-system-console] [aria-label='Platform metrics']>*:nth-child(2){background:linear-gradient(135deg,#eff6ff,#fff 78%);border-color:#dbeafe}
+[data-system-console] [aria-label='Platform metrics']>*:nth-child(3){background:linear-gradient(135deg,#ecfdf5,#fff 78%);border-color:#d1fae5}
+[data-system-console] [aria-label='Platform metrics']>*:nth-child(4){background:linear-gradient(135deg,#f5f3ff,#fff 78%);border-color:#e9d5ff}
+[data-system-console] [aria-label='Platform metrics']>a,[data-system-console] section>a{border-radius:1rem}
+[data-system-console] code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+[data-system-console] .ui-modal-header{background:linear-gradient(135deg,#eef2f7,#fff 78%)}[data-system-console] .ui-modal-footer{background:#fbfcfe}
+@media(max-width:767px){[data-system-console] table{min-width:760px}[data-system-console] .ui-modal-panel{max-height:calc(100vh - 1.5rem);border-radius:1rem}}
+@media(prefers-reduced-motion:reduce){[data-system-console] button,[data-system-console] .ui-modal-backdrop,[data-system-console] .ui-modal-panel{transition:none!important;animation:none!important}}
