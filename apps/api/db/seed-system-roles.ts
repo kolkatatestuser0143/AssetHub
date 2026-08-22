@@ -28,16 +28,40 @@ async function main() {
   }
 
   for (const [name, keys] of Object.entries(ROLE_PERMISSIONS)) {
-    const role = await prisma.$queryRawUnsafe<any[]>(
-      `INSERT INTO roles (tenant_id, company_id, name, is_system) VALUES ($1::uuid,NULL,$2,true)
-       ON CONFLICT (tenant_id, company_id, name) DO UPDATE SET is_system=true, updated_at=now()
-       RETURNING id`,
+    const existing = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT id FROM roles WHERE tenant_id=$1::uuid AND company_id IS NULL AND name=$2 LIMIT 1`,
       tenant.id,
       name,
     );
-    await prisma.$executeRawUnsafe(`DELETE FROM role_permissions WHERE role_id=$1::uuid`, role[0].id);
+
+    let roleId: string;
+    if (existing[0]?.id) {
+      roleId = String(existing[0].id);
+      await prisma.$executeRawUnsafe(
+        `UPDATE roles SET is_system=true, updated_at=now() WHERE id=$1::uuid`,
+        roleId,
+      );
+    } else {
+      const created = await prisma.$queryRawUnsafe<any[]>(
+        `INSERT INTO roles (tenant_id, company_id, name, is_system)
+         VALUES ($1::uuid,NULL,$2,true)
+         RETURNING id`,
+        tenant.id,
+        name,
+      );
+      if (!created[0]?.id) throw new Error(`Failed to create platform role: ${name}`);
+      roleId = String(created[0].id);
+    }
+
+    await prisma.$executeRawUnsafe(`DELETE FROM role_permissions WHERE role_id=$1::uuid`, roleId);
     for (const key of keys) {
-      await prisma.$executeRawUnsafe(`INSERT INTO role_permissions (role_id, permission_id) SELECT $1::uuid,id FROM permissions WHERE key=$2 ON CONFLICT DO NOTHING`, role[0].id, key);
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO role_permissions (role_id, permission_id)
+         SELECT $1::uuid,id FROM permissions WHERE key=$2
+         ON CONFLICT DO NOTHING`,
+        roleId,
+        key,
+      );
     }
   }
 
