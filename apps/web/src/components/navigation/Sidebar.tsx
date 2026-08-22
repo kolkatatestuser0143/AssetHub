@@ -15,21 +15,21 @@ export function Sidebar({ groups, variant = 'tenant', mobileOpen = false, onMobi
   const panel = dark ? 'bg-slate-950 text-white' : 'bg-[var(--theme-sidebar)] text-[var(--theme-sidebar-text)]';
   const itemActive = dark
     ? 'bg-slate-800 text-white shadow-sm ring-1 ring-inset ring-slate-700/70 before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-r-full before:bg-blue-400'
-    : 'bg-[var(--theme-sidebar-active)] text-white shadow-sm ring-1 ring-inset ring-white/10 before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-r-full before:bg-white/80';
+    : 'bg-[var(--theme-primary)] text-white shadow-sm ring-1 ring-inset ring-[color-mix(in_srgb,var(--theme-primary)_35%,transparent)] before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-r-full before:bg-[var(--theme-primary-contrast,#fff)]';
   const itemIdle = dark
     ? 'text-slate-300 hover:bg-slate-900/90 hover:text-white hover:ring-1 hover:ring-inset hover:ring-slate-800'
-    : 'text-[var(--theme-sidebar-text)] hover:bg-[var(--theme-sidebar-hover)] hover:text-white hover:ring-1 hover:ring-inset hover:ring-white/10';
+    : 'text-[var(--theme-sidebar-text)] hover:bg-[var(--theme-primary-soft)] hover:text-[var(--theme-link)] hover:ring-1 hover:ring-inset hover:ring-[color-mix(in_srgb,var(--theme-primary)_18%,transparent)]';
   const content = <aside className={`flex h-screen min-h-0 w-full flex-col overflow-hidden shadow-2xl ${panel}`}>
     <div className="ui-sidebar-brand flex h-16 shrink-0 items-center border-b border-white/10 px-4">{brand}</div>
     {context ? <div className="ui-sidebar-context shrink-0 border-b border-white/10 px-4 py-3">{context}</div> : null}
     <nav aria-label={ariaLabel} className="ui-sidebar-nav h-0 min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 [scrollbar-gutter:stable] [scrollbar-width:thin]">
       {groups.map((group, groupIndex) => <section key={group.label} className="ui-sidebar-group mb-5 last:mb-0" style={{ animationDelay: `${Math.min(groupIndex * 35, 210)}ms` }}>
-        <p className={`px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] ${dark ? 'text-slate-500' : 'text-slate-500'}`}>{group.label}</p>
+        <p className={`px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] ${dark ? 'text-slate-500' : 'text-[color:color-mix(in_srgb,var(--theme-sidebar-text)_62%,transparent)]'}`}>{group.label}</p>
         <div className="space-y-1">
           {group.items.map((item, itemIndex) => {
             const active = item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`);
             const Icon = item.icon;
-            return <Link key={item.href} href={item.href} onClick={onMobileClose} aria-current={active ? 'page' : undefined} className={`ui-sidebar-item relative motion-focus flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-[background-color,color,border-color,box-shadow,transform] duration-150 ${active ? itemActive : itemIdle}`} style={{ animationDelay: `${Math.min(itemIndex * 20, 160)}ms` }}><Icon size={17} aria-hidden="true"/><span className="min-w-0 flex-1">{item.label}</span></Link>;
+            return <Link key={item.href} href={item.href} onClick={onMobileClose} aria-current={active ? 'page' : undefined} className={`ui-sidebar-item relative motion-focus flex items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-sm font-medium transition-[background-color,color,border-color,box-shadow,transform] duration-150 ${active ? itemActive : itemIdle}`} style={{ animationDelay: `${Math.min(itemIndex * 20, 160)}ms` }}><Icon size={17} aria-hidden="true"/><span className="min-w-0 flex-1">{item.label}</span></Link>;
           })}
         </div>
       </section>)}
