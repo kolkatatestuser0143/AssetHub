@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { LayoutDashboard, Laptop, Building2, Users, ShieldCheck, Settings, FileClock, KeyRound, Boxes, MapPin, Truck, ClipboardCheck, LogOut, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Laptop, Building2, Users, ShieldCheck, Settings, FileClock, KeyRound, Boxes, MapPin, Truck, ClipboardCheck, LogOut, Menu, X, Workflow } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import TenantBackground from './tenant-background';
 import CompanyScopeControl from './company-scope-control';
@@ -14,11 +14,14 @@ type NavGroup = { label: string; items: NavItem[] };
 
 const groups: NavGroup[] = [
   { label: 'Workspace', items: [{ href: '/dashboard', label: 'Dashboard', Icon: LayoutDashboard, levels: ['EMPLOYEE', 'COMPANY_ADMIN', 'TENANT_ADMIN'] }] },
-  { label: 'Asset Management', items: [
+  { label: 'Inventory', items: [
     { href: '/assets', label: 'Assets', Icon: Laptop, levels: ['EMPLOYEE', 'COMPANY_ADMIN', 'TENANT_ADMIN'] },
     { href: '/asset-types', label: 'Asset Types', Icon: Boxes, levels: ['COMPANY_ADMIN', 'TENANT_ADMIN'] },
     { href: '/vendors', label: 'Vendors', Icon: Truck, levels: ['COMPANY_ADMIN', 'TENANT_ADMIN'] },
-    { href: '/assignments', label: 'Assignments', Icon: ClipboardCheck, levels: ['EMPLOYEE', 'COMPANY_ADMIN', 'TENANT_ADMIN'] },
+  ] },
+  { label: 'Operations', items: [
+    { href: '/assignments', label: 'Asset Operations', Icon: Workflow, levels: ['EMPLOYEE', 'COMPANY_ADMIN', 'TENANT_ADMIN'] },
+    { href: '/assets/transfers', label: 'Transfers', Icon: ClipboardCheck, levels: ['COMPANY_ADMIN', 'TENANT_ADMIN'] },
   ] },
   { label: 'People & Organization', items: [
     { href: '/employees', label: 'Employees', Icon: Users, levels: ['COMPANY_ADMIN', 'TENANT_ADMIN'] },
