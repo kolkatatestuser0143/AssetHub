@@ -1,0 +1,7 @@
+/* Soft-white surface pass: retain the white UI language without stark pure-white contrast. */
+:root{--ui-surface:#fcfdff;--ui-surface-soft:#fbfcfe;--ui-field:#fafcff}
+.panel,.ui-section,.ui-table-wrap,.table-wrap{background:var(--ui-surface)!important}
+main .field, main select.field, main input, main select, main textarea{background:var(--ui-field)}
+main .field:hover, main select.field:hover{background:var(--ui-surface-soft)}
+[data-system-console] .panel,[data-system-console] .ui-section,[data-system-console] .ui-table-wrap,[data-system-console] .table-wrap{background:var(--ui-surface)!important}
+[data-system-console] input,[data-system-console] select,[data-system-console] textarea{background:var(--ui-field)}
