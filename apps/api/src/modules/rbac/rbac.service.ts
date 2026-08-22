@@ -46,10 +46,16 @@ export class RbacService {
     });
   }
 
+  private async ensureRoleManagementScope(auth: AuthContext, role: { companyId?: string | null; isSystem?: boolean }) {
+    if (role.companyId == null && auth.adminLevel !== 'TENANT_ADMIN') throw new ForbiddenException('Only a Tenant Administrator can manage tenant-wide roles');
+    if (role.isSystem && auth.adminLevel !== 'TENANT_ADMIN') throw new ForbiddenException('Only a Tenant Administrator can modify built-in tenant roles');
+  }
+
   async updateRole(auth: AuthContext, roleId: string, name: string, permissionKeys: string[]) {
     await this.entitlements.requireFeature(auth.tenantId, 'custom_roles_enabled');
     this.validatePermissionKeys(permissionKeys);
     const role=await this.findTenantRole(auth,roleId); if(!role) throw new NotFoundException('Role not found in your scope');
+    await this.ensureRoleManagementScope(auth, role);
     const cleanName=name.trim(); if(!cleanName) throw new ConflictException('Role name is required');
     const unique=[...new Set(permissionKeys.map(k=>String(k).trim()).filter(Boolean))];
     if(cleanName.toLowerCase()==='tenant admin') {
@@ -70,9 +76,37 @@ export class RbacService {
     const rows=await this.prisma.$queryRawUnsafe<any[]>(`SELECT r.id,r.company_id AS "companyId",r.is_system AS "isSystem" FROM roles r WHERE r.id=$1::uuid AND r.tenant_id=$2::uuid AND ($3::uuid IS NULL OR r.company_id=$3::uuid OR r.company_id IS NULL) AND NOT EXISTS (SELECT 1 FROM role_permissions rp INNER JOIN permissions p ON p.id=rp.permission_id WHERE rp.role_id=r.id AND p.key LIKE 'platform:%')`,roleId,auth.tenantId,auth.crossCompany?null:auth.companyId); return rows[0];
   }
 
-  async assignRole(auth: AuthContext,userId:string,roleId:string){await this.entitlements.requireFeature(auth.tenantId,'custom_roles_enabled');const role=await this.findTenantRole(auth,roleId);if(!role)throw new NotFoundException('Role not found in your scope');const user=await this.prisma.user.findFirst({where:{id:userId,tenantId:auth.tenantId,...(auth.crossCompany?{}:{companyId:auth.companyId}),accountType:'TENANT'}});if(!user)throw new NotFoundException('User not found in your scope');if(role.companyId&&role.companyId!==user.companyId)throw new ForbiddenException('Role belongs to a different company');const ids=new Set(user.roleIds);if(ids.has(roleId))throw new ConflictException('Role already assigned');ids.add(roleId);return this.prisma.user.update({where:{id:userId},data:{roleIds:[...ids],authVersion:{increment:1}}});}
+  async effectiveAccess(auth: AuthContext, userId: string) {
+    const user = await this.prisma.user.findFirst({ where: { id: userId, tenantId: auth.tenantId, accountType: 'TENANT', ...(auth.crossCompany ? {} : { companyId: auth.companyId }) }, select: { id: true, adminLevel: true, companyId: true, roleIds: true } });
+    if (!user) throw new NotFoundException('User not found');
+    if (!user.roleIds.length) return { userId: user.id, adminLevel: user.adminLevel, permissions: [], scopes: [], crossCompany: false, roles: [] };
+    const rows:any[] = await this.prisma.$queryRawUnsafe(`SELECT r.id, r.name, r.company_id AS "companyId", r.is_system AS "isSystem", p.key AS "permissionKey", p.name AS "permissionName", p.description AS "permissionDescription", rs.scope_type AS "scopeType", rs.company_id AS "scopeCompanyId", rs.location_id AS "scopeLocationId"
+      FROM roles r
+      LEFT JOIN role_permissions rp ON rp.role_id=r.id
+      LEFT JOIN permissions p ON p.id=rp.permission_id AND p.key NOT LIKE 'platform:%'
+      LEFT JOIN role_scopes rs ON rs.role_id=r.id
+      WHERE r.tenant_id=$1::uuid AND r.id=ANY($2::uuid[])
+        AND (r.company_id IS NULL OR r.company_id=$3::uuid)
+        AND NOT EXISTS (SELECT 1 FROM role_permissions blocked_rp JOIN permissions blocked_p ON blocked_p.id=blocked_rp.permission_id WHERE blocked_rp.role_id=r.id AND blocked_p.key LIKE 'platform:%')
+      ORDER BY r.name,p.key`, auth.tenantId, user.roleIds, user.companyId);
+    const permissions = new Map<string,{ key:string; name:string|null; description:string|null }>();
+    const roleMap = new Map<string,any>(); const scopeMap = new Map<string,any>(); let crossCompany = false;
+    for (const row of rows) {
+      if (!roleMap.has(String(row.id))) roleMap.set(String(row.id), { id:String(row.id), name:row.name, companyId:row.companyId?String(row.companyId):null, isSystem:Boolean(row.isSystem), permissions:[], scopes:[] });
+      const role = roleMap.get(String(row.id));
+      if (row.permissionKey) { const key=String(row.permissionKey); if(!permissions.has(key)) permissions.set(key,{key,name:row.permissionName??null,description:row.permissionDescription??null}); if(!role.permissions.some((p:any)=>p.key===key)) role.permissions.push({key,name:row.permissionName??null,description:row.permissionDescription??null}); }
+      if (row.scopeType || row.scopeCompanyId || row.scopeLocationId) {
+        const scope={scopeType:row.scopeType,companyId:row.scopeCompanyId?String(row.scopeCompanyId):null,locationId:row.scopeLocationId?String(row.scopeLocationId):null};
+        const key=JSON.stringify(scope); if(!scopeMap.has(key)) scopeMap.set(key,scope); if(!role.scopes.some((s:any)=>JSON.stringify(s)===key)) role.scopes.push(scope);
+        if (row.scopeType==='TENANT') crossCompany=true;
+      } else if (!row.companyId) crossCompany=true;
+    }
+    return { userId:user.id, adminLevel:user.adminLevel, crossCompany, permissions:[...permissions.values()], scopes:[...scopeMap.values()], roles:[...roleMap.values()] };
+  }
+
+  async assignRole(auth: AuthContext,userId:string,roleId:string){await this.entitlements.requireFeature(auth.tenantId,'custom_roles_enabled');const role=await this.findTenantRole(auth,roleId);if(!role)throw new NotFoundException('Role not found in your scope');const user=await this.prisma.user.findFirst({where:{id:userId,tenantId:auth.tenantId,...(auth.crossCompany?{}:{companyId:auth.companyId}),accountType:'TENANT'}});if(!user)throw new NotFoundException('User not found in your scope');if(role.companyId&&role.companyId!==user.companyId)throw new ForbiddenException('Role belongs to a different company');idsCheck: { const ids=new Set(user.roleIds); if(ids.has(roleId))throw new ConflictException('Role already assigned'); ids.add(roleId); return this.prisma.user.update({where:{id:userId},data:{roleIds:[...ids],authVersion:{increment:1}}}); }}
   async unassignRole(auth:AuthContext,userId:string,roleId:string){await this.entitlements.requireFeature(auth.tenantId,'custom_roles_enabled');const role=await this.findTenantRole(auth,roleId);if(!role)throw new NotFoundException('Role not found in your scope');const user=await this.prisma.user.findFirst({where:{id:userId,tenantId:auth.tenantId,...(auth.crossCompany?{}:{companyId:auth.companyId}),accountType:'TENANT'}});if(!user)throw new NotFoundException('User not found in your scope');if(role.companyId&&role.companyId!==user.companyId)throw new ForbiddenException('Role belongs to a different company');const ids=user.roleIds.filter(id=>id!==roleId);if(ids.length===user.roleIds.length)throw new ConflictException('Role is not assigned to this user');if(role.isSystem&&roleId&&ids.length===0&&user.adminLevel==='TENANT_ADMIN')throw new ForbiddenException('Tenant Admin must retain at least one role');return this.prisma.user.update({where:{id:userId},data:{roleIds:ids,authVersion:{increment:1}}});}
   async listRoleScopes(auth:AuthContext,roleId:string){await this.entitlements.requireFeature(auth.tenantId,'custom_roles_enabled');const role=await this.findTenantRole(auth,roleId);if(!role)throw new NotFoundException('Role not found in your scope');return this.prisma.$queryRawUnsafe(`SELECT id,scope_type AS "scopeType",company_id AS "companyId",location_id AS "locationId" FROM role_scopes WHERE role_id=$1::uuid ORDER BY scope_type,company_id,location_id`,roleId);}
-  async setRoleScopes(auth:AuthContext,roleId:string,scopes:RoleScopeInput[]){await this.entitlements.requireFeature(auth.tenantId,'custom_roles_enabled');const role=await this.findTenantRole(auth,roleId);if(!role)throw new NotFoundException('Role not found in your scope');for(const scope of scopes){if(scope.scopeType==='TENANT')continue;if(scope.scopeType==='COMPANY'){if(!scope.companyId)throw new ForbiddenException('Company scope requires companyId');const company=await this.prisma.company.findFirst({where:{id:scope.companyId,tenantId:auth.tenantId}});if(!company)throw new NotFoundException('Company scope not found');}if(scope.scopeType==='LOCATION'){if(!scope.locationId)throw new ForbiddenException('Location scope requires locationId');const location=await this.prisma.location.findFirst({where:{id:scope.locationId,site:{tenantId:auth.tenantId}},include:{site:{select:{companyId:true}}}});if(!location)throw new NotFoundException('Location scope not found');if(scope.companyId&&scope.companyId!==location.site.companyId)throw new ForbiddenException('Location does not belong to the supplied company');}}
+  async setRoleScopes(auth:AuthContext,roleId:string,scopes:RoleScopeInput[]){await this.entitlements.requireFeature(auth.tenantId,'custom_roles_enabled');const role=await this.findTenantRole(auth,roleId);if(!role)throw new NotFoundException('Role not found in your scope');await this.ensureRoleManagementScope(auth, role);for(const scope of scopes){if(scope.scopeType==='TENANT')continue;if(scope.scopeType==='COMPANY'){if(!scope.companyId)throw new ForbiddenException('Company scope requires companyId');const company=await this.prisma.company.findFirst({where:{id:scope.companyId,tenantId:auth.tenantId}});if(!company)throw new NotFoundException('Company scope not found');}if(scope.scopeType==='LOCATION'){if(!scope.locationId)throw new ForbiddenException('Location scope requires locationId');const location=await this.prisma.location.findFirst({where:{id:scope.locationId,site:{tenantId:auth.tenantId}},include:{site:{select:{companyId:true}}}});if(!location)throw new NotFoundException('Location scope not found');if(scope.companyId&&scope.companyId!==location.site.companyId)throw new ForbiddenException('Location does not belong to the supplied company');}}
     await this.prisma.$transaction(async tx=>{await tx.$executeRawUnsafe(`DELETE FROM role_scopes WHERE role_id=$1::uuid`,roleId);for(const scope of scopes)await tx.$executeRawUnsafe(`INSERT INTO role_scopes(role_id,tenant_id,company_id,location_id,scope_type) VALUES($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5) ON CONFLICT DO NOTHING`,roleId,auth.tenantId,scope.companyId??null,scope.locationId??null,scope.scopeType);});return this.listRoleScopes(auth,roleId);}
 }
