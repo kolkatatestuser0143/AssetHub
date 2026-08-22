@@ -1,0 +1,1 @@
+Phase 3 central RBAC presentation helpers. Use RoleChip for human-readable role names and EffectivePermissionsSummary for friendly permission labels. Technical permission keys should only appear in detailed picker/tooltips, not primary administration surfaces.
