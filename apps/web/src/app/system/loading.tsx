@@ -1,5 +1,5 @@
-import { LoadingState } from '../../components/loading-state';
+import { LoadingSkeleton } from '../../components/loading-state';
 
 export default function Loading() {
-  return <LoadingState fullPage label="Loading System Console" description="Preparing platform control center…" />;
+  return <LoadingSkeleton fullPage rows={6} label="Loading System Console" />;
 }
