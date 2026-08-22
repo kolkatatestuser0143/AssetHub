@@ -1,0 +1,23 @@
+/* Final UX hardening: shared Tenant + System Console polish */
+.ui-breadcrumbs{min-width:0}
+.ui-breadcrumbs a,.ui-breadcrumbs span{transition:color 140ms ease,opacity 140ms ease}
+.panel,.ui-section,.ui-table-wrap,.table-wrap{transition:transform 180ms cubic-bezier(.2,.8,.2,1),box-shadow 180ms ease,border-color 180ms ease}
+.panel:hover,.ui-section:hover{box-shadow:0 10px 28px rgba(15,23,42,.07)}
+[data-card-tone]::before{content:'';display:block;height:3px;margin:-1px -1px 10px;border-radius:12px 12px 0 0;background:linear-gradient(90deg,var(--theme-primary),color-mix(in srgb,var(--theme-primary) 18%,white),transparent);opacity:.8}
+[data-card-tone=success]::before{background:linear-gradient(90deg,#10b981,#34d399,transparent)}
+[data-card-tone=warning]::before{background:linear-gradient(90deg,#f59e0b,#fbbf24,transparent)}
+[data-card-tone=danger]::before{background:linear-gradient(90deg,#ef4444,#fb7185,transparent)}
+[data-card-tone=info]::before{background:linear-gradient(90deg,#0ea5e9,#38bdf8,transparent)}
+[data-card-tone=identity]::before{background:linear-gradient(90deg,#8b5cf6,#a78bfa,transparent)}
+.metric-icon{transition:transform 180ms ease,box-shadow 180ms ease}
+.panel:hover .metric-icon{transform:translateY(-2px) scale(1.03);box-shadow:0 8px 18px rgba(15,23,42,.08)}
+.sticky-action-bar{position:sticky;bottom:12px;z-index:25;border:1px solid var(--ui-border,#e2e8f0);border-radius:1rem;background:color-mix(in srgb,#fff 94%,var(--theme-primary-soft));box-shadow:0 14px 34px rgba(15,23,42,.12);backdrop-filter:blur(10px)}
+.unsaved-dot{width:7px;height:7px;border-radius:999px;background:#f59e0b;box-shadow:0 0 0 3px #fffbeb;animation:ux-pulse 1.8s ease-in-out infinite}
+[data-system-theme] .sticky-action-bar{background:color-mix(in srgb,#fff 96%,#eff6ff)}
+[data-system-theme] .panel:hover{box-shadow:0 10px 30px rgba(15,23,42,.09)}
+.icon-tooltip{position:relative}
+.icon-tooltip[data-tooltip]::after{content:attr(data-tooltip);position:absolute;pointer-events:none;white-space:nowrap;left:50%;bottom:calc(100% + 8px);transform:translate(-50%,4px);opacity:0;padding:.35rem .55rem;border-radius:.5rem;background:#0f172a;color:#fff;font-size:.7rem;font-weight:600;box-shadow:0 8px 18px rgba(15,23,42,.18);transition:opacity 120ms ease,transform 120ms ease;z-index:60}
+.icon-tooltip[data-tooltip]:hover::after,.icon-tooltip[data-tooltip]:focus-visible::after{opacity:1;transform:translate(-50%,0)}
+@keyframes ux-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.55;transform:scale(.92)}}
+@media(max-width:767px){.sticky-action-bar{bottom:8px;margin-left:-2px;margin-right:-2px;border-radius:.875rem}.ui-breadcrumbs{display:none!important}}
+@media(prefers-reduced-motion:reduce){.panel,.ui-section,.ui-table-wrap,.table-wrap,.metric-icon,.ui-breadcrumbs a,.ui-breadcrumbs span{transition:none!important}.unsaved-dot{animation:none!important}}
