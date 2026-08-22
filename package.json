@@ -10,7 +10,11 @@
     "db:seed": "pnpm --filter api db:seed",
     "db:migrate": "pnpm --filter api prisma:deploy"
   },
-  "dependencies": {
-    "mongodb": "^7.5.0"
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma"
+    ]
   }
 }
