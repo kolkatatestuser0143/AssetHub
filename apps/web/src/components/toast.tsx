@@ -11,11 +11,11 @@ type ToastContextValue = { toast: (input: ToastInput) => string; dismiss: (id: s
 const ToastContext = createContext<ToastContextValue | null>(null);
 
 const config = {
-  success: { Icon: CheckCircle2, box: 'border-emerald-200 bg-emerald-50/95', icon: 'bg-white text-emerald-600', title: 'text-emerald-950' },
-  error: { Icon: XCircle, box: 'border-red-200 bg-red-50/95', icon: 'bg-white text-red-600', title: 'text-red-950' },
-  warning: { Icon: TriangleAlert, box: 'border-amber-200 bg-amber-50/95', icon: 'bg-white text-amber-600', title: 'text-amber-950' },
-  info: { Icon: Info, box: 'border-sky-200 bg-sky-50/95', icon: 'bg-white text-sky-600', title: 'text-sky-950' },
-  loading: { Icon: Loader2, box: 'border-slate-200 bg-white/95', icon: 'bg-slate-50 text-slate-600', title: 'text-slate-950' },
+  success: { Icon: CheckCircle2, box: 'border-emerald-200 bg-emerald-50/95', icon: 'bg-white text-emerald-600', title: 'text-emerald-950', bar: 'bg-emerald-500' },
+  error: { Icon: XCircle, box: 'border-red-200 bg-red-50/95', icon: 'bg-white text-red-600', title: 'text-red-950', bar: 'bg-red-500' },
+  warning: { Icon: TriangleAlert, box: 'border-amber-200 bg-amber-50/95', icon: 'bg-white text-amber-600', title: 'text-amber-950', bar: 'bg-amber-500' },
+  info: { Icon: Info, box: 'border-sky-200 bg-sky-50/95', icon: 'bg-white text-sky-600', title: 'text-sky-950', bar: 'bg-sky-500' },
+  loading: { Icon: Loader2, box: 'border-slate-200 bg-white/95', icon: 'bg-slate-50 text-slate-600', title: 'text-slate-950', bar: 'bg-slate-400' },
 } as const;
 
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -54,9 +54,10 @@ function ToastItemView({ item, onDismiss }: { item: ToastItem; onDismiss: (id: s
     const timer = window.setTimeout(() => onDismiss(item.id), item.duration ?? 4200);
     return () => window.clearTimeout(timer);
   }, [item.id, item.duration, onDismiss, tone]);
-  return <div className={`ui-toast flex items-start gap-3 rounded-2xl border p-3.5 shadow-xl backdrop-blur ${entry.box}`} role={tone === 'error' ? 'alert' : 'status'}>
+  return <div className={`ui-toast relative flex items-start gap-3 overflow-hidden rounded-2xl border p-3.5 shadow-xl backdrop-blur ${entry.box}`} role={tone === 'error' ? 'alert' : 'status'}>
     <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl shadow-sm ${entry.icon}`}><Icon size={17} className={tone === 'loading' ? 'animate-spin' : ''} /></div>
     <div className="min-w-0 flex-1"><p className={`text-sm font-semibold ${entry.title}`}>{item.title}</p>{item.message ? <p className="mt-0.5 text-xs leading-5 text-slate-600">{item.message}</p> : null}</div>
     <button type="button" className="icon-button -mr-1 -mt-1 h-8 min-h-8 w-8 min-w-8" aria-label="Dismiss notification" onClick={() => onDismiss(item.id)}><X size={15} /></button>
+    {tone !== 'loading' && item.duration !== 0 ? <span aria-hidden="true" className={`absolute inset-x-0 bottom-0 h-0.5 origin-left ${entry.bar} ui-toast-progress`} style={{ animationDuration: `${item.duration ?? 4200}ms` }} /> : null}
   </div>;
 }
