@@ -9,6 +9,7 @@ import '../styles/search-polish.css';
 import '../styles/surface-softness.css';
 import '../styles/motion-enhancements.css';
 import '../styles/final-ux-hardening.css';
+import '../styles/dropdown-polish.css';
 import ThemeDialogBridge from '../components/theme-dialog-bridge';
 import AssetCreateBridge from '../components/assets/asset-create-bridge';
 import BackToTop from '../components/back-to-top';
