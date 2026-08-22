@@ -13,8 +13,12 @@ export function Sidebar({ groups, variant = 'tenant', mobileOpen = false, onMobi
   const pathname = usePathname();
   const dark = variant === 'system';
   const panel = dark ? 'bg-slate-950 text-white' : 'bg-[var(--theme-sidebar)] text-[var(--theme-sidebar-text)]';
-  const itemActive = dark ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-[var(--theme-sidebar-active)] text-white shadow-sm';
-  const itemIdle = dark ? 'text-slate-300 hover:bg-white/5 hover:text-white' : 'hover:bg-[var(--theme-sidebar-hover)] hover:text-white';
+  const itemActive = dark
+    ? 'bg-slate-800 text-white shadow-sm ring-1 ring-inset ring-slate-700/70 before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-r-full before:bg-blue-400'
+    : 'bg-[var(--theme-sidebar-active)] text-white shadow-sm ring-1 ring-inset ring-white/10 before:absolute before:left-0 before:top-2 before:bottom-2 before:w-0.5 before:rounded-r-full before:bg-white/80';
+  const itemIdle = dark
+    ? 'text-slate-300 hover:bg-slate-900/90 hover:text-white hover:ring-1 hover:ring-inset hover:ring-slate-800'
+    : 'text-[var(--theme-sidebar-text)] hover:bg-[var(--theme-sidebar-hover)] hover:text-white hover:ring-1 hover:ring-inset hover:ring-white/10';
   const content = <aside className={`flex h-screen min-h-0 w-full flex-col overflow-hidden shadow-2xl ${panel}`}>
     <div className="ui-sidebar-brand flex h-16 shrink-0 items-center border-b border-white/10 px-4">{brand}</div>
     {context ? <div className="ui-sidebar-context shrink-0 border-b border-white/10 px-4 py-3">{context}</div> : null}
@@ -25,7 +29,7 @@ export function Sidebar({ groups, variant = 'tenant', mobileOpen = false, onMobi
           {group.items.map((item, itemIndex) => {
             const active = item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`);
             const Icon = item.icon;
-            return <Link key={item.href} href={item.href} onClick={onMobileClose} aria-current={active ? 'page' : undefined} className={`ui-sidebar-item motion-focus flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${active ? itemActive : itemIdle}`} style={{ animationDelay: `${Math.min(itemIndex * 20, 160)}ms` }}><Icon size={17} aria-hidden="true"/><span className="min-w-0 flex-1">{item.label}</span></Link>;
+            return <Link key={item.href} href={item.href} onClick={onMobileClose} aria-current={active ? 'page' : undefined} className={`ui-sidebar-item relative motion-focus flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-[background-color,color,border-color,box-shadow,transform] duration-150 ${active ? itemActive : itemIdle}`} style={{ animationDelay: `${Math.min(itemIndex * 20, 160)}ms` }}><Icon size={17} aria-hidden="true"/><span className="min-w-0 flex-1">{item.label}</span></Link>;
           })}
         </div>
       </section>)}
