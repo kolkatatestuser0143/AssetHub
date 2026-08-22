@@ -15,7 +15,7 @@ export class RbacGuard implements CanActivate {
     const authContext: AuthContext | undefined = req.authContext;
     if (!authContext) throw new ForbiddenException('No auth context resolved');
 
-    const user = await this.db.user.findFirst({ where: { id: authContext.userId, tenantId: authContext.tenantId }, select: { roleIds: true, companyId: true } });
+    const user = await this.db.user.findFirst({ where: { id: authContext.userId, tenantId: authContext.tenantId, accountType: 'TENANT' }, select: { roleIds: true, companyId: true } });
     if (!user?.roleIds?.length) throw new ForbiddenException(`Missing permission: ${required}`);
 
     const roles = await this.db.$queryRawUnsafe<any[]>(
@@ -26,17 +26,22 @@ export class RbacGuard implements CanActivate {
        LEFT JOIN permissions p ON p.id = rp.permission_id
        LEFT JOIN role_scopes rs ON rs.role_id = r.id
        WHERE r.tenant_id = $1::uuid AND r.id = ANY($2::uuid[])
-         AND (r.company_id IS NULL OR r.company_id = $3::uuid)`,
+         AND (r.company_id IS NULL OR r.company_id = $3::uuid)
+         AND NOT EXISTS (
+           SELECT 1 FROM role_permissions blocked_rp
+           INNER JOIN permissions blocked_p ON blocked_p.id = blocked_rp.permission_id
+           WHERE blocked_rp.role_id = r.id AND blocked_p.key LIKE 'platform:%'
+         )`,
       authContext.tenantId, user.roleIds, user.companyId,
     );
 
-    const permissions = new Set<string>(authContext.permissions ?? []);
-    const companyIds = new Set<string>(authContext.allowedCompanyIds ?? []);
-    const locationIds = new Set<string>(authContext.allowedLocationIds ?? []);
-    let crossCompany = authContext.crossCompany;
+    const permissions = new Set<string>();
+    const companyIds = new Set<string>();
+    const locationIds = new Set<string>();
+    let crossCompany = false;
 
     for (const role of roles) {
-      if (role.permissionKey) permissions.add(String(role.permissionKey));
+      if (role.permissionKey && !String(role.permissionKey).startsWith('platform:')) permissions.add(String(role.permissionKey));
       if (role.scopeType === 'TENANT' || (role.scopeType == null && role.companyId == null)) crossCompany = true;
       if (role.scopeCompanyId) companyIds.add(String(role.scopeCompanyId));
       if (role.scopeLocationId) locationIds.add(String(role.scopeLocationId));
