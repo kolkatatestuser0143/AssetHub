@@ -1,0 +1,121 @@
+:root {
+  --motion-fast: 140ms;
+  --motion-standard: 190ms;
+  --motion-slow: 240ms;
+  --ui-card-shadow: 0 8px 24px rgba(15, 23, 42, .06);
+  --ui-card-shadow-hover: 0 14px 34px rgba(15, 23, 42, .10);
+}
+
+.panel,
+.ui-section,
+.ui-table-wrap,
+.table-wrap,
+[data-card-tone] {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  transition: transform var(--motion-standard) ease, box-shadow var(--motion-standard) ease, border-color var(--motion-standard) ease, background-color var(--motion-standard) ease;
+}
+
+.panel::before,
+.ui-section::before,
+[data-card-tone]::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  z-index: -1;
+  opacity: .75;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--theme-primary) 68%, transparent), color-mix(in srgb, var(--theme-primary-soft) 70%, transparent), transparent);
+}
+
+.panel:hover,
+.ui-section:hover,
+[data-card-tone]:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--ui-card-shadow-hover);
+}
+
+[data-card-tone=primary] { background: linear-gradient(135deg, color-mix(in srgb, var(--theme-primary-soft) 88%, white), #fff 68%); }
+[data-card-tone=info] { background: linear-gradient(135deg, #eaf2ff, #fff 68%); }
+[data-card-tone=success] { background: linear-gradient(135deg, #e9fbf2, #fff 68%); }
+[data-card-tone=warning] { background: linear-gradient(135deg, #fff4d6, #fff 68%); }
+[data-card-tone=danger] { background: linear-gradient(135deg, #ffe8e8, #fff 68%); }
+[data-card-tone=identity] { background: linear-gradient(135deg, #efe9ff, #fff 68%); }
+[data-card-tone=neutral] { background: linear-gradient(135deg, #eef2f7, #fff 68%); }
+
+main table tbody tr,
+.ui-interactive,
+.btn-primary,
+.btn-secondary,
+.icon-button,
+button,
+a {
+  transition: transform var(--motion-fast) ease, box-shadow var(--motion-fast) ease, background-color var(--motion-fast) ease, border-color var(--motion-fast) ease, color var(--motion-fast) ease;
+}
+
+.btn-primary:hover:not(:disabled),
+.btn-secondary:hover:not(:disabled),
+.icon-button:hover:not(:disabled),
+.ui-interactive:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.btn-primary:active:not(:disabled),
+.btn-secondary:active:not(:disabled),
+.icon-button:active:not(:disabled),
+.ui-interactive:active:not(:disabled) {
+  transform: translateY(0) scale(.985);
+}
+
+main table tbody tr:hover td {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--theme-primary) 7%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--theme-primary) 7%, transparent);
+}
+
+.page-section-enter {
+  animation: page-enter 220ms ease both;
+}
+
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.ui-modal-panel {
+  animation: modal-enter 190ms cubic-bezier(.22,1,.36,1) both;
+}
+
+@keyframes modal-enter {
+  from { opacity: 0; transform: translateY(8px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+[role=alert],
+[role=status] {
+  animation: notice-enter 180ms ease both;
+}
+
+@keyframes notice-enter {
+  from { opacity: 0; transform: translateY(-3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.password-eye-button {
+  transition: transform var(--motion-fast) ease, background-color var(--motion-fast) ease, color var(--motion-fast) ease;
+}
+.password-eye-button:hover { transform: scale(1.04); }
+.password-eye-button:active { transform: scale(.94); }
+
+@media (prefers-reduced-motion: reduce) {
+  .panel,
+  .ui-section,
+  [data-card-tone],
+  .page-section-enter,
+  .ui-modal-panel,
+  [role=alert],
+  [role=status] {
+    animation: none !important;
+    transform: none !important;
+    transition: none !important;
+  }
+}
