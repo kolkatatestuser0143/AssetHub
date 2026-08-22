@@ -16,5 +16,14 @@ main .animate-pulse{background:linear-gradient(90deg,#f1f5f9,#f8fafc,#f1f5f9);ba
 .ui-modal-panel>.ui-modal-header{background:linear-gradient(135deg,var(--theme-primary-soft),#fff 70%);border-bottom-color:color-mix(in srgb,var(--theme-primary) 10%,var(--ui-border))}.ui-modal-panel{border-color:var(--ui-border);box-shadow:0 24px 70px rgba(15,23,42,.18)}.ui-modal-panel .ui-modal-footer{background:#fff;border-top-color:var(--ui-border)}.ui-section{border:1px solid var(--ui-border);border-radius:1rem;background:#fff;box-shadow:var(--ui-shadow-sm);overflow:hidden}.ui-section-header{background:linear-gradient(135deg,var(--ui-surface-muted),#fff 75%);border-bottom:1px solid #e2e8f0}
 .badge-info{background:#eff6ff;color:#1d4ed8}.badge-success{background:#ecfdf5;color:#047857}.badge-warning{background:#fffbeb;color:#b45309}.badge-danger{background:#fef2f2;color:#b91c1c}.icon-button{border:1px solid transparent;transition:background-color 140ms ease,border-color 140ms ease,color 140ms ease,transform 140ms ease}.icon-button:hover:not(:disabled){border-color:#e2e8f0;background:#fff;box-shadow:var(--ui-shadow-sm)}
 a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--theme-focus);outline-offset:2px}
+/* Asset 360 / operational detail surfaces: keep the existing page markup, but give its repeated white panels a quieter hierarchy. */
+main .max-w-\[1400px\] > header.rounded-3xl{box-shadow:0 12px 32px rgba(15,23,42,.055)}
+main .max-w-\[1400px\] > header.rounded-3xl > div:first-child > div:last-child > label .field{background:linear-gradient(135deg,#fff,var(--ui-surface-muted))}
+main .max-w-\[1400px\] > header.rounded-3xl .rounded-2xl.border-slate-100.bg-slate-50{background:linear-gradient(135deg,#f8fafc,#fff);border-color:#e2e8f0}
+main .max-w-\[1400px\] > header.rounded-3xl + div section.rounded-2xl.border-slate-200.bg-white{box-shadow:var(--ui-shadow-sm)}
+main .max-w-\[1400px\] section.rounded-2xl.border-slate-200.bg-white > div:first-child{border-color:var(--ui-border)}
+main .max-w-\[1400px\] .rounded-2xl.border-slate-100.bg-slate-50{background:linear-gradient(135deg,#f8fafc,#fff)}
+main .max-w-\[1400px\] .rounded-2xl.border-dashed{background:linear-gradient(135deg,#f8fafc,#fff)}
+main .max-w-\[1400px\] .sticky.top-16 button[aria-current=page]{box-shadow:0 1px 3px rgba(15,23,42,.04)}
 @media(max-width:767px){.panel,.ui-section,.ui-table-wrap,.table-wrap{border-radius:.875rem}main table{min-width:760px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}}
