@@ -1,0 +1,76 @@
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { PrismaService } from '../../common/database/prisma.service';
+import { AuthContext } from '../../common/guards/tenant-context.guard';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+@Injectable()
+export class EnterpriseUxService {
+  constructor(private readonly db: PrismaService) {}
+
+  async notifications(auth: AuthContext) {
+    const rows = await this.db.$queryRawUnsafe<any[]>(`SELECT id::text AS id,title,body AS text,tone,link,read_at AS "readAt",created_at AS "createdAt" FROM ux_notifications WHERE tenant_id=$1::uuid AND user_id=$2::uuid ORDER BY created_at DESC LIMIT 50`, auth.tenantId, auth.userId);
+    return rows.map((row) => ({ ...row, read: !!row.readAt, time: row.createdAt }));
+  }
+
+  async markNotificationRead(auth: AuthContext, id: string) {
+    if (!UUID_RE.test(id)) throw new BadRequestException('Invalid notification id');
+    await this.db.$executeRawUnsafe(`UPDATE ux_notifications SET read_at=COALESCE(read_at,NOW()) WHERE id=$1::uuid AND tenant_id=$2::uuid AND user_id=$3::uuid`, id, auth.tenantId, auth.userId);
+    return { ok: true };
+  }
+
+  async markAllNotificationsRead(auth: AuthContext) {
+    await this.db.$executeRawUnsafe(`UPDATE ux_notifications SET read_at=COALESCE(read_at,NOW()) WHERE tenant_id=$1::uuid AND user_id=$2::uuid AND read_at IS NULL`, auth.tenantId, auth.userId);
+    return { ok: true };
+  }
+
+  async createNotification(tenantId: string, userId: string, input: { title: string; body: string; tone?: string; link?: string }) {
+    const tone = ['info','success','warning','danger'].includes(input.tone ?? '') ? input.tone : 'info';
+    await this.db.$executeRawUnsafe(`INSERT INTO ux_notifications (tenant_id,user_id,title,body,tone,link) VALUES ($1::uuid,$2::uuid,$3,$4,$5,$6)`, tenantId, userId, input.title.trim(), input.body.trim(), tone, input.link ?? null);
+  }
+
+  async savedViews(auth: AuthContext, scope: string) {
+    const rows = await this.db.$queryRawUnsafe<any[]>(`SELECT id::text AS id,name,state,created_at AS "createdAt",updated_at AS "updatedAt" FROM ux_saved_views WHERE tenant_id=$1::uuid AND user_id=$2::uuid AND scope=$3 ORDER BY name ASC`, auth.tenantId, auth.userId, scope);
+    return rows;
+  }
+
+  async saveView(auth: AuthContext, scope: string, name: string, state: unknown) {
+    const normalized = name.trim(); if (!normalized) throw new BadRequestException('View name is required');
+    await this.db.$executeRawUnsafe(`INSERT INTO ux_saved_views (tenant_id,user_id,scope,name,state) VALUES ($1::uuid,$2::uuid,$3,$4,$5::jsonb) ON CONFLICT (user_id,scope,name) DO UPDATE SET state=EXCLUDED.state,updated_at=NOW()`, auth.tenantId, auth.userId, scope, normalized, JSON.stringify(state ?? {}));
+    const rows = await this.savedViews(auth, scope); return rows.find((row) => row.name === normalized);
+  }
+
+  async deleteView(auth: AuthContext, id: string) {
+    if (!UUID_RE.test(id)) throw new BadRequestException('Invalid saved view id');
+    await this.db.$executeRawUnsafe(`DELETE FROM ux_saved_views WHERE id=$1::uuid AND tenant_id=$2::uuid AND user_id=$3::uuid`, id, auth.tenantId, auth.userId);
+    return { ok: true };
+  }
+
+  async globalSearch(auth: AuthContext, q: string) {
+    const query = q.trim(); if (query.length < 2) return { assets: [], employees: [], companies: [], locations: [] };
+    const scope = auth.crossCompany ? {} : { companyId: auth.companyId };
+    const [assets, employees, companies, locations] = await this.db.withTenantContext(auth.tenantId, auth.companyId, async (tx) => Promise.all([
+      tx.asset.findMany({ where: { tenantId: auth.tenantId, ...scope, OR: [{ assetNumber: { contains: query, mode: 'insensitive' } }, { serialNumber: { contains: query, mode: 'insensitive' } }, { model: { contains: query, mode: 'insensitive' } }] }, select: { id:true,assetNumber:true,serialNumber:true,model:true,status:true }, take:8, orderBy:{createdAt:'desc'} }),
+      tx.user.findMany({ where: { tenantId: auth.tenantId, accountType:'TENANT', ...scope, OR: [{ email:{contains:query,mode:'insensitive'} },{firstName:{contains:query,mode:'insensitive'}},{lastName:{contains:query,mode:'insensitive'}}] }, select:{id:true,email:true,firstName:true,lastName:true,isActive:true}, take:8, orderBy:{createdAt:'desc'} }),
+      tx.company.findMany({ where:{tenantId:auth.tenantId,...scope,name:{contains:query,mode:'insensitive'}},select:{id:true,name:true,code:true},take:8,orderBy:{name:'asc'} }),
+      tx.location.findMany({ where:{site:{tenantId:auth.tenantId, ...(auth.crossCompany?{}:{companyId:auth.companyId})},name:{contains:query,mode:'insensitive'}},select:{id:true,name:true,site:{select:{id:true,name:true,companyId:true}}},take:8,orderBy:{name:'asc'} }),
+    ]));
+    return { assets, employees: employees.map((u) => ({ ...u, name:[u.firstName,u.lastName].filter(Boolean).join(' ') })), companies, locations };
+  }
+
+  async assetRisk(auth: AuthContext, assetId: string) {
+    if (!UUID_RE.test(assetId)) throw new BadRequestException('Invalid asset id');
+    const asset = await this.db.withTenantContext(auth.tenantId, auth.companyId, (tx) => tx.asset.findFirst({ where:{ id:assetId, tenantId:auth.tenantId, ...(auth.crossCompany?{}:{companyId:auth.companyId}) }, include:{ assignments:{ where:{returnedAt:null}, take:1 }, maintenance:{ orderBy:{serviceDate:'desc'}, take:1 }, warranties:true } }));
+    if (!asset) throw new BadRequestException('Asset not found');
+    let score=100; const reasons:string[]=[]; const now=Date.now();
+    const status=asset.status.toUpperCase(); const condition=asset.condition.toUpperCase();
+    if (['LOST','STOLEN','DISPOSED'].includes(status)) { score-=70; reasons.push(`Lifecycle state is ${asset.status}`); }
+    else if (['RETIRED','IN_REPAIR'].includes(status)) { score-=35; reasons.push(`Lifecycle state is ${asset.status}`); }
+    if (['DAMAGED','POOR'].includes(condition)) { score-=25; reasons.push(`Condition is ${asset.condition}`); }
+    else if (condition==='FAIR') { score-=10; reasons.push('Condition is fair'); }
+    const expiresAt = asset.warranties?.expiresAt ?? asset.warrantyExpiresAt; if (expiresAt) { const days=(new Date(expiresAt).getTime()-now)/86400000; if(days<0){score-=25;reasons.push('Warranty has expired')} else if(days<=30){score-=10;reasons.push('Warranty expires within 30 days')} }
+    const nextService=asset.maintenance[0]?.nextServiceDate; if(nextService){const days=(new Date(nextService).getTime()-now)/86400000;if(days<0){score-=20;reasons.push('Maintenance is overdue')}else if(days<=30){score-=8;reasons.push('Maintenance is due within 30 days')}}
+    if(status==='ASSIGNED' && !asset.assignments.length){score-=10;reasons.push('Assigned state has no active custodian record')}
+    score=Math.max(0,Math.min(100,score)); const label=score>=80?'Healthy':score>=60?'Attention':'High risk'; return { assetId, score, label, reasons };
+  }
+}
