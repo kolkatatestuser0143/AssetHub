@@ -20,5 +20,28 @@ body:has([data-system-console]){background:radial-gradient(circle at 100% 0%,rgb
 [data-system-console] [aria-label='Platform metrics']>*:nth-child(1){background:linear-gradient(135deg,#e9eef5,#fff 78%);border-color:#dbe3ee}[data-system-console] [aria-label='Platform metrics']>*:nth-child(2){background:linear-gradient(135deg,#eff6ff,#fff 78%);border-color:#dbeafe}[data-system-console] [aria-label='Platform metrics']>*:nth-child(3){background:linear-gradient(135deg,#ecfdf5,#fff 78%);border-color:#d1fae5}[data-system-console] [aria-label='Platform metrics']>*:nth-child(4){background:linear-gradient(135deg,#f5f3ff,#fff 78%);border-color:#e9d5ff}[data-system-console] [aria-label='Platform metrics']>a,[data-system-console] section>a{border-radius:1rem}
 [data-system-console] code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 [data-system-console] .ui-modal-header{background:linear-gradient(135deg,#eef2f7,#fff 78%)}[data-system-console] .ui-modal-footer{background:#fbfcfe}
-@media(max-width:767px){[data-system-console] table{min-width:760px}[data-system-console] .ui-modal-panel{max-height:calc(100vh - 1.5rem);border-radius:1rem}}
-@media(prefers-reduced-motion:reduce){[data-system-console] button,[data-system-console] .ui-modal-backdrop,[data-system-console] .ui-modal-panel{transition:none!important;animation:none!important}}
+
+/* Tenant-style card language adapted for System Admin */
+[data-system-console] .panel,[data-system-console] .ui-section,[data-system-console] .ui-table-wrap,[data-system-console] .table-wrap{border-radius:1rem;transition:transform 180ms cubic-bezier(.2,.8,.2,1),box-shadow 180ms ease,border-color 180ms ease}
+[data-system-console] .panel:hover,[data-system-console] .ui-section:hover{transform:translateY(-1px);box-shadow:0 10px 28px rgba(15,23,42,.085)}
+[data-system-console] .panel::before,[data-system-console] .ui-section::before{content:'';display:block;height:3px;margin:-1px -1px 10px;border-radius:12px 12px 0 0;background:linear-gradient(90deg,#334155,#64748b,transparent);opacity:.85}
+[data-system-console] .ui-section-header{border-radius:1rem 1rem 0 0;background:linear-gradient(135deg,#e8edf4,#fff 74%)}
+[data-system-console] [aria-label='Platform metrics']>a{position:relative;overflow:hidden;border-radius:1rem!important;padding:1.25rem;box-shadow:0 4px 14px rgba(15,23,42,.045);transition:transform 180ms cubic-bezier(.2,.8,.2,1),box-shadow 180ms ease,border-color 180ms ease,background-color 180ms ease}
+[data-system-console] [aria-label='Platform metrics']>a:nth-child(1){background:linear-gradient(135deg,#e7ebf1,#fff 76%);border-color:#cbd5e1}
+[data-system-console] [aria-label='Platform metrics']>a:nth-child(2){background:linear-gradient(135deg,#eaf2ff,#fff 76%);border-color:#bfdbfe}
+[data-system-console] [aria-label='Platform metrics']>a:nth-child(3){background:linear-gradient(135deg,#e8f8f1,#fff 76%);border-color:#bbf7d0}
+[data-system-console] [aria-label='Platform metrics']>a:nth-child(4){background:linear-gradient(135deg,#f1edff,#fff 76%);border-color:#ddd6fe}
+[data-system-console] [aria-label='Platform metrics']>a::before{content:'';position:absolute;left:0;top:0;right:38%;height:3px;border-radius:999px;background:linear-gradient(90deg,#334155,#64748b,transparent)}
+[data-system-console] [aria-label='Platform metrics']>a:nth-child(2)::before{background:linear-gradient(90deg,#2563eb,#60a5fa,transparent)}
+[data-system-console] [aria-label='Platform metrics']>a:nth-child(3)::before{background:linear-gradient(90deg,#059669,#34d399,transparent)}
+[data-system-console] [aria-label='Platform metrics']>a:nth-child(4)::before{background:linear-gradient(90deg,#7c3aed,#a78bfa,transparent)}
+[data-system-console] [aria-label='Platform metrics']>a:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(15,23,42,.095);border-color:#b8c4d3}
+[data-system-console] [aria-label='Platform metrics']>a>div:first-child>div:first-child{transition:transform 180ms ease,box-shadow 180ms ease;background:rgba(255,255,255,.82)}
+[data-system-console] [aria-label='Platform metrics']>a:hover>div:first-child>div:first-child{transform:translateY(-1px) scale(1.03);box-shadow:0 8px 18px rgba(15,23,42,.08)}
+[data-system-console] section>a{transition:transform 180ms cubic-bezier(.2,.8,.2,1),box-shadow 180ms ease,border-color 180ms ease,background-color 180ms ease}
+[data-system-console] section>a:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(15,23,42,.07)}
+[data-system-console] section>a>div>div:first-child{transition:transform 180ms ease,background-color 180ms ease,color 180ms ease,box-shadow 180ms ease}
+[data-system-console] section>a:hover>div>div:first-child{transform:translateY(-1px) scale(1.03);box-shadow:0 8px 18px rgba(15,23,42,.07)}
+
+@media(max-width:767px){[data-system-console] table{min-width:760px}[data-system-console] .ui-modal-panel{max-height:calc(100vh - 1.5rem);border-radius:1rem}[data-system-console] .panel,[data-system-console] .ui-section{border-radius:.875rem}}
+@media(prefers-reduced-motion:reduce){[data-system-console] button,[data-system-console] .ui-modal-backdrop,[data-system-console] .ui-modal-panel,[data-system-console] .panel,[data-system-console] .ui-section,[data-system-console] [aria-label='Platform metrics']>a,[data-system-console] section>a{transition:none!important;animation:none!important;transform:none!important}}
