@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import '../styles/motion.css';
 import '../styles/modal-compat.css';
+import '../styles/ui-refresh.css';
 import ThemeDialogBridge from '../components/theme-dialog-bridge';
 import AssetCreateBridge from '../components/assets/asset-create-bridge';
 import { ToastProvider } from '../components/toast';
