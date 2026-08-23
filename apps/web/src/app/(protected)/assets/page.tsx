@@ -2,416 +2,46 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Boxes,
-  CheckSquare,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsUpDown,
-  Download,
-  Eye,
-  Plus,
-  RefreshCw,
-  Search,
-  SlidersHorizontal,
-  Upload,
-  X,
-} from 'lucide-react';
+import { Boxes, CheckSquare, ChevronLeft, ChevronRight, ChevronsUpDown, Download, Eye, Plus, RefreshCw, Search, SlidersHorizontal, Upload, X } from 'lucide-react';
 import { apiFetch, downloadFile } from '../../../lib/api-client';
 import { Button, StatusBadge } from '../../../components/ui';
+import { FormField, FormSelect } from '../../../components/form-field';
 
 type AssetType = { id: string; name: string; prefix?: string };
-type Asset = {
-  id: string;
-  assetNumber: string;
-  status: string;
-  createdAt?: string;
-  assetType?: { name: string };
-};
+type Asset = { id: string; assetNumber: string; status: string; createdAt?: string; assetType?: { name: string } };
 type SortBy = 'assetNumber' | 'status' | 'createdAt';
-type PageResponse = {
-  items: Asset[];
-  pagination: { page: number; pageSize: number; total: number; totalPages: number };
-};
-
+type PageResponse = { items: Asset[]; pagination: { page: number; pageSize: number; total: number; totalPages: number } };
 const STATES = ['REQUESTED', 'IN_STOCK', 'ASSIGNED', 'IN_REPAIR', 'LOST_STOLEN', 'RETIRED', 'DISPOSED'];
 const STORAGE_KEY = 'assethub.assets.table.v4';
 const PAGE_SIZES = [10, 25, 50, 100];
-
-function prettyState(value: string) {
-  return value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
+function prettyState(value: string) { return value.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase()); }
 
 export default function AssetsPage() {
-  const [assets, setAssets] = useState<Asset[]>([]);
-  const [assetTypes, setAssetTypes] = useState<AssetType[]>([]);
-  const [query, setQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL');
-  const [assetTypeFilter, setAssetTypeFilter] = useState('');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
-  const [sortBy, setSortBy] = useState<SortBy>('createdAt');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [pagination, setPagination] = useState<PageResponse['pagination']>({ page: 1, pageSize: 25, total: 0, totalPages: 1 });
-  const [selected, setSelected] = useState<string[]>([]);
-  const [bulkState, setBulkState] = useState('');
-  const [busy, setBusy] = useState(true);
-  const [bulkBusy, setBulkBusy] = useState(false);
-  const [exporting, setExporting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const stored = JSON.parse(raw) as Partial<{
-        query: string;
-        statusFilter: string;
-        assetTypeFilter: string;
-        pageSize: number;
-        sortBy: SortBy;
-        sortDir: 'asc' | 'desc';
-      }>;
-      if (typeof stored.query === 'string') setQuery(stored.query);
-      if (typeof stored.statusFilter === 'string') setStatusFilter(stored.statusFilter);
-      if (typeof stored.assetTypeFilter === 'string') setAssetTypeFilter(stored.assetTypeFilter);
-      if (PAGE_SIZES.includes(Number(stored.pageSize))) setPageSize(Number(stored.pageSize));
-      if (stored.sortBy === 'assetNumber' || stored.sortBy === 'status' || stored.sortBy === 'createdAt') setSortBy(stored.sortBy);
-      if (stored.sortDir === 'asc' || stored.sortDir === 'desc') setSortDir(stored.sortDir);
-    } catch {
-      // Ignore invalid saved preferences.
-    }
-  }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({ query, statusFilter, assetTypeFilter, pageSize, sortBy, sortDir }),
-    );
-  }, [query, statusFilter, assetTypeFilter, pageSize, sortBy, sortDir]);
-
-  async function loadTypes() {
-    try {
-      const data = await apiFetch('/assets/types');
-      const next = (Array.isArray(data) ? data : [])
-        .map((item: any) => ({
-          id: String(item?.id ?? item?._id ?? ''),
-          name: String(item?.name ?? ''),
-          prefix: item?.prefix ?? item?.numberingRule?.prefix,
-        }))
-        .filter((item: AssetType) => item.id && item.name);
-      setAssetTypes(next);
-    } catch (err: any) {
-      setError(err?.message || 'Unable to load asset types.');
-    }
-  }
-
-  async function loadAssets(targetPage = page) {
-    setBusy(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams({
-        page: String(Math.max(1, targetPage)),
-        pageSize: String(Math.max(1, pageSize)),
-        sortBy,
-        sortDir,
-      });
-      if (query.trim()) params.set('q', query.trim());
-      if (statusFilter !== 'ALL') params.set('status', statusFilter);
-      if (assetTypeFilter) params.set('assetTypeId', assetTypeFilter);
-
-      const data = (await apiFetch(`/assets?${params.toString()}`)) as PageResponse;
-      const items = Array.isArray(data?.items) ? data.items : [];
-      setAssets(items);
-      setPagination(
-        data?.pagination ?? { page: targetPage, pageSize, total: 0, totalPages: 1 },
-      );
-      setSelected((ids) => ids.filter((id) => items.some((asset) => asset.id === id)));
-    } catch (err: any) {
-      setError(err?.message || 'Unable to load inventory.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  useEffect(() => {
-    void loadTypes();
-  }, []);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => void loadAssets(page), 250);
-    return () => window.clearTimeout(timer);
-  }, [page, pageSize, query, statusFilter, assetTypeFilter, sortBy, sortDir]);
-
-  function clearFilters() {
-    setQuery('');
-    setStatusFilter('ALL');
-    setAssetTypeFilter('');
-    setPage(1);
-    setSelected([]);
-  }
-
-  function changeSort(next: SortBy) {
-    if (sortBy === next) {
-      setSortDir((current) => (current === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortBy(next);
-      setSortDir(next === 'status' ? 'asc' : 'desc');
-    }
-    setPage(1);
-    setSelected([]);
-  }
-
-  function sortIcon(active: boolean) {
-    return <ChevronsUpDown size={14} className={active ? 'text-[var(--theme-link)]' : 'text-slate-300'} />;
-  }
-
-  function toggleAsset(id: string) {
-    setSelected((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
-  }
-
-  const allSelected = assets.length > 0 && assets.every((asset) => selected.includes(asset.id));
-
-  function toggleAll() {
-    setSelected(allSelected ? [] : assets.map((asset) => asset.id));
-  }
-
-  async function transition(id: string, toState: string) {
-    setError(null);
-    setMessage(null);
-    try {
-      await apiFetch(`/assets/${id}/transition`, {
-        method: 'POST',
-        body: JSON.stringify({ toState }),
-      });
-      await loadAssets(page);
-      setMessage('Asset lifecycle updated successfully.');
-    } catch (err: any) {
-      setError(err?.message || 'Unable to update asset lifecycle.');
-    }
-  }
-
-  async function bulkTransition() {
-    if (!bulkState || selected.length === 0) return;
-    setBulkBusy(true);
-    setError(null);
-    setMessage(null);
-    try {
-      const results = await Promise.allSettled(
-        selected.map((id) =>
-          apiFetch(`/assets/${id}/transition`, {
-            method: 'POST',
-            body: JSON.stringify({
-              toState: bulkState,
-              reason: `Bulk lifecycle action: ${bulkState}`,
-            }),
-          }),
-        ),
-      );
-      const failed = results.filter((result) => result.status === 'rejected').length;
-      setSelected([]);
-      setBulkState('');
-      await loadAssets(page);
-      if (failed > 0) {
-        setError(`${failed} asset${failed === 1 ? '' : 's'} could not be updated.`);
-      } else {
-        setMessage(`${results.length} assets updated successfully.`);
-      }
-    } catch (err: any) {
-      setError(err?.message || 'Unable to update the selected assets.');
-    } finally {
-      setBulkBusy(false);
-    }
-  }
-
-  async function exportExcel() {
-    setExporting(true);
-    setError(null);
-    try {
-      const { blob, filename } = await downloadFile('/assets/reports/excel');
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = filename;
-      anchor.click();
-      URL.revokeObjectURL(url);
-    } catch (err: any) {
-      setError(err?.message || 'Unable to generate the Excel report.');
-    } finally {
-      setExporting(false);
-    }
-  }
-
-  function exportSelected() {
-    const rows = [
-      ['assetNumber', 'status', 'assetType', 'createdAt'],
-      ...assets
-        .filter((asset) => selected.includes(asset.id))
-        .map((asset) => [asset.assetNumber, asset.status, asset.assetType?.name || '', asset.createdAt || '']),
-    ];
-    const csv = rows
-      .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `assethub-selected-assets-${new Date().toISOString().slice(0, 10)}.csv`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }
-
-  const counts = useMemo(
-    () => STATES.reduce<Record<string, number>>((acc, state) => {
-      acc[state] = assets.filter((asset) => asset.status === state).length;
-      return acc;
-    }, {}),
-    [assets],
-  );
-
-  const activeFilters = (query.trim() ? 1 : 0) + (statusFilter !== 'ALL' ? 1 : 0) + (assetTypeFilter ? 1 : 0);
-
-  return (
-    <div className="mx-auto max-w-[1500px] space-y-6">
-      <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--theme-link)]">Inventory workspace</p>
-          <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">Assets</h1>
-          <p className="mt-2 max-w-2xl text-sm text-slate-500">Search, filter, inspect and manage the tenant asset lifecycle.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={() => void loadAssets(page)} loading={busy} icon={<RefreshCw size={16} />}>Refresh</Button>
-          <Link href="/assets/transfers" className="ui-interactive inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm">Transfers</Link>
-          <Link href="/assets/reports" className="ui-interactive inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm"><Download size={16} />Reports</Link>
-          <Link href="/assets/import" className="ui-interactive inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm"><Upload size={16} />Import</Link>
-          <Button onClick={() => window.location.assign('/assets/new')} icon={<Plus size={16} />}>New asset</Button>
-        </div>
-      </header>
-
-      {error ? <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
-      {message ? <div role="status" className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div> : null}
-
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          ['Total inventory', pagination.total, 'Across all lifecycle states'],
-          ['In stock', counts.IN_STOCK || 0, 'Ready for assignment'],
-          ['Assigned', counts.ASSIGNED || 0, 'Currently in custody'],
-          ['Attention', (counts.IN_REPAIR || 0) + (counts.LOST_STOLEN || 0), 'Repair or lost'],
-        ].map(([label, value, hint]) => (
-          <div key={String(label)} className="panel p-4">
-            <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">{label as string}</p>
-            <p className="mt-2 text-2xl font-bold text-slate-950">{value as number}</p>
-            <p className="mt-1 text-xs text-slate-500">{hint as string}</p>
-          </div>
-        ))}
-      </section>
-
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-100 p-4">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
-            <div className="relative w-full xl:max-w-md">
-              <Search size={16} className="absolute left-3 top-2.5 text-slate-400" aria-hidden="true" />
-              <input
-                value={query}
-                onChange={(event) => { setQuery(event.target.value); setPage(1); setSelected([]); }}
-                placeholder="Search asset number, type or status"
-                className="field h-10 pl-9"
-                aria-label="Search assets"
-              />
-            </div>
-            <div className="flex flex-1 flex-wrap items-center gap-2">
-              <SlidersHorizontal size={16} className="text-slate-400" />
-              <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); setSelected([]); }} className="field h-10 w-auto" aria-label="Filter by status">
-                <option value="ALL">All statuses</option>
-                {STATES.map((state) => <option key={state} value={state}>{prettyState(state)}</option>)}
-              </select>
-              <select value={assetTypeFilter} onChange={(event) => { setAssetTypeFilter(event.target.value); setPage(1); setSelected([]); }} className="field h-10 w-auto" aria-label="Filter by asset type">
-                <option value="">All asset types</option>
-                {assetTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
-              </select>
-              {activeFilters > 0 ? <button type="button" onClick={clearFilters} className="inline-flex h-10 items-center gap-1 rounded-xl px-3 text-sm font-semibold text-[var(--theme-link)] hover:bg-[var(--theme-primary-soft)]"><X size={14} />Clear {activeFilters}</button> : null}
-              <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }} className="field ml-auto h-10 w-auto" aria-label="Rows per page">
-                {PAGE_SIZES.map((size) => <option key={size} value={size}>{size} / page</option>)}
-              </select>
-              {exporting ? <span className="text-xs font-semibold text-slate-500">Preparing report…</span> : null}
-              <button type="button" onClick={() => void exportExcel()} disabled={exporting} className="ui-interactive inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 disabled:opacity-50"><Download size={15} />Excel</button>
-            </div>
-          </div>
-        </div>
-
-        {selected.length > 0 ? (
-          <div className="sticky top-16 z-20 flex flex-col gap-3 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur sm:flex-row sm:items-center">
-            <div className="flex items-center gap-2 text-sm font-semibold"><CheckSquare size={16} className="text-[var(--theme-link)]" />{selected.length} selected</div>
-            <div className="flex flex-1 flex-wrap gap-2">
-              <select value={bulkState} onChange={(event) => setBulkState(event.target.value)} className="field h-9 w-auto" aria-label="Bulk lifecycle state">
-                <option value="">Change lifecycle…</option>
-                {STATES.map((state) => <option key={state} value={state}>{prettyState(state)}</option>)}
-              </select>
-              <Button size="sm" disabled={!bulkState || bulkBusy} loading={bulkBusy} onClick={() => void bulkTransition()}>Apply</Button>
-              <button type="button" onClick={exportSelected} className="ui-interactive inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-semibold"><Download size={13} />Export selected</button>
-            </div>
-            <button type="button" onClick={() => setSelected([])} className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500"><X size={14} />Clear</button>
-          </div>
-        ) : null}
-
-        {busy ? (
-          <div className="space-y-2 p-5">{Array.from({ length: 6 }, (_, index) => <div key={index} className="h-14 animate-pulse rounded-xl bg-slate-100" />)}</div>
-        ) : assets.length === 0 ? (
-          <div className="px-6 py-20 text-center">
-            <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[var(--theme-primary-soft)] text-[var(--theme-link)]"><Boxes size={28} /></div>
-            <p className="mt-5 font-semibold text-slate-900">{activeFilters ? 'No assets match these filters' : 'Your inventory is empty'}</p>
-            <p className="mx-auto mt-1 max-w-md text-sm text-slate-500">{activeFilters ? 'Try clearing one or more filters or use a broader search.' : 'Create an asset or import your inventory to start tracking equipment.'}</p>
-            {activeFilters ? <button type="button" onClick={clearFilters} className="mt-4 rounded-xl border px-4 py-2 text-sm font-semibold">Clear filters</button> : <Link href="/assets/new" className="mt-4 inline-flex rounded-xl bg-[var(--theme-primary)] px-4 py-2 text-sm font-semibold text-white">Create first asset</Link>}
-          </div>
-        ) : (
-          <div className="max-h-[68vh] overflow-auto">
-            <table className="w-full min-w-[860px] text-left text-sm">
-              <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="w-12 px-4 py-3"><input type="checkbox" aria-label="Select visible assets" checked={allSelected} onChange={toggleAll} /></th>
-                  <th className="px-5 py-3"><button type="button" onClick={() => changeSort('assetNumber')} className="inline-flex items-center gap-1.5 font-semibold">Asset {sortIcon(sortBy === 'assetNumber')}</button></th>
-                  <th className="px-5 py-3">Type</th>
-                  <th className="px-5 py-3"><button type="button" onClick={() => changeSort('status')} className="inline-flex items-center gap-1.5 font-semibold">Status {sortIcon(sortBy === 'status')}</button></th>
-                  <th className="px-5 py-3"><button type="button" onClick={() => changeSort('createdAt')} className="inline-flex items-center gap-1.5 font-semibold">Created {sortIcon(sortBy === 'createdAt')}</button></th>
-                  <th className="px-5 py-3">Lifecycle</th>
-                  <th className="px-5 py-3 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {assets.map((asset) => (
-                  <tr key={asset.id} className={`transition hover:bg-[var(--theme-primary-soft)]/50 ${selected.includes(asset.id) ? 'bg-[var(--theme-primary-soft)]' : ''}`}>
-                    <td className="px-4 py-3"><input type="checkbox" aria-label={`Select ${asset.assetNumber}`} checked={selected.includes(asset.id)} onChange={() => toggleAsset(asset.id)} /></td>
-                    <td className="px-5 py-4"><Link href={`/assets/${asset.id}`} className="font-semibold text-slate-900 hover:text-[var(--theme-link)]">{asset.assetNumber}</Link></td>
-                    <td className="px-5 py-4 text-slate-700">{asset.assetType?.name || '—'}</td>
-                    <td className="px-5 py-4"><StatusBadge status={asset.status} /></td>
-                    <td className="whitespace-nowrap px-5 py-4 text-slate-600">{asset.createdAt ? new Date(asset.createdAt).toLocaleDateString() : '—'}</td>
-                    <td className="px-5 py-4">
-                      <select
-                        defaultValue=""
-                        onChange={(event) => { const next = event.target.value; event.currentTarget.value = ''; if (next) void transition(asset.id, next); }}
-                        className="field h-9 w-auto min-w-32 text-xs"
-                        aria-label={`Change lifecycle for ${asset.assetNumber}`}
-                      >
-                        <option value="">Change state…</option>
-                        {STATES.filter((state) => state !== asset.status).map((state) => <option key={state} value={state}>{prettyState(state)}</option>)}
-                      </select>
-                    </td>
-                    <td className="px-5 py-4 text-right"><Link href={`/assets/${asset.id}`} className="ui-interactive inline-flex items-center gap-1 text-xs font-semibold text-[var(--theme-link)]"><Eye size={14} />Details</Link></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-          <span>Page {Math.max(1, pagination.page)} of {Math.max(1, pagination.totalPages)} · {pagination.total} total</span>
-          <div className="flex items-center gap-2">
-            <button type="button" disabled={pagination.page <= 1 || busy} onClick={() => setPage((current) => Math.max(1, current - 1))} className="ui-interactive inline-flex items-center gap-1 rounded-lg border px-3 py-2 font-semibold disabled:opacity-40"><ChevronLeft size={14} />Previous</button>
-            <button type="button" disabled={pagination.page >= pagination.totalPages || busy} onClick={() => setPage((current) => Math.min(Math.max(1, pagination.totalPages), current + 1))} className="ui-interactive inline-flex items-center gap-1 rounded-lg border px-3 py-2 font-semibold disabled:opacity-40">Next<ChevronRight size={14} /></button>
-          </div>
-        </div>
-      </section>
-    </div>
-  );
+  const [assets,setAssets]=useState<Asset[]>([]),[assetTypes,setAssetTypes]=useState<AssetType[]>([]),[query,setQuery]=useState(''),[statusFilter,setStatusFilter]=useState('ALL'),[assetTypeFilter,setAssetTypeFilter]=useState(''),[page,setPage]=useState(1),[pageSize,setPageSize]=useState(25),[sortBy,setSortBy]=useState<SortBy>('createdAt'),[sortDir,setSortDir]=useState<'asc'|'desc'>('desc');
+  const [pagination,setPagination]=useState<PageResponse['pagination']>({page:1,pageSize:25,total:0,totalPages:1}),[selected,setSelected]=useState<string[]>([]),[bulkState,setBulkState]=useState(''),[busy,setBusy]=useState(true),[bulkBusy,setBulkBusy]=useState(false),[exporting,setExporting]=useState(false),[error,setError]=useState<string|null>(null),[message,setMessage]=useState<string|null>(null);
+  useEffect(()=>{try{const raw=window.localStorage.getItem(STORAGE_KEY);if(!raw)return;const stored=JSON.parse(raw) as Partial<{query:string;statusFilter:string;assetTypeFilter:string;pageSize:number;sortBy:SortBy;sortDir:'asc'|'desc'}>;if(typeof stored.query==='string')setQuery(stored.query);if(typeof stored.statusFilter==='string')setStatusFilter(stored.statusFilter);if(typeof stored.assetTypeFilter==='string')setAssetTypeFilter(stored.assetTypeFilter);if(PAGE_SIZES.includes(Number(stored.pageSize)))setPageSize(Number(stored.pageSize));if(stored.sortBy==='assetNumber'||stored.sortBy==='status'||stored.sortBy==='createdAt')setSortBy(stored.sortBy);if(stored.sortDir==='asc'||stored.sortDir==='desc')setSortDir(stored.sortDir);}catch{}},[]);
+  useEffect(()=>{window.localStorage.setItem(STORAGE_KEY,JSON.stringify({query,statusFilter,assetTypeFilter,pageSize,sortBy,sortDir}))},[query,statusFilter,assetTypeFilter,pageSize,sortBy,sortDir]);
+  async function loadTypes(){try{const data=await apiFetch('/assets/types');const next=(Array.isArray(data)?data:[]).map((item:any)=>({id:String(item?.id??item?._id??''),name:String(item?.name??''),prefix:item?.prefix??item?.numberingRule?.prefix})).filter((item:AssetType)=>item.id&&item.name);setAssetTypes(next)}catch(err:any){setError(err?.message||'Unable to load asset types.')}}
+  async function loadAssets(targetPage=page){setBusy(true);setError(null);try{const params=new URLSearchParams({page:String(Math.max(1,targetPage)),pageSize:String(Math.max(1,pageSize)),sortBy,sortDir});if(query.trim())params.set('q',query.trim());if(statusFilter!=='ALL')params.set('status',statusFilter);if(assetTypeFilter)params.set('assetTypeId',assetTypeFilter);const data=await apiFetch(`/assets?${params.toString()}`) as PageResponse;const items=Array.isArray(data?.items)?data.items:[];setAssets(items);setPagination(data?.pagination??{page:targetPage,pageSize,total:0,totalPages:1});setSelected(ids=>ids.filter(id=>items.some(asset=>asset.id===id)))}catch(err:any){setError(err?.message||'Unable to load inventory.')}finally{setBusy(false)}}
+  useEffect(()=>{void loadTypes()},[]);useEffect(()=>{const timer=window.setTimeout(()=>void loadAssets(page),250);return()=>window.clearTimeout(timer)},[page,pageSize,query,statusFilter,assetTypeFilter,sortBy,sortDir]);
+  function clearFilters(){setQuery('');setStatusFilter('ALL');setAssetTypeFilter('');setPage(1);setSelected([])}
+  function changeSort(next:SortBy){if(sortBy===next)setSortDir(current=>current==='asc'?'desc':'asc');else{setSortBy(next);setSortDir(next==='status'?'asc':'desc')}setPage(1);setSelected([])}
+  function sortIcon(active:boolean){return <ChevronsUpDown size={14} className={active?'text-[var(--theme-link)]':'text-slate-300'}/>}
+  function toggleAsset(id:string){setSelected(current=>current.includes(id)?current.filter(item=>item!==id):[...current,id])}
+  const allSelected=assets.length>0&&assets.every(asset=>selected.includes(asset.id));function toggleAll(){setSelected(allSelected?[]:assets.map(asset=>asset.id))}
+  async function transition(id:string,toState:string){setError(null);setMessage(null);try{await apiFetch(`/assets/${id}/transition`,{method:'POST',body:JSON.stringify({toState})});await loadAssets(page);setMessage('Asset lifecycle updated successfully.')}catch(err:any){setError(err?.message||'Unable to update asset lifecycle.')}}
+  async function bulkTransition(){if(!bulkState||selected.length===0)return;setBulkBusy(true);setError(null);setMessage(null);try{const results=await Promise.allSettled(selected.map(id=>apiFetch(`/assets/${id}/transition`,{method:'POST',body:JSON.stringify({toState:bulkState,reason:`Bulk lifecycle action: ${bulkState}`})})));const failed=results.filter(result=>result.status==='rejected').length;setSelected([]);setBulkState('');await loadAssets(page);if(failed>0)setError(`${failed} asset${failed===1?'':'s'} could not be updated.`);else setMessage(`${results.length} assets updated successfully.`)}catch(err:any){setError(err?.message||'Unable to update the selected assets.')}finally{setBulkBusy(false)}}
+  async function exportExcel(){setExporting(true);setError(null);try{const {blob,filename}=await downloadFile('/assets/reports/excel');const url=URL.createObjectURL(blob);const anchor=document.createElement('a');anchor.href=url;anchor.download=filename;anchor.click();URL.revokeObjectURL(url)}catch(err:any){setError(err?.message||'Unable to generate the Excel report.')}finally{setExporting(false)}}
+  function exportSelected(){const rows=[['assetNumber','status','assetType','createdAt'],...assets.filter(asset=>selected.includes(asset.id)).map(asset=>[asset.assetNumber,asset.status,asset.assetType?.name||'',asset.createdAt||''])];const csv=rows.map(row=>row.map(value=>`"${String(value).replace(/"/g,'""')}"`).join(',')).join('\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));const anchor=document.createElement('a');anchor.href=url;anchor.download=`assethub-selected-assets-${new Date().toISOString().slice(0,10)}.csv`;anchor.click();URL.revokeObjectURL(url)}
+  const counts=useMemo(()=>STATES.reduce<Record<string,number>>((acc,state)=>{acc[state]=assets.filter(asset=>asset.status===state).length;return acc},{}),[assets]);const activeFilters=(query.trim()?1:0)+(statusFilter!=='ALL'?1:0)+(assetTypeFilter?1:0);
+  return <div className="mx-auto max-w-[1500px] space-y-6">
+    <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--theme-link)]">Inventory workspace</p><h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">Assets</h1><p className="mt-2 max-w-2xl text-sm text-slate-500">Search, filter, inspect and manage the tenant asset lifecycle.</p></div><div className="flex flex-wrap gap-2"><Button variant="secondary" onClick={()=>void loadAssets(page)} loading={busy} icon={<RefreshCw size={16}/>}>Refresh</Button><Link href="/assets/transfers" className="ui-interactive inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm">Transfers</Link><Link href="/assets/reports" className="ui-interactive inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm"><Download size={16}/>Reports</Link><Link href="/assets/import" className="ui-interactive inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm"><Upload size={16}/>Import</Link><Button onClick={()=>window.location.assign('/assets/new')} icon={<Plus size={16}/>}>New asset</Button></div></header>
+    {error?<div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>:null}{message?<div role="status" className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{message}</div>:null}
+    <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{[['Total inventory',pagination.total,'Across all lifecycle states'],['In stock',counts.IN_STOCK||0,'Ready for assignment'],['Assigned',counts.ASSIGNED||0,'Currently in custody'],['Attention',(counts.IN_REPAIR||0)+(counts.LOST_STOLEN||0),'Repair or lost']].map(([label,value,hint])=><div key={String(label)} className="panel p-4"><p className="text-xs font-semibold uppercase tracking-wider text-slate-400">{label as string}</p><p className="mt-2 text-2xl font-bold text-slate-950">{value as number}</p><p className="mt-1 text-xs text-slate-500">{hint as string}</p></div>)}</section>
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-100 p-4"><div className="flex flex-col gap-3 xl:flex-row xl:items-center"><FormField label="Search assets" id="asset-search" hideLabel value={query} onChange={event=>{setQuery(event.target.value);setPage(1);setSelected([])}} placeholder="Search asset number, type or status" className="h-10 pl-9"/><div className="flex flex-1 flex-wrap items-center gap-2"><SlidersHorizontal size={16} className="text-slate-400"/><FormSelect label="Status" id="asset-status-filter" hideLabel value={statusFilter} onChange={event=>{setStatusFilter(event.target.value);setPage(1);setSelected([])}} className="h-10 w-auto"><option value="ALL">All statuses</option>{STATES.map(state=><option key={state} value={state}>{prettyState(state)}</option>)}</FormSelect><FormSelect label="Asset type" id="asset-type-filter" hideLabel value={assetTypeFilter} onChange={event=>{setAssetTypeFilter(event.target.value);setPage(1);setSelected([])}} className="h-10 w-auto"><option value="">All asset types</option>{assetTypes.map(type=><option key={type.id} value={type.id}>{type.name}</option>)}</FormSelect>{activeFilters>0?<button type="button" onClick={clearFilters} className="inline-flex h-10 items-center gap-1 rounded-xl px-3 text-sm font-semibold text-[var(--theme-link)] hover:bg-[var(--theme-primary-soft)]"><X size={14}/>Clear {activeFilters}</button>:null}<FormSelect label="Rows per page" id="asset-page-size" hideLabel value={pageSize} onChange={event=>{setPageSize(Number(event.target.value));setPage(1)}} className="ml-auto h-10 w-auto">{PAGE_SIZES.map(size=><option key={size} value={size}>{size} / page</option>)}</FormSelect>{exporting?<span className="text-xs font-semibold text-slate-500">Preparing report…</span>:null}<button type="button" onClick={()=>void exportExcel()} disabled={exporting} className="ui-interactive inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 disabled:opacity-50"><Download size={15}/>Excel</button></div></div></div>
+    {selected.length>0?<div className="sticky top-16 z-20 flex flex-col gap-3 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur sm:flex-row sm:items-center"><div className="flex items-center gap-2 text-sm font-semibold"><CheckSquare size={16} className="text-[var(--theme-link)]"/>{selected.length} selected</div><div className="flex flex-1 flex-wrap gap-2"><FormSelect label="Bulk lifecycle state" id="asset-bulk-state" hideLabel value={bulkState} onChange={event=>setBulkState(event.target.value)} className="h-9 w-auto"><option value="">Change lifecycle…</option>{STATES.map(state=><option key={state} value={state}>{prettyState(state)}</option>)}</FormSelect><Button size="sm" disabled={!bulkState||bulkBusy} loading={bulkBusy} onClick={()=>void bulkTransition()}>Apply</Button><button type="button" onClick={exportSelected} className="ui-interactive inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-xs font-semibold"><Download size={13}/>Export selected</button></div><button type="button" onClick={()=>setSelected([])} className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500"><X size={14}/>Clear</button></div>:null}
+    {busy?<div className="space-y-2 p-5"><div className="mx-auto w-full max-w-5xl space-y-2">{Array.from({length:6},(_,index)=><div key={index} className="skeleton h-14 w-full"/>)}</div></div>:assets.length===0?<div className="px-6 py-20 text-center"><div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[var(--theme-primary-soft)] text-[var(--theme-link)]"><Boxes size={28}/></div><p className="mt-5 font-semibold text-slate-900">{activeFilters?'No assets match these filters':'Your inventory is empty'}</p><p className="mx-auto mt-1 max-w-md text-sm text-slate-500">{activeFilters?'Try clearing one or more filters or use a broader search.':'Create an asset or import your inventory to start tracking equipment.'}</p>{activeFilters?<button type="button" onClick={clearFilters} className="mt-4 rounded-xl border px-4 py-2 text-sm font-semibold">Clear filters</button>:<Link href="/assets/new" className="mt-4 inline-flex rounded-xl bg-[var(--theme-primary)] px-4 py-2 text-sm font-semibold text-white">Create first asset</Link>}</div>:<div className="max-h-[68vh] overflow-auto"><table className="w-full min-w-[860px] text-left text-sm"><thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="w-12 px-4 py-3"><input type="checkbox" aria-label="Select visible assets" checked={allSelected} onChange={toggleAll}/></th><th className="px-5 py-3"><button type="button" onClick={()=>changeSort('assetNumber')} className="inline-flex items-center gap-1.5 font-semibold">Asset {sortIcon(sortBy==='assetNumber')}</button></th><th className="px-5 py-3">Type</th><th className="px-5 py-3"><button type="button" onClick={()=>changeSort('status')} className="inline-flex items-center gap-1.5 font-semibold">Status {sortIcon(sortBy==='status')}</button></th><th className="px-5 py-3"><button type="button" onClick={()=>changeSort('createdAt')} className="inline-flex items-center gap-1.5 font-semibold">Created {sortIcon(sortBy==='createdAt')}</button></th><th className="px-5 py-3">Lifecycle</th><th className="px-5 py-3 text-right">Action</th></tr></thead><tbody className="divide-y divide-slate-100">{assets.map(asset=><tr key={asset.id} className={`transition hover:bg-[var(--theme-primary-soft)]/50 ${selected.includes(asset.id)?'bg-[var(--theme-primary-soft)]':''}`}><td className="px-4 py-3"><input type="checkbox" aria-label={`Select ${asset.assetNumber}`} checked={selected.includes(asset.id)} onChange={()=>toggleAsset(asset.id)}/></td><td className="px-5 py-4"><Link href={`/assets/${asset.id}`} className="font-semibold text-slate-900 hover:text-[var(--theme-link)]">{asset.assetNumber}</Link></td><td className="px-5 py-4 text-slate-700">{asset.assetType?.name||'—'}</td><td className="px-5 py-4"><StatusBadge status={asset.status}/></td><td className="whitespace-nowrap px-5 py-4 text-slate-600">{asset.createdAt?new Date(asset.createdAt).toLocaleDateString():'—'}</td><td className="px-5 py-4"><FormSelect label={`Lifecycle for ${asset.assetNumber}`} id={`asset-lifecycle-${asset.id}`} hideLabel defaultValue="" onChange={event=>{const next=event.target.value;event.currentTarget.value='';if(next)void transition(asset.id,next)}} className="h-9 w-auto min-w-32 text-xs" aria-label={`Change lifecycle for ${asset.assetNumber}`}><option value="">Change state…</option>{STATES.filter(state=>state!==asset.status).map(state=><option key={state} value={state}>{prettyState(state)}</option>)}</FormSelect></td><td className="px-5 py-4 text-right"><Link href={`/assets/${asset.id}`} className="ui-interactive inline-flex items-center gap-1 text-xs font-semibold text-[var(--theme-link)]"><Eye size={14}/>Details</Link></td></tr>)}</tbody></table></div>}
+    <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between"><span>Page {Math.max(1,pagination.page)} of {Math.max(1,pagination.totalPages)} · {pagination.total} total</span><div className="flex items-center gap-2"><button type="button" disabled={pagination.page<=1||busy} onClick={()=>setPage(current=>Math.max(1,current-1))} className="ui-interactive inline-flex items-center gap-1 rounded-lg border px-3 py-2 font-semibold disabled:opacity-40"><ChevronLeft size={14}/>Previous</button><button type="button" disabled={pagination.page>=pagination.totalPages||busy} onClick={()=>setPage(current=>Math.min(Math.max(1,pagination.totalPages),current+1))} className="ui-interactive inline-flex items-center gap-1 rounded-lg border px-3 py-2 font-semibold disabled:opacity-40">Next<ChevronRight size={14}/></button></div></div>
+    </section>
+  </div>;
 }
