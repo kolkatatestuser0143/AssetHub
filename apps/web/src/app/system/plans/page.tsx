@@ -3,10 +3,13 @@
 import { useEffect, useState } from 'react';
 import { Archive, CheckCircle2, Plus, RefreshCw, Save } from 'lucide-react';
 import { systemFetch } from '../../../lib/system-api';
+import { Button, EmptyState, ErrorState, LoadingState } from '../../../components/ui';
+import { FormField, FormTextarea } from '../../../components/form-field';
+import { useToast } from '../../../components/toast';
 
 type Plan = { id: string; name: string; features?: Record<string, unknown>; isActive: boolean; createdAt?: string; updatedAt?: string };
 
-const DEFAULT_FEATURES = {
+const DEFAULT_FEATURES: Record<string, unknown> = {
   max_assets: 1000, max_users: 25, max_companies: 3, max_business_units: 10, max_plants: 25, max_locations: 25,
   max_departments: 50, max_vendors: 100, max_asset_documents: 500, max_storage_gb: 10, max_asset_document_size_mb: 10,
   max_saved_reports: 25, max_api_keys: 5, max_integrations: 3, max_api_rate_limit_per_minute: 120, session_max_days: 30,
@@ -17,25 +20,49 @@ const DEFAULT_FEATURES = {
 };
 
 export default function SystemPlansPage() {
+  const { toast } = useToast();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [selectedId, setSelectedId] = useState(''); const [name, setName] = useState('');
   const [featuresText, setFeaturesText] = useState(JSON.stringify(DEFAULT_FEATURES, null, 2));
   const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false); const [creating, setCreating] = useState(false);
-  const [error, setError] = useState(''); const [success, setSuccess] = useState('');
+  const [error, setError] = useState('');
 
-  async function load(selectFirst = false) { setLoading(true); setError(''); try { const data = await systemFetch('/system/plans'); const next = Array.isArray(data) ? data : []; setPlans(next); if (selectFirst && next[0]) selectPlan(next[0]); } catch (e: any) { setError(e?.message ?? 'Unable to load plans.'); } finally { setLoading(false); } }
+  async function load(selectFirst = false) {
+    setLoading(true); setError('');
+    try { const data = await systemFetch('/system/plans'); const next = Array.isArray(data) ? data : []; setPlans(next); if (selectFirst && next[0]) selectPlan(next[0]); }
+    catch (e: any) { setError(e?.message ?? 'Unable to load plans.'); } finally { setLoading(false); }
+  }
   useEffect(() => { void load(true); }, []);
-  function selectPlan(plan: Plan) { setCreating(false); setSelectedId(plan.id); setName(plan.name); setFeaturesText(JSON.stringify(plan.features ?? {}, null, 2)); setError(''); setSuccess(''); }
-  function startCreate() { setCreating(true); setSelectedId(''); setName(''); setFeaturesText(JSON.stringify(DEFAULT_FEATURES, null, 2)); setError(''); setSuccess(''); }
-  async function save() { setSaving(true); setError(''); setSuccess(''); try { if (!name.trim()) throw new Error('Plan name is required.'); const features = JSON.parse(featuresText); if (!features || typeof features !== 'object' || Array.isArray(features)) throw new Error('Features must be a JSON object.'); if (creating) { const created = await systemFetch('/system/plans', { method: 'POST', body: JSON.stringify({ name: name.trim(), features }) }); setSuccess('Plan created successfully.'); await load(); if (created?.id) { const refreshed = await systemFetch('/system/plans'); const found = Array.isArray(refreshed) ? refreshed.find((item: Plan) => item.id === created.id) : null; if (found) selectPlan(found); } setCreating(false); } else { if (!selectedId) return; await systemFetch(`/system/plans/${selectedId}`, { method: 'PATCH', body: JSON.stringify({ name: name.trim(), features }) }); setSuccess('Plan updated successfully.'); await load(); } } catch (e: any) { setError(e?.message ?? 'Unable to save plan.'); } finally { setSaving(false); } }
-  async function toggleActive(plan: Plan) { setError(''); setSuccess(''); try { await systemFetch(`/system/plans/${plan.id}/status`, { method: 'PATCH', body: JSON.stringify({ isActive: !plan.isActive }) }); setSuccess(plan.isActive ? 'Plan archived successfully.' : 'Plan reactivated successfully.'); await load(); const refreshed = await systemFetch('/system/plans'); const updated = Array.isArray(refreshed) ? refreshed.find((item: Plan) => item.id === plan.id) : null; if (updated) selectPlan(updated); } catch (e: any) { setError(e?.message ?? 'Unable to change plan status.'); } }
+  function selectPlan(plan: Plan) { setCreating(false); setSelectedId(plan.id); setName(plan.name); setFeaturesText(JSON.stringify(plan.features ?? {}, null, 2)); setError(''); }
+  function startCreate() { setCreating(true); setSelectedId(''); setName(''); setFeaturesText(JSON.stringify(DEFAULT_FEATURES, null, 2)); setError(''); }
+  async function save() {
+    if (!name.trim()) { setError('Plan name is required.'); return; }
+    setSaving(true); setError('');
+    try {
+      const features = JSON.parse(featuresText);
+      if (!features || typeof features !== 'object' || Array.isArray(features)) throw new Error('Features must be a JSON object.');
+      if (creating) { const created = await systemFetch('/system/plans', { method: 'POST', body: JSON.stringify({ name: name.trim(), features }) }); toast({ title: 'Plan created', message: name.trim(), tone: 'success' }); await load(); if (created?.id) { const refreshed = await systemFetch('/system/plans'); const found = Array.isArray(refreshed) ? refreshed.find((item: Plan) => item.id === created.id) : null; if (found) selectPlan(found); } }
+      else { await systemFetch(`/system/plans/${selectedId}`, { method: 'PATCH', body: JSON.stringify({ name: name.trim(), features }) }); toast({ title: 'Plan updated', message: name.trim(), tone: 'success' }); await load(); }
+      setCreating(false);
+    } catch (e: any) { setError(e?.message ?? 'Unable to save plan.'); toast({ title: 'Plan save failed', message: e?.message ?? 'Unable to save plan.', tone: 'error' }); }
+    finally { setSaving(false); }
+  }
+  async function toggleActive(plan: Plan) {
+    setSaving(true); setError('');
+    try { await systemFetch(`/system/plans/${plan.id}/status`, { method: 'PATCH', body: JSON.stringify({ isActive: !plan.isActive }) }); toast({ title: plan.isActive ? 'Plan archived' : 'Plan reactivated', message: plan.name, tone: 'success' }); await load(); }
+    catch (e: any) { setError(e?.message ?? 'Unable to change plan status.'); }
+    finally { setSaving(false); }
+  }
+
+  if (loading) return <LoadingState label="Loading platform plans…" rows={7} />;
+  if (error && plans.length === 0) return <ErrorState title="Unable to load platform plans" message={error} onRetry={() => void load()} />;
 
   return <div className="mx-auto max-w-[1400px] space-y-6">
-    <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-600">Platform Billing</p><h1 className="mt-1 text-2xl font-bold text-slate-950">Plans</h1><p className="mt-2 text-sm text-slate-500">Define reusable license tiers, limits, and feature entitlements.</p></div><div className="flex gap-2"><button onClick={() => void load()} disabled={loading} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"><RefreshCw className={loading ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />Refresh</button><button onClick={startCreate} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white"><Plus className="h-4 w-4"/>New plan</button></div></header>
-    {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}{success && <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</div>}
+    <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-600">Platform Billing</p><h1 className="mt-1 text-2xl font-bold text-slate-950">Plans</h1><p className="mt-2 text-sm text-slate-500">Define reusable license tiers, limits, and feature entitlements.</p></div><div className="flex gap-2"><Button variant="secondary" onClick={() => void load()} loading={loading} icon={<RefreshCw size={15}/>}>Refresh</Button><Button onClick={startCreate} icon={<Plus size={16}/>}>New plan</Button></div></header>
+    {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
     <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center justify-between"><h2 className="font-semibold text-slate-950">Plans</h2><span className="text-xs text-slate-500">{plans.length}</span></div><div className="mt-4 space-y-2">{loading ? <div className="h-56 animate-pulse rounded-xl bg-slate-100" /> : plans.length === 0 ? <p className="p-8 text-center text-sm text-slate-500">No plans configured.</p> : plans.map(plan => <button key={plan.id} onClick={() => selectPlan(plan)} className={`w-full rounded-xl border p-4 text-left ${selectedId === plan.id ? 'border-blue-300 bg-blue-50/60' : 'border-slate-200 hover:bg-slate-50'}`}><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{plan.name}</p><p className="mt-1 text-xs text-slate-500">{Object.keys(plan.features ?? {}).length} entitlements</p></div><span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${plan.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{plan.isActive ? 'Active' : 'Archived'}</span></div></button>)}</div></section>
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">{!creating && !selectedId ? <div className="grid min-h-[520px] place-items-center text-center"><div><p className="font-semibold text-slate-800">Select a plan</p><p className="mt-2 text-sm text-slate-500">Or create a new platform license tier.</p></div></div> : <><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-semibold uppercase tracking-wide text-blue-600">{creating ? 'Create plan' : 'Edit plan'}</p><h2 className="mt-1 text-xl font-bold text-slate-950">{creating ? 'New license tier' : name}</h2></div>{!creating && selectedId && <button onClick={() => { const plan = plans.find(item => item.id === selectedId); if (plan) void toggleActive(plan); }} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700">{plans.find(item => item.id === selectedId)?.isActive ? <><Archive className="h-4 w-4"/>Archive</> : <><CheckCircle2 className="h-4 w-4"/>Reactivate</>}</button>}</div><div className="mt-6 space-y-5"><label className="block text-sm font-semibold text-slate-700">Plan name<input value={name} onChange={e => setName(e.target.value)} className="mt-2 h-11 w-full rounded-xl border border-slate-200 px-3 font-normal" placeholder="Professional" /></label><label className="block text-sm font-semibold text-slate-700">Features and limits <span className="font-normal text-slate-500">(JSON)</span><span className="mt-1 block text-xs font-normal text-slate-400">Technical configuration · JSON object</span><textarea value={featuresText} onChange={e => setFeaturesText(e.target.value)} className="plan-json-editor mt-2 min-h-[430px] w-full rounded-xl border p-4 font-mono text-xs leading-6" spellCheck={false} aria-label="Features and limits JSON" /></label></div><div className="mt-5 flex justify-end"><button onClick={() => void save()} disabled={saving} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Save className="h-4 w-4"/>{saving ? 'Saving…' : creating ? 'Create plan' : 'Save changes'}</button></div></>}</section>
+      <section className="panel p-5"><div className="flex items-center justify-between"><h2 className="font-semibold text-slate-950">Plans</h2><span className="text-xs text-slate-500">{plans.length}</span></div><div className="mt-4 space-y-2">{plans.length === 0 ? <EmptyState title="No plans configured" text="Create the first platform license tier." action="New plan" onAction={startCreate}/> : plans.map(plan => <button type="button" key={plan.id} onClick={() => selectPlan(plan)} className={`w-full rounded-xl border p-4 text-left ui-interactive ${selectedId === plan.id ? 'border-blue-300 bg-blue-50/60' : 'border-slate-200 bg-white hover:bg-slate-50'}`}><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{plan.name}</p><p className="mt-1 text-xs text-slate-500">{Object.keys(plan.features ?? {}).length} entitlements</p></div><span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${plan.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{plan.isActive ? 'Active' : 'Archived'}</span></div></button>)}</div></section>
+      <section className="panel p-6">{!creating && !selectedId ? <EmptyState title="Select a plan" text="Choose a plan or create a new platform license tier." action="New plan" onAction={startCreate}/> : <><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-semibold uppercase tracking-wide text-blue-600">{creating ? 'Create plan' : 'Edit plan'}</p><h2 className="mt-1 text-xl font-bold text-slate-950">{creating ? 'New license tier' : name}</h2></div>{!creating && selectedId && <Button variant="secondary" onClick={() => { const plan = plans.find(item => item.id === selectedId); if (plan) void toggleActive(plan); }} loading={saving} icon={plans.find(item => item.id === selectedId)?.isActive ? <Archive size={15}/> : <CheckCircle2 size={15}/>} >{plans.find(item => item.id === selectedId)?.isActive ? 'Archive' : 'Reactivate'}</Button>}</div><div className="mt-6 space-y-5"><FormField label="Plan name" id="system-plan-name" value={name} onChange={e => setName(e.target.value)} placeholder="Professional" required/><FormTextarea label="Features and limits (JSON)" id="system-plan-features" hint="Technical configuration · JSON object" value={featuresText} onChange={e => setFeaturesText(e.target.value)} className="min-h-[430px] font-mono text-xs leading-6" required spellCheck={false}/></div><div className="mt-5 flex justify-end"><Button loading={saving} disabled={!name.trim() || !selectedId && !creating} onClick={() => void save()} icon={<Save size={15}/>} >{creating ? 'Create plan' : 'Save changes'}</Button></div></>}</section>
     </div>
   </div>;
 }
