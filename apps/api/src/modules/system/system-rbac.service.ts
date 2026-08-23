@@ -4,6 +4,7 @@ import * as crypto from 'crypto';
 import { PrismaService } from '../../common/database/prisma.service';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+type PlatformPermissionRow = { id: string; key: string };
 
 @Injectable()
 export class SystemRbacService {
@@ -26,7 +27,7 @@ export class SystemRbacService {
     const clean = [...new Set((keys ?? []).map((key) => String(key).trim()).filter(Boolean))];
     if (clean.some((key) => !key.startsWith('platform:'))) throw new BadRequestException('System roles may only contain platform permissions');
     if (!clean.length) throw new BadRequestException('Select at least one platform permission');
-    const permissions = await tx.$queryRawUnsafe<Array<{ id: string; key: string }>>(`SELECT id::text AS id, key FROM permissions WHERE key = ANY($1::text[]) AND key LIKE 'platform:%'`, clean);
+    const permissions: PlatformPermissionRow[] = await tx.$queryRawUnsafe(`SELECT id::text AS id, key FROM permissions WHERE key = ANY($1::text[]) AND key LIKE 'platform:%'`, clean);
     if (permissions.length !== clean.length) throw new BadRequestException('One or more selected platform permissions do not exist');
     return { keys: clean, permissions };
   }
@@ -43,7 +44,7 @@ export class SystemRbacService {
       const { keys, permissions } = await this.platformPermissions(tx, permissionKeys);
       let rows: any[];
       try {
-        rows = await tx.$queryRawUnsafe(`INSERT INTO roles (tenant_id, company_id, name, is_system) VALUES ($1::uuid, NULL, $2, false) RETURNING id::text AS id, name, is_system AS "isSystem"`, actor.tenantId, cleanName);
+        rows = await tx.$queryRawUnsafe(`INSERT INTO roles (tenant_id, company_id, name, is_system) VALUES ($1::uuid, NULL, $2, false) RETURNING id::text AS id, name, is_system AS \"isSystem\"`, actor.tenantId, cleanName);
       } catch (error: any) {
         if (error?.code === '23505') throw new ConflictException('A platform role with this name already exists');
         throw error;
@@ -51,7 +52,7 @@ export class SystemRbacService {
       const created = rows[0];
       for (const permission of permissions) await tx.$executeRawUnsafe(`INSERT INTO role_permissions (role_id, permission_id) VALUES ($1::uuid, $2::uuid) ON CONFLICT DO NOTHING`, created.id, permission.id);
       await tx.$executeRawUnsafe(`INSERT INTO system_audit_events (actor_user_id, action, target_type, target_id, metadata, result, occurred_at) VALUES ($1::uuid,'platform.role_created','role',$2::uuid,$3::jsonb,'success',NOW())`, actor.id, created.id, JSON.stringify({ name: cleanName, permissionKeys: keys }));
-      return { ...created, permissions: permissions.map((p) => ({ permissionId: p.id, permissionKey: p.key })) };
+      return { ...created, permissions: permissions.map((p: PlatformPermissionRow) => ({ permissionId: p.id, permissionKey: p.key })) };
     });
   }
 
@@ -61,7 +62,7 @@ export class SystemRbacService {
     const cleanName = String(name ?? '').trim();
     if (cleanName.length < 2) throw new BadRequestException('Role name must contain at least 2 characters');
     return this.prisma.$transaction(async (tx) => {
-      const role = await tx.$queryRawUnsafe<any[]>(`SELECT id::text AS id, name, is_system AS "isSystem" FROM roles WHERE id=$1::uuid AND tenant_id=$2::uuid AND company_id IS NULL`, roleId, actor.tenantId);
+      const role = await tx.$queryRawUnsafe<any[]>(`SELECT id::text AS id, name, is_system AS \"isSystem\" FROM roles WHERE id=$1::uuid AND tenant_id=$2::uuid AND company_id IS NULL`, roleId, actor.tenantId);
       if (!role[0]) throw new NotFoundException('Platform role not found');
       if (role[0].isSystem) throw new BadRequestException('Built-in platform roles cannot be modified');
       const { keys, permissions } = await this.platformPermissions(tx, permissionKeys);
@@ -70,7 +71,7 @@ export class SystemRbacService {
       await tx.$executeRawUnsafe(`DELETE FROM role_permissions WHERE role_id=$1::uuid`, roleId);
       for (const permission of permissions) await tx.$executeRawUnsafe(`INSERT INTO role_permissions (role_id, permission_id) VALUES ($1::uuid,$2::uuid) ON CONFLICT DO NOTHING`, roleId, permission.id);
       await tx.$executeRawUnsafe(`INSERT INTO system_audit_events (actor_user_id, action, target_type, target_id, metadata, result, occurred_at) VALUES ($1::uuid,'platform.role_updated','role',$2::uuid,$3::jsonb,'success',NOW())`, actor.id, roleId, JSON.stringify({ name: cleanName, permissionKeys: keys }));
-      return { id: roleId, name: cleanName, isSystem: false, permissions: permissions.map((p) => ({ permissionId: p.id, permissionKey: p.key })) };
+      return { id: roleId, name: cleanName, isSystem: false, permissions: permissions.map((p: PlatformPermissionRow) => ({ permissionId: p.id, permissionKey: p.key })) };
     });
   }
 
@@ -78,7 +79,7 @@ export class SystemRbacService {
     const actor = await this.actor(actorUserId);
     if (!UUID_RE.test(roleId)) throw new BadRequestException('Invalid role id');
     return this.prisma.$transaction(async (tx) => {
-      const role = await tx.$queryRawUnsafe<any[]>(`SELECT id::text AS id, name, is_system AS "isSystem" FROM roles WHERE id=$1::uuid AND tenant_id=$2::uuid AND company_id IS NULL`, roleId, actor.tenantId);
+      const role = await tx.$queryRawUnsafe<any[]>(`SELECT id::text AS id, name, is_system AS \"isSystem\" FROM roles WHERE id=$1::uuid AND tenant_id=$2::uuid AND company_id IS NULL`, roleId, actor.tenantId);
       if (!role[0]) throw new NotFoundException('Platform role not found');
       if (role[0].isSystem) throw new BadRequestException('Built-in platform roles cannot be deleted');
       const assigned = await tx.user.findFirst({ where: { accountType: 'SYSTEM', tenantId: actor.tenantId, roleIds: { has: roleId } }, select: { id: true } });
@@ -102,7 +103,7 @@ export class SystemRbacService {
     return this.prisma.$transaction(async (tx) => {
       const duplicate = await tx.user.findFirst({ where: { tenantId: actor.tenantId, email }, select: { id: true } });
       if (duplicate) throw new ConflictException('A platform user with this email already exists');
-      const roles: any[] = await tx.$queryRawUnsafe(`SELECT r.id::text AS id, EXISTS (SELECT 1 FROM role_permissions rp JOIN permissions p ON p.id=rp.permission_id WHERE rp.role_id=r.id AND p.key='platform:console:access') AS "hasConsoleAccess" FROM roles r WHERE r.id=ANY($1::uuid[]) AND r.tenant_id=$2::uuid AND r.company_id IS NULL AND EXISTS (SELECT 1 FROM role_permissions rp JOIN permissions p ON p.id=rp.permission_id WHERE rp.role_id=r.id AND p.key LIKE 'platform:%')`, normalized, actor.tenantId);
+      const roles: any[] = await tx.$queryRawUnsafe(`SELECT r.id::text AS id, EXISTS (SELECT 1 FROM role_permissions rp JOIN permissions p ON p.id=rp.permission_id WHERE rp.role_id=r.id AND p.key='platform:console:access') AS \"hasConsoleAccess\" FROM roles r WHERE r.id=ANY($1::uuid[]) AND r.tenant_id=$2::uuid AND r.company_id IS NULL AND EXISTS (SELECT 1 FROM role_permissions rp JOIN permissions p ON p.id=rp.permission_id WHERE rp.role_id=r.id AND p.key LIKE 'platform:%')`, normalized, actor.tenantId);
       if (roles.length !== normalized.length) throw new BadRequestException('One or more roles are not platform roles');
       if (!roles.some((r) => r.hasConsoleAccess)) throw new BadRequestException('At least one selected role must grant platform console access');
       const temporaryPassword = `Ah-${crypto.randomBytes(9).toString('base64url')}`;
@@ -171,11 +172,11 @@ export class SystemRbacService {
     if (!normalized.length) throw new BadRequestException('Select at least one platform role');
     const user = await this.prisma.user.findFirst({ where: { id: userId, tenantId: actor.tenantId, accountType: 'SYSTEM' }, select: { id: true } });
     if (!user) throw new NotFoundException('Platform user not found');
-    const roles: any[] = await this.prisma.$queryRawUnsafe(`SELECT r.id::text AS id, EXISTS (SELECT 1 FROM role_permissions rp JOIN permissions p ON p.id=rp.permission_id WHERE rp.role_id=r.id AND p.key='platform:console:access') AS "hasConsoleAccess" FROM roles r WHERE r.id=ANY($1::uuid[]) AND r.tenant_id=$2::uuid AND r.company_id IS NULL AND EXISTS (SELECT 1 FROM role_permissions rp JOIN permissions p ON p.id=rp.permission_id WHERE rp.role_id=r.id AND p.key LIKE 'platform:%')`, normalized, actor.tenantId);
+    const roles: any[] = await this.prisma.$queryRawUnsafe(`SELECT r.id::text AS id, EXISTS (SELECT 1 FROM role_permissions rp JOIN permissions p ON p.id=rp.permission_id WHERE rp.role_id=r.id AND p.key='platform:console:access') AS \"hasConsoleAccess\" FROM roles r WHERE r.id=ANY($1::uuid[]) AND r.tenant_id=$2::uuid AND r.company_id IS NULL AND EXISTS (SELECT 1 FROM role_permissions rp JOIN permissions p ON p.id=rp.permission_id WHERE rp.role_id=r.id AND p.key LIKE 'platform:%')`, normalized, actor.tenantId);
     if (roles.length !== normalized.length) throw new BadRequestException('One or more roles are not platform roles');
     if (!roles.some((r) => r.hasConsoleAccess)) throw new BadRequestException('At least one selected role must grant platform console access');
-    await this.prisma.user.update({ where: { id: user.id }, data: { roleIds: normalized, authVersion: { increment: 1 } } });
+    await this.prisma.user.update({ where: { id: userId }, data: { roleIds: normalized, authVersion: { increment: 1 } } });
     await this.prisma.$executeRawUnsafe(`INSERT INTO system_audit_events (actor_user_id, action, target_type, target_id, metadata, result, occurred_at) VALUES ($1::uuid,'platform.user_roles_changed','user',$2::uuid,$3::jsonb,'success',NOW())`, actor.id, userId, JSON.stringify({ roleIds: normalized }));
-    return { ok: true, userId, roleIds: normalized };
+    return { ok: true, userId, roleIds: normalized, actorUserId: actor.id };
   }
 }
