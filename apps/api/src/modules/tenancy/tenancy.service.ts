@@ -3,20 +3,174 @@ import { PrismaService } from '../../common/database/prisma.service';
 import { AuthContext } from '../../common/guards/tenant-context.guard';
 import { EntitlementService } from '../billing/entitlement.service';
 type SiteType = 'plant'|'branch_office'|'head_office'|'other';
+
 @Injectable()
 export class TenancyService {
   constructor(private readonly db: PrismaService, private readonly entitlements: EntitlementService) {}
-  private async hasTenantWideScope(auth:AuthContext){if(auth.crossCompany)return true;const user=await this.db.user.findFirst({where:{id:auth.userId,tenantId:auth.tenantId},select:{roleIds:true}});if(!user?.roleIds?.length)return false;const roles:any[]=await this.db.$queryRawUnsafe(`SELECT "companyId" FROM roles WHERE id = ANY($1::uuid[]) AND "tenantId"=$2::uuid`,user.roleIds,auth.tenantId);return roles.some(r=>r.companyId==null);}
-  async getTenantProfile(auth:AuthContext){const tenant=await this.db.tenant.findUnique({where:{id:auth.tenantId}});if(!tenant)throw new NotFoundException('Tenant not found');const company=await this.db.company.findUnique({where:{id:auth.companyId}});return{id:tenant.id,name:tenant.name,slug:tenant.slug,status:tenant.status,primaryEmail:tenant.primaryEmail??null,phone:tenant.phone??null,website:tenant.website??null,logoFileId:tenant.logoFileId??null,logoUrl:tenant.logoUrl??null,company:company?{id:company.id,name:company.name,code:company.code}:null};}
-  async updateTenantProfile(auth:AuthContext,input:{name?:string;phone?:string;website?:string;logoFileId?:string;logoUrl?:string}){const tenant=await this.db.tenant.findUnique({where:{id:auth.tenantId}});if(!tenant)throw new NotFoundException('Tenant not found');const data:any={};for(const key of ['name','phone','website','logoFileId','logoUrl']){const value=input[key as keyof typeof input];if(value!==undefined)data[key]=typeof value==='string'?value.trim():value;}if(data.name)await this.db.company.updateMany({where:{id:auth.companyId,tenantId:auth.tenantId},data:{name:data.name}});const updated=await this.db.tenant.update({where:{id:auth.tenantId},data});return{id:updated.id,name:updated.name,slug:updated.slug,status:updated.status,primaryEmail:updated.primaryEmail??null,phone:updated.phone??null,website:updated.website??null,logoFileId:updated.logoFileId??null,logoUrl:updated.logoUrl??null};}
-  async listCompanies(auth:AuthContext){return this.db.company.findMany({where:{tenantId:auth.tenantId},orderBy:{name:'asc'}});}
-  async getAssetHierarchy(auth:AuthContext){const companies=await this.db.company.findMany({where:{tenantId:auth.tenantId},orderBy:{name:'asc'}});const sites=await this.db.site.findMany({where:{tenantId:auth.tenantId},orderBy:[{type:'asc'},{name:'asc'}],include:{locations:{orderBy:{name:'asc'},include:{departments:{orderBy:{name:'asc'}}}}}});return companies.map(c=>({...c,sites:sites.filter(s=>s.companyId===c.id)}));}
-  async createCompany(auth:AuthContext,name:string,code:string){if(!(await this.hasTenantWideScope(auth)))throw new ForbiddenException('Only tenant-wide administrators can create companies');const normalizedName=name.trim(),normalizedCode=code.trim().toUpperCase();if(!normalizedName)throw new ConflictException('Company name is required');if(!normalizedCode)throw new ConflictException('Company code is required');if(await this.db.company.findUnique({where:{tenantId_code:{tenantId:auth.tenantId,code:normalizedCode}}}))throw new ConflictException(`Company code '${normalizedCode}' is already in use in this tenant`);const count=await this.db.company.count({where:{tenantId:auth.tenantId}});await this.entitlements.requireWithinLimit(auth.tenantId,'max_companies',count,1);return this.db.company.create({data:{tenantId:auth.tenantId,name:normalizedName,code:normalizedCode}});}
-  private async assertCompanyInScope(auth:AuthContext,companyId:string){const company=await this.db.company.findFirst({where:{id:companyId,tenantId:auth.tenantId}});if(!company)throw new NotFoundException('Company not found');}
-  async listPlants(auth:AuthContext,companyId:string){await this.assertCompanyInScope(auth,companyId);return this.db.site.findMany({where:{companyId,tenantId:auth.tenantId},orderBy:[{type:'asc'},{name:'asc'}]});}
-  async createPlant(auth:AuthContext,companyId:string,name:string,type:SiteType='plant'){await this.assertCompanyInScope(auth,companyId);const normalizedName=name.trim();if(!normalizedName)throw new ConflictException('Site name is required');const siteCount=await this.db.site.count({where:{companyId}});await this.entitlements.requireWithinLimit(auth.tenantId,'max_sites',siteCount);const siteType=['plant','branch_office','head_office','other'].includes(type)?type:'plant';return this.db.site.create({data:{tenantId:auth.tenantId,companyId,name:normalizedName,type:siteType}});}
-  async listLocations(auth:AuthContext,siteId:string){const site=await this.db.site.findUnique({where:{id:siteId}});if(!site)throw new NotFoundException('Site not found');await this.assertCompanyInScope(auth,site.companyId);return this.db.location.findMany({where:{siteId},orderBy:{name:'asc'}});}
-  async createLocation(auth:AuthContext,siteId:string,name:string){const site=await this.db.site.findUnique({where:{id:siteId}});if(!site)throw new NotFoundException('Site not found');await this.assertCompanyInScope(auth,site.companyId);const count=await this.db.location.count({where:{site:{companyId:site.companyId}}});await this.entitlements.requireWithinLimit(auth.tenantId,'max_locations',count);const normalizedName=name.trim();if(!normalizedName)throw new ConflictException('Location name is required');return this.db.location.create({data:{siteId,name:normalizedName}});}
-  async listDepartments(auth:AuthContext,locationId:string){const location=await this.db.location.findUnique({where:{id:locationId},include:{site:true}});if(!location)throw new NotFoundException('Location not found');await this.assertCompanyInScope(auth,location.site.companyId);return this.db.department.findMany({where:{locationId},orderBy:{name:'asc'}});}
-  async createDepartment(auth:AuthContext,locationId:string,name:string){const location=await this.db.location.findUnique({where:{id:locationId},include:{site:true}});if(!location)throw new NotFoundException('Location not found');await this.assertCompanyInScope(auth,location.site.companyId);const count=await this.db.department.count({where:{location:{site:{companyId:location.site.companyId}}}});await this.entitlements.requireWithinLimit(auth.tenantId,'max_departments',count);const normalizedName=name.trim();if(!normalizedName)throw new ConflictException('Department name is required');return this.db.department.create({data:{locationId,name:normalizedName}});}
+
+  private async hasTenantWideScope(auth: AuthContext) {
+    if (auth.crossCompany) return true;
+    const user = await this.db.withTenantContext(auth.tenantId, auth.companyId, tx =>
+      tx.user.findFirst({ where: { id: auth.userId, tenantId: auth.tenantId }, select: { roleIds: true } }),
+    );
+    if (!user?.roleIds?.length) return false;
+    const roles: Array<{ companyId: string | null }> = await this.db.withTenantContext(auth.tenantId, auth.companyId, tx =>
+      tx.$queryRaw`
+        SELECT company_id AS "companyId"
+        FROM roles
+        WHERE id = ANY(${user.roleIds}::uuid[])
+          AND tenant_id = ${auth.tenantId}::uuid
+      `,
+    );
+    return roles.some((role) => role.companyId == null);
+  }
+
+  async getTenantProfile(auth: AuthContext) {
+    return this.db.withTenantContext(auth.tenantId, auth.companyId, async tx => {
+      const tenant = await tx.tenant.findUnique({ where: { id: auth.tenantId } });
+      if (!tenant) throw new NotFoundException('Tenant not found');
+      const company = await tx.company.findUnique({ where: { id: auth.companyId } });
+      return {
+        id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+        status: tenant.status,
+        primaryEmail: tenant.primaryEmail ?? null,
+        phone: tenant.phone ?? null,
+        website: tenant.website ?? null,
+        logoFileId: tenant.logoFileId ?? null,
+        logoUrl: tenant.logoUrl ?? null,
+        company: company ? { id: company.id, name: company.name, code: company.code } : null,
+      };
+    });
+  }
+
+  async updateTenantProfile(auth: AuthContext, input: { name?: string; phone?: string; website?: string; logoFileId?: string; logoUrl?: string }) {
+    return this.db.withTenantContext(auth.tenantId, auth.companyId, async tx => {
+      const tenant = await tx.tenant.findUnique({ where: { id: auth.tenantId } });
+      if (!tenant) throw new NotFoundException('Tenant not found');
+      const data: Record<string, string> = {};
+      for (const key of ['name', 'phone', 'website', 'logoFileId', 'logoUrl'] as const) {
+        const value = input[key];
+        if (value !== undefined) data[key] = value.trim();
+      }
+      if (data.name) await tx.company.updateMany({ where: { id: auth.companyId, tenantId: auth.tenantId }, data: { name: data.name } });
+      const updated = await tx.tenant.update({ where: { id: auth.tenantId }, data });
+      return {
+        id: updated.id,
+        name: updated.name,
+        slug: updated.slug,
+        status: updated.status,
+        primaryEmail: updated.primaryEmail ?? null,
+        phone: updated.phone ?? null,
+        website: updated.website ?? null,
+        logoFileId: updated.logoFileId ?? null,
+        logoUrl: updated.logoUrl ?? null,
+      };
+    });
+  }
+
+  async listCompanies(auth: AuthContext) {
+    return this.db.withTenantContext(auth.tenantId, auth.crossCompany ? null : auth.companyId, tx =>
+      tx.company.findMany({ where: { tenantId: auth.tenantId }, orderBy: { name: 'asc' } }),
+    );
+  }
+
+  async getAssetHierarchy(auth: AuthContext) {
+    return this.db.withTenantContext(auth.tenantId, auth.crossCompany ? null : auth.companyId, async tx => {
+      const companies = await tx.company.findMany({ where: { tenantId: auth.tenantId }, orderBy: { name: 'asc' } });
+      const sites = await tx.site.findMany({
+        where: { tenantId: auth.tenantId },
+        orderBy: [{ type: 'asc' }, { name: 'asc' }],
+        include: { locations: { orderBy: { name: 'asc' }, include: { departments: { orderBy: { name: 'asc' } } } } },
+      });
+      return companies.map((company) => ({ ...company, sites: sites.filter((site) => site.companyId === company.id) }));
+    });
+  }
+
+  async createCompany(auth: AuthContext, name: string, code: string) {
+    if (!(await this.hasTenantWideScope(auth))) throw new ForbiddenException('Only tenant-wide administrators can create companies');
+    const normalizedName = name.trim();
+    const normalizedCode = code.trim().toUpperCase();
+    if (!normalizedName) throw new ConflictException('Company name is required');
+    if (!normalizedCode) throw new ConflictException('Company code is required');
+    return this.db.withTenantContext(auth.tenantId, null, async tx => {
+      const duplicate = await tx.company.findUnique({ where: { tenantId_code: { tenantId: auth.tenantId, code: normalizedCode } } });
+      if (duplicate) throw new ConflictException(`Company code '${normalizedCode}' is already in use in this tenant`);
+      const count = await tx.company.count({ where: { tenantId: auth.tenantId } });
+      await this.entitlements.requireWithinLimit(auth.tenantId, 'max_companies', count, 1);
+      return tx.company.create({ data: { tenantId: auth.tenantId, name: normalizedName, code: normalizedCode } });
+    });
+  }
+
+  private async assertCompanyInScope(auth: AuthContext, companyId: string) {
+    const company = await this.db.withTenantContext(auth.tenantId, auth.crossCompany ? null : auth.companyId, tx =>
+      tx.company.findFirst({ where: { id: companyId, tenantId: auth.tenantId } }),
+    );
+    if (!company) throw new NotFoundException('Company not found');
+    if (!auth.crossCompany && company.companyId !== auth.companyId) {
+      // This path is deliberately defensive; Company has no companyId field.
+      throw new NotFoundException('Company not found');
+    }
+    return company;
+  }
+
+  async listPlants(auth: AuthContext, companyId: string) {
+    await this.assertCompanyInScope(auth, companyId);
+    return this.db.withTenantContext(auth.tenantId, auth.crossCompany ? null : auth.companyId, tx =>
+      tx.site.findMany({ where: { companyId, tenantId: auth.tenantId }, orderBy: [{ type: 'asc' }, { name: 'asc' }] }),
+    );
+  }
+
+  async createPlant(auth: AuthContext, companyId: string, name: string, type: SiteType = 'plant') {
+    await this.assertCompanyInScope(auth, companyId);
+    const normalizedName = name.trim();
+    if (!normalizedName) throw new ConflictException('Site name is required');
+    return this.db.withTenantContext(auth.tenantId, auth.crossCompany ? null : auth.companyId, async tx => {
+      const siteCount = await tx.site.count({ where: { companyId } });
+      await this.entitlements.requireWithinLimit(auth.tenantId, 'max_sites', siteCount);
+      const siteType = ['plant', 'branch_office', 'head_office', 'other'].includes(type) ? type : 'plant';
+      return tx.site.create({ data: { tenantId: auth.tenantId, companyId, name: normalizedName, type: siteType } });
+    });
+  }
+
+  async listLocations(auth: AuthContext, siteId: string) {
+    const site = await this.db.withTenantContext(auth.tenantId, auth.crossCompany ? null : auth.companyId, tx => tx.site.findUnique({ where: { id: siteId } }));
+    if (!site) throw new NotFoundException('Site not found');
+    await this.assertCompanyInScope(auth, site.companyId);
+    return this.db.withTenantContext(auth.tenantId, auth.crossCompany ? null : auth.companyId, tx => tx.location.findMany({ where: { siteId }, orderBy: { name: 'asc' } }));
+  }
+
+  async createLocation(auth: AuthContext, siteId: string, name: string) {
+    const site = await this.db.withTenantContext(auth.tenantId, auth.crossCompany ? null : auth.companyId, tx => tx.site.findUnique({ where: { id: siteId } }));
+    if (!site) throw new NotFoundException('Site not found');
+    await this.assertCompanyInScope(auth, site.companyId);
+    const normalizedName = name.trim();
+    if (!normalizedName) throw new ConflictException('Location name is required');
+    return this.db.withTenantContext(auth.tenantId, auth.crossCompany ? null : auth.companyId, async tx => {
+      const count = await tx.location.count({ where: { site: { companyId: site.companyId } } });
+      await this.entitlements.requireWithinLimit(auth.tenantId, 'max_locations', count);
+      return tx.location.create({ data: { siteId, name: normalizedName } });
+    });
+  }
+
+  async listDepartments(auth: AuthContext, locationId: string) {
+    const location = await this.db.withTenantContext(auth.tenantId, auth.crossCompany ? null : auth.companyId, tx => tx.location.findUnique({ where: { id: locationId }, include: { site: true } }));
+    if (!location) throw new NotFoundException('Location not found');
+    await this.assertCompanyInScope(auth, location.site.companyId);
+    return this.db.withTenantContext(auth.tenantId, auth.crossCompany ? null : auth.companyId, tx => tx.department.findMany({ where: { locationId }, orderBy: { name: 'asc' } }));
+  }
+
+  async createDepartment(auth: AuthContext, locationId: string, name: string) {
+    const location = await this.db.withTenantContext(auth.tenantId, auth.crossCompany ? null : auth.companyId, tx => tx.location.findUnique({ where: { id: locationId }, include: { site: true } }));
+    if (!location) throw new NotFoundException('Location not found');
+    await this.assertCompanyInScope(auth, location.site.companyId);
+    const normalizedName = name.trim();
+    if (!normalizedName) throw new ConflictException('Department name is required');
+    return this.db.withTenantContext(auth.tenantId, auth.crossCompany ? null : auth.companyId, async tx => {
+      const count = await tx.department.count({ where: { location: { site: { companyId: location.site.companyId } } } });
+      await this.entitlements.requireWithinLimit(auth.tenantId, 'max_departments', count);
+      return tx.department.create({ data: { locationId, name: normalizedName } });
+    });
+  }
 }
