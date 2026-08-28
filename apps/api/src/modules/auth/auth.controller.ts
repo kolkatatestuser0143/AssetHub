@@ -17,9 +17,9 @@ class ChangePasswordDto {
 export class AuthController {
   constructor(private readonly authService: AuthService, private readonly jwt: JwtService) {}
 
-  private sendSession(res: any, result: any, scope: 'tenant' | 'system') {
-    if (scope === 'system') setSystemAuthCookies(res, result.accessToken, result.refreshToken);
-    else setTenantAuthCookies(res, result.accessToken, result.refreshToken);
+  private sendSession(req: any, res: any, result: any, scope: 'tenant' | 'system') {
+    if (scope === 'system') setSystemAuthCookies(res, result.accessToken, result.refreshToken, req);
+    else setTenantAuthCookies(res, result.accessToken, result.refreshToken, req);
     return {
       ok: true,
       sessionId: result.sessionId,
@@ -37,22 +37,22 @@ export class AuthController {
   }
 
   @Get('csrf')
-  csrf(@Res({ passthrough: true }) res: any) {
-    issueCsrfCookie(res);
+  csrf(@Req() req: any, @Res({ passthrough: true }) res: any) {
+    issueCsrfCookie(res, req);
     return { ok: true };
   }
 
   @Post('login') @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  async login(@Body() dto: LoginDto, @Req() req: any, @Res({ passthrough: true }) res: any) { return this.sendSession(res, await this.authService.login(dto.email, dto.password, req.ip, req.headers['user-agent'] ?? '', this.tenantSlug(req)), 'tenant'); }
+  async login(@Body() dto: LoginDto, @Req() req: any, @Res({ passthrough: true }) res: any) { return this.sendSession(req, res, await this.authService.login(dto.email, dto.password, req.ip, req.headers['user-agent'] ?? '', this.tenantSlug(req)), 'tenant'); }
 
   @Post('system/login') @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  async systemLogin(@Body() dto: LoginDto, @Req() req: any, @Res({ passthrough: true }) res: any) { return this.sendSession(res, await this.authService.systemLogin(dto.email, dto.password, req.ip, req.headers['user-agent'] ?? ''), 'system'); }
+  async systemLogin(@Body() dto: LoginDto, @Req() req: any, @Res({ passthrough: true }) res: any) { return this.sendSession(req, res, await this.authService.systemLogin(dto.email, dto.password, req.ip, req.headers['user-agent'] ?? ''), 'system'); }
 
   @Post('change-password')
   @UseGuards(TenantContextGuard)
   async changePassword(@Body() dto: ChangePasswordDto, @Req() req: any, @Res({ passthrough: true }) res: any) {
     const result = await this.authService.changeTenantPassword(req.authContext.userId, dto.currentPassword, dto.newPassword, req.authContext.sessionId, req.ip, req.headers['user-agent'] ?? '');
-    setTenantAuthCookies(res, result.accessToken, result.refreshToken);
+    setTenantAuthCookies(res, result.accessToken, result.refreshToken, req);
     return { ok: true, mustChangePassword: false, sessionId: result.sessionId, accountType: result.accountType, adminLevel: result.adminLevel ?? 'EMPLOYEE', forcePasswordReset: false };
   }
 
@@ -73,10 +73,10 @@ export class AuthController {
     try {
       const result = await this.authService.refresh(refreshToken, req.ip, req.headers['user-agent'] ?? '');
       const actualScope = result.accountType === 'SYSTEM' ? 'system' : 'tenant';
-      this.sendSession(res, result, actualScope);
+      this.sendSession(req, res, result, actualScope);
       return { authenticated: true, accountType: result.accountType, adminLevel: actualScope === 'tenant' ? (result.adminLevel ?? 'EMPLOYEE') : undefined, forcePasswordReset: result.forcePasswordReset === true };
     } catch {
-      if (requestedScope === 'system') clearSystemAuthCookies(res); else clearTenantAuthCookies(res);
+      if (requestedScope === 'system') clearSystemAuthCookies(res, req); else clearTenantAuthCookies(res, req);
       return { authenticated: false };
     }
   }
@@ -90,7 +90,7 @@ export class AuthController {
     if (!refreshToken) throw new UnauthorizedException('Missing refresh token');
     const result = await this.authService.refresh(refreshToken, req.ip, req.headers['user-agent'] ?? '');
     const actualScope = result.accountType === 'SYSTEM' ? 'system' : 'tenant';
-    const response = this.sendSession(res, result, actualScope);
+    const response = this.sendSession(req, res, result, actualScope);
     if (legacyRefreshToken) { const cookies = [`${LEGACY_REFRESH_COOKIE}=; Max-Age=0; Path=/api/v1/auth; HttpOnly; SameSite=Strict${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`]; const existing = res.getHeader?.('Set-Cookie'); res.setHeader('Set-Cookie', [...(Array.isArray(existing) ? existing : existing ? [existing] : []), ...cookies]); }
     return response;
   }
@@ -100,7 +100,7 @@ export class AuthController {
     const scope = req.headers['x-auth-scope'] === 'system' ? 'system' : 'tenant';
     const refreshToken = readCookie(req, scope === 'system' ? SYSTEM_REFRESH_COOKIE : TENANT_REFRESH_COOKIE) ?? readCookie(req, LEGACY_REFRESH_COOKIE);
     if (req.authContext?.sessionId && req.authContext?.userId) await this.authService.logout(req.authContext.sessionId, req.authContext.userId); else if (req.systemAuth?.sessionId && req.systemAuth?.sub) await this.authService.logout(req.systemAuth.sessionId, req.systemAuth.sub); else if (refreshToken) await this.authService.logoutByRefreshToken(refreshToken);
-    if (scope === 'system') clearSystemAuthCookies(res); else clearTenantAuthCookies(res);
+    if (scope === 'system') clearSystemAuthCookies(res, req); else clearTenantAuthCookies(res, req);
     return { ok: true };
   }
 }
