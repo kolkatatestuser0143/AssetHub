@@ -29,7 +29,10 @@ async function bootstrap() {
   app.useGlobalFilters(new ProductionExceptionFilter());
   app.setGlobalPrefix('api/v1');
   const swaggerEnabled = process.env.SWAGGER_ENABLED === 'true' || process.env.NODE_ENV !== 'production';
-  if (swaggerEnabled) { const config = new DocumentBuilder().setTitle('ITAM SaaS API').setDescription('Enterprise IT Asset Management API').setVersion('0.1.0').addBearerAuth().build(); SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app)); }
+  if (swaggerEnabled) {
+    const config = new DocumentBuilder().setTitle('ITAM SaaS API').setDescription('Enterprise IT Asset Management API').setVersion('0.1.0').addBearerAuth().build();
+    SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config));
+  }
   const shutdown = async () => { await app.close(); process.exit(0); };
   process.once('SIGTERM', shutdown); process.once('SIGINT', shutdown);
   await app.listen(process.env.PORT ?? 3001);
