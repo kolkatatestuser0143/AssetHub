@@ -15,7 +15,7 @@ export default function RolesPage(){
  const [roles,setRoles]=useState<Role[]>([]),[permissions,setPermissions]=useState<Permission[]>([]),[name,setName]=useState(''),[selectedKeys,setSelectedKeys]=useState<string[]>([]),[query,setQuery]=useState(''),[loading,setLoading]=useState(true),[error,setError]=useState<string|null>(null),[editing,setEditing]=useState<Role|null>(null),[saving,setSaving]=useState(false);
  async function load(){setLoading(true);setError(null);try{const [r,p]=await Promise.all([apiFetch('/roles'),apiFetch('/roles/permissions')]);setRoles(Array.isArray(r)?r:[]);setPermissions(Array.isArray(p)?p:[]);}catch(e:any){setError(e?.message??'Unable to load roles.')}finally{setLoading(false)}}
  useEffect(()=>{void load()},[]);
- const grouped=useMemo(()=>{const m=new Map<string,Permission[]>();for(const p of permissions){const g=permissionMeta(p.key).group;const list=m.get(g)??[];list.push(p);m.set(g,list)}return [...m.entries()].sort(([a],[b])=>a.localeCompare(b))},[permissions]);
+ const grouped=useMemo(()=>{const m=new Map<string,Permission[]>();for(const p of permissions){const g=permissionMeta(p.key).group;const list=m.get(g)??[];list.push(p);m.set(g,list)}return Array.from(m.entries()).sort(([a],[b])=>a.localeCompare(b))},[permissions]);
  const filtered=useMemo(()=>{const q=query.trim().toLowerCase();return roles.filter(r=>`${r.name} ${r.permissions.map(p=>permissionMeta(p.permissionKey).label).join(' ')}`.toLowerCase().includes(q))},[roles,query]);
  function toggle(k:string){setSelectedKeys(c=>c.includes(k)?c.filter(x=>x!==k):[...c,k])}
  function beginEdit(role:Role){setEditing(role);setName(role.name);setSelectedKeys(role.permissions.map(p=>p.permissionKey));setError(null)}
