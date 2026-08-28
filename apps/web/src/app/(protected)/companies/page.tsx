@@ -25,12 +25,6 @@ const SITE_TYPES = [
   { value: 'other', label: 'Other' },
 ];
 const labels: Record<EntityKind, string> = { company: 'Company', site: 'Site', location: 'Location', department: 'Department' };
-const metricCards: Array<[string, number, LucideIcon]> = [
-  ['Companies', 0, Building2],
-  ['Sites', 0, MapPin],
-  ['Locations', 0, Layers3],
-  ['Departments', 0, Users],
-];
 
 function counts(company: Company) {
   const sites = company.sites ?? [];
@@ -113,10 +107,10 @@ export default function CompaniesPage() {
   if (error && companies.length === 0) return <ErrorState title="Unable to load companies" message={error} onRetry={() => void load()} />;
 
   const metrics: Array<[string, number, LucideIcon]> = [
-    [metricCards[0][0], companies.length, metricCards[0][2]],
-    [metricCards[1][0], total.sites, metricCards[1][2]],
-    [metricCards[2][0], total.locations, metricCards[2][2]],
-    [metricCards[3][0], total.departments, metricCards[3][2]],
+    ['Companies', companies.length, Building2],
+    ['Sites', total.sites, MapPin],
+    ['Locations', total.locations, Layers3],
+    ['Departments', total.departments, Users],
   ];
 
   return <div className="mx-auto max-w-[1500px] space-y-6">
