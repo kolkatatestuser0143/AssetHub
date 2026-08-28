@@ -4,7 +4,7 @@ module.exports = {
   transform: { '^.+\\.ts$': 'ts-jest' },
   testEnvironment: 'node',
   setupFiles: ['<rootDir>/test/security/jest.security.setup.ts'],
-  // The setup file loads apps/api/.env, configures deterministic DNS, and
-  // points MONGODB_URI at a disposable *_test database. Security tests must
-  // never run against the normal development database.
+  // The setup file loads the API environment and derives a disposable
+  // PostgreSQL test database. Security tests must never run against the
+  // normal development database.
 };
