@@ -1,7 +1,9 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:3001/api/v1';
-let refreshing: Promise<void> | null = null;
+
+type AuthScope = 'tenant' | 'system';
+const refreshing: Partial<Record<AuthScope, Promise<void>>> = {};
 let csrfBootstrapping: Promise<void> | null = null;
-let sessionEstablished = false;
+const sessionEstablished: Record<AuthScope, boolean> = { tenant: false, system: false };
 
 export class ApiError extends Error {
   readonly status: number;
@@ -17,10 +19,18 @@ export class ApiError extends Error {
   }
 }
 
+// Access and refresh tokens are intentionally cookie-based in the browser.
+// These no-op exports remain only for compatibility with older callers.
 export function setAccessToken(_token: string | null) {}
 export function getAccessToken() { return null; }
-export function setSessionEstablished(value: boolean) { sessionEstablished = value; }
-export function isSessionEstablished() { return sessionEstablished; }
+
+export function setSessionEstablished(value: boolean, scope: AuthScope = 'tenant') {
+  sessionEstablished[scope] = value;
+}
+
+export function isSessionEstablished(scope: AuthScope = 'tenant') {
+  return sessionEstablished[scope];
+}
 
 function csrfToken(): string | undefined {
   if (typeof document === 'undefined') return undefined;
@@ -33,7 +43,9 @@ async function ensureCsrfToken(force = false) {
   if (csrfBootstrapping) return csrfBootstrapping;
   csrfBootstrapping = fetch(`${API_BASE}/auth/csrf`, { method: 'GET', credentials: 'include' })
     .then(async (res) => {
-      if (!res.ok || !csrfToken()) throw new ApiError('We could not prepare the secure request. Please refresh the page and try again.', res.status || 500, 'CSRF_INIT_FAILED');
+      if (!res.ok || !csrfToken()) {
+        throw new ApiError('We could not prepare the secure request. Please refresh the page and try again.', res.status || 500, 'CSRF_INIT_FAILED');
+      }
     })
     .finally(() => { csrfBootstrapping = null; });
   return csrfBootstrapping;
@@ -43,33 +55,70 @@ function isMutating(method: string | undefined) {
   return ['POST', 'PUT', 'PATCH', 'DELETE'].includes((method ?? 'GET').toUpperCase());
 }
 
-async function expireTenantSession() {
-  sessionEstablished = false;
+async function expireSession(scope: AuthScope) {
+  sessionEstablished[scope] = false;
   if (typeof window === 'undefined') return;
-  sessionStorage.removeItem('itam_refresh_token');
-  sessionStorage.removeItem('itam_access_token');
-  if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/system/')) window.location.href = '/login';
+  sessionStorage.removeItem(scope === 'system' ? 'itam_system_refresh_token' : 'itam_refresh_token');
+  sessionStorage.removeItem(scope === 'system' ? 'itam_system_access_token' : 'itam_access_token');
+  const loginPath = scope === 'system' ? '/system/login' : '/login';
+  if (!window.location.pathname.startsWith(loginPath) && !(scope === 'tenant' && window.location.pathname.startsWith('/system/'))) {
+    window.location.href = loginPath;
+  }
 }
 
-async function refreshSession() {
-  if (refreshing) return refreshing;
-  await ensureCsrfToken();
-  refreshing = fetch(`${API_BASE}/auth/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken()! },
-    credentials: 'include',
-  }).then(async (res) => {
+export async function refreshSession(scope: AuthScope = 'tenant') {
+  if (refreshing[scope]) return refreshing[scope];
+  refreshing[scope] = (async () => {
+    await ensureCsrfToken();
+    const res = await fetch(`${API_BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Auth-Scope': scope, 'X-CSRF-Token': csrfToken()! },
+      credentials: 'include',
+    });
     if (!res.ok) {
-      await expireTenantSession();
-      throw new ApiError('Your session has ended. Please sign in again.', res.status || 401, 'SESSION_EXPIRED');
+      await expireSession(scope);
+      throw new ApiError(scope === 'system' ? 'Your System Admin session has ended. Please sign in again.' : 'Your session has ended. Please sign in again.', res.status || 401, 'SESSION_EXPIRED');
     }
-    sessionEstablished = true;
-  }).finally(() => { refreshing = null; });
-  return refreshing;
+    sessionEstablished[scope] = true;
+  })().finally(() => { delete refreshing[scope]; });
+  return refreshing[scope];
 }
 
-function shouldRefreshOn401(path: string) {
-  return sessionEstablished && path !== '/auth/refresh' && path !== '/auth/login' && path !== '/auth/system/login';
+export async function bootstrapSession(scope: AuthScope = 'tenant') {
+  if (typeof window === 'undefined') return null;
+  const headers = { 'X-Auth-Scope': scope };
+  const session = await fetch(`${API_BASE}/auth/session`, { method: 'GET', headers, credentials: 'include' });
+  if (session.ok) {
+    const data = await session.json().catch(() => null);
+    if (data?.authenticated === true && data?.accountType === (scope === 'system' ? 'SYSTEM' : 'TENANT')) {
+      sessionEstablished[scope] = true;
+      return data;
+    }
+  }
+
+  try {
+    await refreshSession(scope);
+  } catch {
+    return null;
+  }
+
+  const retried = await fetch(`${API_BASE}/auth/session`, { method: 'GET', headers, credentials: 'include' });
+  if (!retried.ok) {
+    sessionEstablished[scope] = false;
+    return null;
+  }
+  const data = await retried.json().catch(() => null);
+  const expected = scope === 'system' ? 'SYSTEM' : 'TENANT';
+  if (data?.authenticated === true && data?.accountType === expected) {
+    sessionEstablished[scope] = true;
+    return data;
+  }
+  sessionEstablished[scope] = false;
+  return null;
+}
+
+function shouldRefreshOn401(path: string, scope: AuthScope) {
+  return sessionEstablished[scope] && path !== '/auth/refresh' && path !== '/auth/login' && path !== '/auth/system/login';
 }
 
 async function buildHeaders(path: string, options: RequestInit) {
@@ -96,63 +145,25 @@ function userFriendlyMessage(status: number, path: string, body: any): { message
   const raw = normalizeServerMessage(body).toLowerCase();
   const endpoint = path.split('?')[0];
 
-  if (raw.includes('csrf') || raw.includes('security token')) {
-    return { message: 'Your secure session needs to be refreshed. Please try again.', code: 'CSRF_INVALID' };
-  }
-  if (raw.includes('account temporarily locked') || raw.includes('temporarily locked')) {
-    return { message: 'Your account is temporarily locked after several unsuccessful sign-in attempts. Please try again later.', code: 'ACCOUNT_LOCKED' };
-  }
-  if (raw.includes('invalid email or password')) {
-    return { message: 'The email address or password is incorrect.', code: 'INVALID_CREDENTIALS' };
-  }
-  if (raw.includes('invalid system administrator credentials')) {
-    return { message: 'The system administrator email or password is incorrect.', code: 'INVALID_SYSTEM_CREDENTIALS' };
-  }
-  if (raw.includes('account is inactive') || raw.includes('inactive')) {
-    return { message: 'This account is inactive. Please contact your administrator.', code: 'ACCOUNT_INACTIVE' };
-  }
-  if (raw.includes('tenant is suspended') || raw.includes('tenant account is unavailable')) {
-    return { message: 'This organization is currently unavailable. Please contact your system administrator.', code: 'TENANT_UNAVAILABLE' };
-  }
-  if (raw.includes('tenant is archived')) {
-    return { message: 'This organization is archived and cannot be accessed.', code: 'TENANT_ARCHIVED' };
-  }
-  if (raw.includes('session is no longer valid') || raw.includes('session expired') || raw.includes('missing access token') || raw.includes('invalid or expired access token')) {
-    return { message: 'Your session has expired. Please sign in again.', code: 'SESSION_EXPIRED' };
-  }
-  if (raw.includes('you cannot modify your own roles')) {
-    return { message: 'You cannot change your own access from here. Ask another administrator to make this change.', code: 'SELF_ROLE_CHANGE_BLOCKED' };
-  }
-  if (raw.includes('you cannot modify your own admin level')) {
-    return { message: 'You cannot change your own administrator level. Ask another administrator to make this change.', code: 'SELF_ADMIN_LEVEL_CHANGE_BLOCKED' };
-  }
-  if (raw.includes('last active tenant administrator') || raw.includes('last tenant admin')) {
-    return { message: 'At least one active Tenant Administrator must remain for this organization.', code: 'LAST_ADMIN_PROTECTED' };
-  }
-  if (raw.includes('role belongs to a different company') || raw.includes('different company')) {
-    return { message: 'That access option belongs to a different company and cannot be assigned here.', code: 'COMPANY_SCOPE_MISMATCH' };
-  }
-  if (raw.includes('one or more roles are not available')) {
-    return { message: 'One or more selected roles are no longer available. Refresh the page and try again.', code: 'ROLE_NOT_AVAILABLE' };
-  }
-  if (raw.includes('already assigned') || raw.includes('already exists') || raw.includes('duplicate')) {
-    return { message: 'This information already exists. Please choose a different value.', code: 'DUPLICATE' };
-  }
-  if (raw.includes('not found')) {
-    return { message: 'The requested item could not be found. It may have been removed or is no longer available.', code: 'NOT_FOUND' };
-  }
-  if (raw.includes('required') || raw.includes('validation') || raw.includes('must be') || raw.includes('invalid')) {
-    return { message: 'Please check the information you entered and try again.', code: 'VALIDATION_FAILED' };
-  }
-  if (endpoint.includes('/assets/') && endpoint.endsWith('/assign')) {
-    return { message: 'We could not assign this asset. Please check the employee and asset details and try again.', code: 'ASSET_ASSIGN_FAILED' };
-  }
-  if (endpoint === '/assets') {
-    return { message: 'We could not save the asset. Please check the details and try again.', code: 'ASSET_SAVE_FAILED' };
-  }
-  if (endpoint.includes('/users') && endpoint.endsWith('/roles')) {
-    return { message: 'We could not update access for this user. Please refresh the page and try again.', code: 'USER_ACCESS_UPDATE_FAILED' };
-  }
+  if (raw.includes('csrf') || raw.includes('security token')) return { message: 'Your secure session needs to be refreshed. Please try again.', code: 'CSRF_INVALID' };
+  if (raw.includes('account temporarily locked') || raw.includes('temporarily locked')) return { message: 'Your account is temporarily locked after several unsuccessful sign-in attempts. Please try again later.', code: 'ACCOUNT_LOCKED' };
+  if (raw.includes('invalid email or password')) return { message: 'The email address or password is incorrect.', code: 'INVALID_CREDENTIALS' };
+  if (raw.includes('invalid system administrator credentials')) return { message: 'The system administrator email or password is incorrect.', code: 'INVALID_SYSTEM_CREDENTIALS' };
+  if (raw.includes('account is inactive') || raw.includes('inactive')) return { message: 'This account is inactive. Please contact your administrator.', code: 'ACCOUNT_INACTIVE' };
+  if (raw.includes('tenant is suspended') || raw.includes('tenant account is unavailable')) return { message: 'This organization is currently unavailable. Please contact your system administrator.', code: 'TENANT_UNAVAILABLE' };
+  if (raw.includes('tenant is archived')) return { message: 'This organization is archived and cannot be accessed.', code: 'TENANT_ARCHIVED' };
+  if (raw.includes('session is no longer valid') || raw.includes('session expired') || raw.includes('missing access token') || raw.includes('invalid or expired access token')) return { message: 'Your session has expired. Please sign in again.', code: 'SESSION_EXPIRED' };
+  if (raw.includes('you cannot modify your own roles')) return { message: 'You cannot change your own access from here. Ask another administrator to make this change.', code: 'SELF_ROLE_CHANGE_BLOCKED' };
+  if (raw.includes('you cannot modify your own admin level')) return { message: 'You cannot change your own administrator level. Ask another administrator to make this change.', code: 'SELF_ADMIN_LEVEL_CHANGE_BLOCKED' };
+  if (raw.includes('last active tenant administrator') || raw.includes('last tenant admin')) return { message: 'At least one active Tenant Administrator must remain for this organization.', code: 'LAST_ADMIN_PROTECTED' };
+  if (raw.includes('role belongs to a different company') || raw.includes('different company')) return { message: 'That access option belongs to a different company and cannot be assigned here.', code: 'COMPANY_SCOPE_MISMATCH' };
+  if (raw.includes('one or more roles are not available')) return { message: 'One or more selected roles are no longer available. Refresh the page and try again.', code: 'ROLE_NOT_AVAILABLE' };
+  if (raw.includes('already assigned') || raw.includes('already exists') || raw.includes('duplicate')) return { message: 'This information already exists. Please choose a different value.', code: 'DUPLICATE' };
+  if (raw.includes('not found')) return { message: 'The requested item could not be found. It may have been removed or is no longer available.', code: 'NOT_FOUND' };
+  if (raw.includes('required') || raw.includes('validation') || raw.includes('must be') || raw.includes('invalid')) return { message: 'Please check the information you entered and try again.', code: 'VALIDATION_FAILED' };
+  if (endpoint.includes('/assets/') && endpoint.endsWith('/assign')) return { message: 'We could not assign this asset. Please check the employee and asset details and try again.', code: 'ASSET_ASSIGN_FAILED' };
+  if (endpoint === '/assets') return { message: 'We could not save the asset. Please check the details and try again.', code: 'ASSET_SAVE_FAILED' };
+  if (endpoint.includes('/users') && endpoint.endsWith('/roles')) return { message: 'We could not update access for this user. Please refresh the page and try again.', code: 'USER_ACCESS_UPDATE_FAILED' };
   if (status === 400) return { message: 'Please check the information entered and try again.', code: 'BAD_REQUEST' };
   if (status === 401) return { message: 'Your session has expired. Please sign in again.', code: 'UNAUTHORIZED' };
   if (status === 403) return { message: 'You do not have permission to perform this action.', code: 'FORBIDDEN' };
@@ -167,14 +178,14 @@ function userFriendlyMessage(status: number, path: string, body: any): { message
 async function parseErrorResponse(res: Response, path: string): Promise<ApiError> {
   const body = await res.json().catch(() => ({}));
   const mapped = userFriendlyMessage(res.status, path, body);
-  return new ApiError(mapped.message, res.status, mapped.code);
+  return new ApiError(mapped.message, res.status, mapped.code, body);
 }
 
 export async function apiFetch(path: string, options: RequestInit = {}, retry = true) {
   const headers = await buildHeaders(path, options);
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: 'include' });
-  if (res.status === 401 && retry && shouldRefreshOn401(path)) {
-    await refreshSession();
+  if (res.status === 401 && retry && shouldRefreshOn401(path, 'tenant')) {
+    await refreshSession('tenant');
     return apiFetch(path, options, false);
   }
   if (!res.ok) throw await parseErrorResponse(res, path);
@@ -184,8 +195,8 @@ export async function apiFetch(path: string, options: RequestInit = {}, retry = 
 export async function downloadFile(path: string, retry = true, options: RequestInit = {}) {
   const headers = await buildHeaders(path, options);
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers, credentials: 'include' });
-  if (res.status === 401 && retry && sessionEstablished && path !== '/auth/refresh') {
-    await refreshSession();
+  if (res.status === 401 && retry && shouldRefreshOn401(path, 'tenant')) {
+    await refreshSession('tenant');
     return downloadFile(path, false, options);
   }
   if (!res.ok) throw await parseErrorResponse(res, path);
@@ -214,21 +225,21 @@ export async function login(email: string, password: string) {
   const slug = currentTenantSlug();
   if (slug) headers.set('X-Tenant-Slug', slug);
   const result = await apiFetch('/auth/login', { method: 'POST', headers, body: JSON.stringify({ email, password }) });
-  sessionEstablished = true;
+  sessionEstablished.tenant = true;
   return result;
 }
 
 export async function systemLogin(email: string, password: string) {
   const result = await apiFetch('/auth/system/login', { method: 'POST', body: JSON.stringify({ email, password }) });
-  sessionEstablished = true;
+  sessionEstablished.system = true;
   return result;
 }
 
-export async function logout() {
+export async function logout(scope: AuthScope = 'tenant') {
   if (typeof window === 'undefined') return;
   try {
     await ensureCsrfToken();
-    await fetch(`${API_BASE}/auth/logout`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Auth-Scope': 'tenant', 'X-CSRF-Token': csrfToken()! }, credentials: 'include' });
+    await fetch(`${API_BASE}/auth/logout`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Auth-Scope': scope, 'X-CSRF-Token': csrfToken()! }, credentials: 'include' });
   } catch {}
-  await expireTenantSession();
+  await expireSession(scope);
 }

@@ -2,23 +2,23 @@ name: PostgreSQL validation
 
 on:
   push:
-    branches: [Postgresql]
+    branches: [Postgresql, 'fix/**']
   pull_request:
     branches: [Postgresql]
 
 jobs:
-  prisma-validate:
+  validate:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/api
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/itam
       DIRECT_URL: postgresql://postgres:postgres@localhost:5432/itam
+      DATABASE_TEST_URL: postgresql://postgres:postgres@localhost:5432/itam_test
       JWT_ACCESS_SECRET: ci-test-secret-change-me
       REDIS_URL: redis://localhost:6379
       MAIL_ENABLED: "false"
       SEED_DEV_MODE: "true"
+      IDP_CONFIG_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      SWAGGER_ENABLED: "false"
     services:
       postgres:
         image: postgres:16
@@ -32,7 +32,7 @@ jobs:
           --health-cmd "pg_isready -U postgres -d itam"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
       redis:
         image: redis:7
         ports:
@@ -41,20 +41,42 @@ jobs:
           --health-cmd "redis-cli ping"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: 11.21.0
+          version: 10.14.0
           run_install: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-        working-directory: .
-      - run: pnpm prisma validate
-      - run: pnpm prisma generate
-      - run: pnpm build
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Create disposable PostgreSQL security database
+        run: PGPASSWORD=postgres psql -h localhost -U postgres -d itam -c 'CREATE DATABASE itam_test;'
+      - name: Apply PostgreSQL migrations
+        working-directory: apps/api
+        run: pnpm prisma:deploy
+      - name: Apply migrations to security database
+        working-directory: apps/api
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/itam_test
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/itam_test
+        run: pnpm prisma:deploy
+      - name: Validate Prisma schema
+        working-directory: apps/api
+        run: pnpm prisma:validate
+      - name: Generate Prisma client
+        working-directory: apps/api
+        run: pnpm prisma:generate
+      - name: Build API
+        run: pnpm build:api
+      - name: Build web
+        run: pnpm --filter web build
+      - name: Run API tests
+        run: pnpm test:api -- --runInBand
+      - name: Run PostgreSQL security tests
+        run: pnpm test:security

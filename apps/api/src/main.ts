@@ -15,22 +15,10 @@ import { csrfMiddleware } from './common/security/csrf.middleware';
 
 function configuredOrigins(): string[] { return (process.env.WEB_ORIGINS ?? process.env.WEB_ORIGIN ?? 'http://localhost:3000').split(',').map((value) => value.trim().replace(/\/$/, '')).filter(Boolean); }
 function isAllowedOrigin(origin: string | undefined, configured: string[]): boolean { if (!origin) return true; if (configured.includes(origin)) return true; if (process.env.NODE_ENV === 'production') return false; return /^https?:\/\/([a-z0-9-]+\.)?localhost(?::\d+)?$/i.test(origin) || /^https?:\/\/127\.0\.0\.1(?::\d+)?$/i.test(origin); }
-function safeMongoFingerprint(): string {
-  const uri = process.env.MONGODB_URI;
-  if (!uri) return 'unconfigured';
-  try {
-    const parsed = new URL(uri);
-    const host = parsed.hostname || 'unknown-host';
-    const database = parsed.pathname.replace(/^\//, '').split('/')[0] || '(default)';
-    return `${parsed.protocol}//${host}/${database}`;
-  } catch {
-    return 'invalid-uri';
-  }
-}
 
 async function bootstrap() {
   console.log(`[CONFIG] Root .env: ${rootEnv}`);
-  console.log(`[CONFIG] Mongo target: ${safeMongoFingerprint()}`);
+  console.log(`[CONFIG] PostgreSQL target: ${process.env.DATABASE_URL ? 'configured' : 'unconfigured'}`);
   console.log(`[CONFIG] API port: ${process.env.PORT ?? 3001}`);
   const app = await NestFactory.create(AppModule);
   const configured = configuredOrigins();
@@ -41,7 +29,10 @@ async function bootstrap() {
   app.useGlobalFilters(new ProductionExceptionFilter());
   app.setGlobalPrefix('api/v1');
   const swaggerEnabled = process.env.SWAGGER_ENABLED === 'true' || process.env.NODE_ENV !== 'production';
-  if (swaggerEnabled) { const config = new DocumentBuilder().setTitle('ITAM SaaS API').setDescription('Enterprise IT Asset Management API').setVersion('0.1.0').addBearerAuth().build(); SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config)); }
+  if (swaggerEnabled) {
+    const config = new DocumentBuilder().setTitle('ITAM SaaS API').setDescription('Enterprise IT Asset Management API').setVersion('0.1.0').addBearerAuth().build();
+    SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config));
+  }
   const shutdown = async () => { await app.close(); process.exit(0); };
   process.once('SIGTERM', shutdown); process.once('SIGINT', shutdown);
   await app.listen(process.env.PORT ?? 3001);

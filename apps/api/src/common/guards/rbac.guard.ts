@@ -15,32 +15,42 @@ export class RbacGuard implements CanActivate {
     const authContext: AuthContext | undefined = req.authContext;
     if (!authContext) throw new ForbiddenException('No auth context resolved');
 
-    const user = await this.db.user.findFirst({ where: { id: authContext.userId, tenantId: authContext.tenantId, accountType: 'TENANT' }, select: { roleIds: true, companyId: true } });
-    if (!user?.roleIds?.length) throw new ForbiddenException(`Missing permission: ${required}`);
+    const identity = await this.db.withTenantContext(authContext.tenantId, authContext.companyId, async (tx) => {
+      const user = await tx.user.findFirst({
+        where: { id: authContext.userId, tenantId: authContext.tenantId, accountType: 'TENANT' },
+        select: { roleIds: true, companyId: true },
+      });
+      if (!user?.roleIds?.length) return { user: null, roles: [] as any[] };
 
-    const roles = await this.db.$queryRawUnsafe<any[]>(
-      `SELECT r.id, r.company_id AS "companyId", p.key AS "permissionKey",
-              rs.scope_type AS "scopeType", rs.company_id AS "scopeCompanyId", rs.location_id AS "scopeLocationId"
-       FROM roles r
-       LEFT JOIN role_permissions rp ON rp.role_id = r.id
-       LEFT JOIN permissions p ON p.id = rp.permission_id
-       LEFT JOIN role_scopes rs ON rs.role_id = r.id
-       WHERE r.tenant_id = $1::uuid AND r.id = ANY($2::uuid[])
-         AND (r.company_id IS NULL OR r.company_id = $3::uuid)
-         AND NOT EXISTS (
-           SELECT 1 FROM role_permissions blocked_rp
-           INNER JOIN permissions blocked_p ON blocked_p.id = blocked_rp.permission_id
-           WHERE blocked_rp.role_id = r.id AND blocked_p.key LIKE 'platform:%'
-         )`,
-      authContext.tenantId, user.roleIds, user.companyId,
-    );
+      const roles = await tx.$queryRawUnsafe<any[]>(
+        `SELECT r.id, r.company_id AS "companyId", p.key AS "permissionKey",
+                rs.scope_type AS "scopeType", rs.company_id AS "scopeCompanyId", rs.location_id AS "scopeLocationId"
+         FROM roles r
+         LEFT JOIN role_permissions rp ON rp.role_id = r.id
+         LEFT JOIN permissions p ON p.id = rp.permission_id
+         LEFT JOIN role_scopes rs ON rs.role_id = r.id
+         WHERE r.tenant_id = $1::uuid AND r.id = ANY($2::uuid[])
+           AND (r.company_id IS NULL OR r.company_id = $3::uuid)
+           AND NOT EXISTS (
+             SELECT 1 FROM role_permissions blocked_rp
+             INNER JOIN permissions blocked_p ON blocked_p.id = blocked_rp.permission_id
+             WHERE blocked_rp.role_id = r.id AND blocked_p.key LIKE 'platform:%'
+           )`,
+        authContext.tenantId,
+        user.roleIds,
+        user.companyId,
+      );
+      return { user, roles };
+    });
+
+    if (!identity.user?.roleIds?.length) throw new ForbiddenException(`Missing permission: ${required}`);
 
     const permissions = new Set<string>();
     const companyIds = new Set<string>();
     const locationIds = new Set<string>();
     let crossCompany = false;
 
-    for (const role of roles) {
+    for (const role of identity.roles) {
       if (role.permissionKey && !String(role.permissionKey).startsWith('platform:')) permissions.add(String(role.permissionKey));
       if (role.scopeType === 'TENANT' || (role.scopeType == null && role.companyId == null)) crossCompany = true;
       if (role.scopeCompanyId) companyIds.add(String(role.scopeCompanyId));

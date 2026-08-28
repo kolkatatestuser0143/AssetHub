@@ -14,6 +14,7 @@ describe('Cross-tenant isolation', () => {
   let testDb: Awaited<ReturnType<typeof connectTestDb>>;
   let tenancy: TenancyService;
   let assets: AssetsService;
+  let fixture: Fixture;
 
   beforeAll(async () => {
     testDb = await connectTestDb();
@@ -27,8 +28,6 @@ describe('Cross-tenant isolation', () => {
     await testDb.clearTestCollections();
     fixture = await seedTwoTenants(testDb.db);
   });
-
-  let fixture: Fixture;
 
   it('User B cannot list Company A via a scoped query', async () => {
     const companies = await tenancy.listCompanies(fixture.authB);
@@ -47,12 +46,23 @@ describe('Cross-tenant isolation', () => {
     ).rejects.toThrow(/does not belong to your company/i);
   });
 
-  it('RAW reads are not blocked at the DB layer — MongoDB has no RLS backstop', async () => {
-    const rawCompanyA = await testDb.db.company.findById(fixture.companyA.id).lean();
-    expect(rawCompanyA).not.toBeNull();
+  it('Tenant A RLS context cannot read Tenant B company data', async () => {
+    const companyBFromA = await testDb.db.withTenantContext(
+      fixture.tenantA.id,
+      fixture.companyA.id,
+      (tx) => tx.company.findUnique({ where: { id: fixture.companyB.id } }),
+    );
+    expect(companyBFromA).toBeNull();
   });
 
-  it('Tenant-admin (crossCompany) on Tenant A still cannot see Tenant B', async () => {
+  it('A database query without tenant context cannot read tenant-scoped rows', async () => {
+    const rows = await testDb.db.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM companies WHERE id = ${fixture.companyA.id}::uuid
+    `;
+    expect(rows).toHaveLength(0);
+  });
+
+  it('Tenant-admin crossCompany on Tenant A still cannot see Tenant B', async () => {
     const tenantAdminAuth = { ...fixture.authA, crossCompany: true };
     const companies = await tenancy.listCompanies(tenantAdminAuth);
     expect(companies.every((c) => c.id !== fixture.companyB.id)).toBe(true);
