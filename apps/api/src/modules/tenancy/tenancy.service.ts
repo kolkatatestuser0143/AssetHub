@@ -108,10 +108,6 @@ export class TenancyService {
       tx.company.findFirst({ where: { id: companyId, tenantId: auth.tenantId } }),
     );
     if (!company) throw new NotFoundException('Company not found');
-    if (!auth.crossCompany && company.companyId !== auth.companyId) {
-      // This path is deliberately defensive; Company has no companyId field.
-      throw new NotFoundException('Company not found');
-    }
     return company;
   }
 
