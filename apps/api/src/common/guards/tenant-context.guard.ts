@@ -8,9 +8,15 @@ export interface AuthContext {
   userId: string;
   sessionId: string;
   tenantId: string;
+  /** User's home/primary company. Not an authorization scope. */
   companyId: string;
-  adminLevel: 'EMPLOYEE' | 'COMPANY_ADMIN' | 'TENANT_ADMIN';
+  /** Effective company scope. null means the whole tenant. */
+  scopeCompanyId: string | null;
+  /** True when authorization applies to every company in the tenant. */
+  tenantWide: boolean;
+  /** Backward-compatible alias for tenant-wide company access. */
   crossCompany: boolean;
+  adminLevel: 'EMPLOYEE' | 'COMPANY_ADMIN' | 'TENANT_ADMIN';
   permissions: string[];
   allowedCompanyIds?: string[];
   allowedLocationIds?: string[];
@@ -30,10 +36,15 @@ export class TenantContextGuard implements CanActivate {
 
     try {
       const payload = this.jwt.verify(token);
-      if (!payload.sub || !payload.sessionId || !payload.tenantId || !payload.companyId) throw new UnauthorizedException('Invalid access token claims');
-      const user = await this.db.user.findFirst({ where: { id: String(payload.sub), tenantId: String(payload.tenantId), accountType: 'TENANT' }, select: { authVersion: true, isActive: true, forcePasswordReset: true, adminLevel: true } });
+      if (!payload.sub || !payload.sessionId || !payload.tenantId) throw new UnauthorizedException('Invalid access token claims');
+
+      const user = await this.db.user.findFirst({
+        where: { id: String(payload.sub), tenantId: String(payload.tenantId), accountType: 'TENANT' },
+        select: { authVersion: true, isActive: true, forcePasswordReset: true, adminLevel: true, companyId: true },
+      });
       if (!user || user.isActive === false) throw new UnauthorizedException('Tenant account is inactive');
       if (Number(payload.authVersion ?? 0) !== Number(user.authVersion ?? 0)) throw new UnauthorizedException('Session is no longer valid');
+
       const tenant = await this.db.tenant.findUnique({ where: { id: String(payload.tenantId) }, select: { status: true } });
       if (!tenant) throw new UnauthorizedException('Tenant account is unavailable');
       if (tenant.status !== TenantStatus.ACTIVE) {
@@ -41,13 +52,25 @@ export class TenantContextGuard implements CanActivate {
         if (tenant.status === TenantStatus.ARCHIVED) throw new UnauthorizedException('This tenant is archived and cannot be accessed.');
         throw new UnauthorizedException('This tenant account is unavailable. Please contact your system administrator.');
       }
+
+      const tenantWide = payload.tenantWide === true || payload.crossCompany === true;
+      const rawScopeCompanyId = payload.scopeCompanyId == null ? null : String(payload.scopeCompanyId);
+      const scopeCompanyId = tenantWide ? null : (rawScopeCompanyId ?? user.companyId);
+
       req.authContext = {
-        userId: String(payload.sub), sessionId: String(payload.sessionId), tenantId: String(payload.tenantId), companyId: String(payload.companyId),
+        userId: String(payload.sub),
+        sessionId: String(payload.sessionId),
+        tenantId: String(payload.tenantId),
+        companyId: user.companyId,
+        scopeCompanyId,
+        tenantWide,
+        crossCompany: tenantWide,
         adminLevel: (user.adminLevel ?? payload.adminLevel ?? 'EMPLOYEE') as AuthContext['adminLevel'],
-        crossCompany: !!payload.crossCompany, permissions: Array.isArray(payload.permissions) ? payload.permissions : [],
+        permissions: Array.isArray(payload.permissions) ? payload.permissions : [],
         allowedCompanyIds: Array.isArray(payload.allowedCompanyIds) ? payload.allowedCompanyIds.map(String) : [],
         allowedLocationIds: Array.isArray(payload.allowedLocationIds) ? payload.allowedLocationIds.map(String) : [],
-        forcePasswordReset: user.forcePasswordReset === true, authVersion: Number(user.authVersion ?? 0),
+        forcePasswordReset: user.forcePasswordReset === true,
+        authVersion: Number(user.authVersion ?? 0),
       } as AuthContext;
       return true;
     } catch (error) {

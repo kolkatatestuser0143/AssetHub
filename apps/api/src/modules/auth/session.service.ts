@@ -7,7 +7,12 @@ import { EntitlementService } from '../billing/entitlement.service';
 const ACCESS_TOKEN_TTL = '10m';
 const DEFAULT_REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-type TenantAccess = { permissions: string[]; crossCompany: boolean };
+type TenantAccess = {
+  permissions: string[];
+  tenantWide: boolean;
+  scopeCompanyId: string | null;
+  allowedCompanyIds: string[];
+};
 type TenantRolePermissionRow = { companyId: string | null; permissionKey: string | null };
 type PermissionRow = { permissionKey: string | null };
 type RefreshSessionRow = {
@@ -38,32 +43,36 @@ export class SessionService {
     if (system && user.accountType !== 'SYSTEM') throw new UnauthorizedException('System session requires a system account');
     if (!system && user.accountType !== 'TENANT') throw new UnauthorizedException('Tenant session requires a tenant account');
     let refreshTokenTtlMs = DEFAULT_REFRESH_TOKEN_TTL_MS;
+    let tenantAccess: TenantAccess | null = null;
 
     if (!system) {
       const tenant = await this.prisma.tenant.findUnique({ where: { id: user.tenantId }, select: { status: true } });
       if (!tenant || tenant.status !== 'active') throw new UnauthorizedException('This tenant account is unavailable. Please contact your system administrator.');
       const company = await this.prisma.company.findFirst({ where: { id: user.companyId, tenantId: user.tenantId }, select: { id: true } });
       if (!company) throw new UnauthorizedException('Your tenant account is not assigned to a valid company. Please contact your tenant administrator.');
+      tenantAccess = await this.resolveTenantAccess(user.tenantId, user.companyId, user.roleIds);
+      const contextCompanyId = tenantAccess.tenantWide ? null : (tenantAccess.scopeCompanyId ?? user.companyId);
       const maxSessionDays = await this.entitlements.getNumber(user.tenantId, 'session_max_days');
       if (maxSessionDays !== null) refreshTokenTtlMs = maxSessionDays * 24 * 60 * 60 * 1000;
       if (refreshTokenTtlMs <= 0) throw new ForbiddenException('Tenant session policy is invalid');
       const maxConcurrent = await this.entitlements.getNumber(user.tenantId, 'max_concurrent_sessions');
       if (maxConcurrent !== null) {
-        const activeSessions = await this.prisma.withTenantContext(user.tenantId, user.companyId, tx => tx.session.findMany({ where: { userId, revokedAt: null, expiresAt: { gt: new Date() } }, orderBy: [{ lastSeenAt: 'asc' }, { createdAt: 'asc' }] }));
+        const activeSessions = await this.prisma.withTenantContext(user.tenantId, contextCompanyId, tx => tx.session.findMany({ where: { userId, revokedAt: null, expiresAt: { gt: new Date() } }, orderBy: [{ lastSeenAt: 'asc' }, { createdAt: 'asc' }] }));
         const overflow = activeSessions.length - maxConcurrent + 1;
         if (overflow > 0) {
-          await this.prisma.withTenantContext(user.tenantId, user.companyId, tx => tx.session.updateMany({ where: { id: { in: activeSessions.slice(0, overflow).map(s => s.id) }, userId, revokedAt: null }, data: { revokedAt: new Date(), revokedReason: 'concurrent_session_limit' } }));
+          await this.prisma.withTenantContext(user.tenantId, contextCompanyId, tx => tx.session.updateMany({ where: { id: { in: activeSessions.slice(0, overflow).map(s => s.id) }, userId, revokedAt: null }, data: { revokedAt: new Date(), revokedReason: 'concurrent_session_limit' } }));
         }
       }
     }
 
-    const access: TenantAccess = system
-      ? { permissions: await this.resolveSystemPermissions(user.roleIds), crossCompany: false }
-      : await this.resolveTenantAccess(user.tenantId, user.companyId, user.roleIds);
+    const access = system
+      ? { permissions: await this.resolveSystemPermissions(user.roleIds), tenantWide: false, scopeCompanyId: null, allowedCompanyIds: [] as string[] }
+      : tenantAccess ?? await this.resolveTenantAccess(user.tenantId, user.companyId, user.roleIds);
 
     const rawRefreshToken = crypto.randomBytes(48).toString('hex');
     const tokenFamilyId = familyId ?? crypto.randomUUID();
-    const session = await this.prisma.withTenantContext(user.tenantId, user.companyId, tx =>
+    const sessionCompanyId = system ? null : (access.tenantWide ? null : (access.scopeCompanyId ?? user.companyId));
+    const session = await this.prisma.withTenantContext(user.tenantId, sessionCompanyId, tx =>
       tx.session.create({
         data: {
           userId,
@@ -78,9 +87,25 @@ export class SessionService {
       }),
     );
 
-    const claims: Record<string, any> = { sub: userId, sessionId: session.id, permissions: access.permissions, accountType: user.accountType, authVersion: user.authVersion };
+    const claims: Record<string, any> = {
+      sub: userId,
+      sessionId: session.id,
+      permissions: access.permissions,
+      accountType: user.accountType,
+      authVersion: user.authVersion,
+    };
     if (system) claims.systemAdmin = true;
-    else { claims.tenantId = user.tenantId; claims.companyId = user.companyId; claims.crossCompany = access.crossCompany; claims.adminLevel = user.adminLevel; claims.forcePasswordReset = user.forcePasswordReset; }
+    else {
+      claims.tenantId = user.tenantId;
+      claims.companyId = user.companyId;
+      claims.userCompanyId = user.companyId;
+      claims.scopeCompanyId = access.scopeCompanyId;
+      claims.tenantWide = access.tenantWide;
+      claims.crossCompany = access.tenantWide;
+      claims.allowedCompanyIds = access.allowedCompanyIds;
+      claims.adminLevel = user.adminLevel;
+      claims.forcePasswordReset = user.forcePasswordReset;
+    }
     const accessToken = this.jwt.sign(claims, { expiresIn: ACCESS_TOKEN_TTL });
     return { accessToken, refreshToken: rawRefreshToken, sessionId: session.id, accountType: user.accountType, adminLevel: !system ? user.adminLevel : undefined, forcePasswordReset: !system && user.forcePasswordReset };
   }
@@ -90,85 +115,49 @@ export class SessionService {
     return user?.accountType === 'SYSTEM';
   }
 
-  async revokeSession(sessionId: string, userId: string, reason: string) {
-    await this.prisma.$queryRaw`SELECT app.revoke_session(${sessionId}::uuid, ${userId}::uuid, ${reason})`;
-  }
-
-  async revokeFamily(familyId: string, reason: string) {
-    if (!familyId) return;
-    await this.prisma.$queryRaw`SELECT app.revoke_session_family(${familyId}, ${reason})`;
-  }
+  async revokeSession(sessionId: string, userId: string, reason: string) { await this.prisma.$queryRaw`SELECT app.revoke_session(${sessionId}::uuid, ${userId}::uuid, ${reason})`; }
+  async revokeFamily(familyId: string, reason: string) { if (!familyId) return; await this.prisma.$queryRaw`SELECT app.revoke_session_family(${familyId}, ${reason})`; }
 
   async rotateRefreshToken(rawRefreshToken: string, ip: string, userAgent: string) {
     const existing = await this.lookupRefreshSession(rawRefreshToken);
     if (!existing) throw new UnauthorizedException('Invalid refresh token');
-    if (existing.revokedAt) {
-      await this.revokeFamily(existing.familyId, 'refresh_token_reuse_detected');
-      throw new UnauthorizedException('Refresh token reuse detected');
-    }
+    if (existing.revokedAt) { await this.revokeFamily(existing.familyId, 'refresh_token_reuse_detected'); throw new UnauthorizedException('Refresh token reuse detected'); }
     if (existing.expiresAt < new Date()) throw new UnauthorizedException('Refresh token expired');
-
-    const consumed = await this.prisma.$queryRaw<Array<{ consumed: boolean }>>`
-      SELECT app.revoke_session(${existing.id}::uuid, ${existing.userId}::uuid, 'rotated') AS consumed
-    `;
-    if (!consumed[0]?.consumed) {
-      await this.revokeFamily(existing.familyId, 'refresh_token_reuse_detected');
-      throw new UnauthorizedException('Refresh token reuse detected');
-    }
-
+    const consumed = await this.prisma.$queryRaw<Array<{ consumed: boolean }>>`SELECT app.revoke_session(${existing.id}::uuid, ${existing.userId}::uuid, 'rotated') AS consumed`;
+    if (!consumed[0]?.consumed) { await this.revokeFamily(existing.familyId, 'refresh_token_reuse_detected'); throw new UnauthorizedException('Refresh token reuse detected'); }
     return this.issueSession(existing.userId, ip, userAgent, await this.isSystemUser(existing.userId), existing.familyId, existing.refreshTokenHash);
   }
 
-  async findByRefreshToken(rawRefreshToken: string) {
-    return this.lookupRefreshSession(rawRefreshToken);
-  }
-
+  async findByRefreshToken(rawRefreshToken: string) { return this.lookupRefreshSession(rawRefreshToken); }
   hashToken(raw: string): string { return crypto.createHash('sha256').update(raw).digest('hex'); }
 
   private async lookupRefreshSession(rawRefreshToken: string): Promise<RefreshSessionRow | null> {
     const hash = this.hashToken(rawRefreshToken);
-    const rows = await this.prisma.$queryRaw<RefreshSessionRow[]>`
-      SELECT id, user_id AS "userId", tenant_id AS "tenantId", refresh_token_hash AS "refreshTokenHash",
-             family_id AS "familyId", parent_token_hash AS "parentTokenHash", ip_address AS "ipAddress",
-             user_agent AS "userAgent", approx_location AS "approxLocation", last_seen_at AS "lastSeenAt",
-             expires_at AS "expiresAt", revoked_at AS "revokedAt", revoked_reason AS "revokedReason",
-             created_at AS "createdAt", updated_at AS "updatedAt"
-      FROM app.lookup_session_by_refresh_hash(${hash})
-    `;
+    const rows = await this.prisma.$queryRaw<RefreshSessionRow[]>`SELECT id, user_id AS "userId", tenant_id AS "tenantId", refresh_token_hash AS "refreshTokenHash", family_id AS "familyId", parent_token_hash AS "parentTokenHash", ip_address AS "ipAddress", user_agent AS "userAgent", approx_location AS "approxLocation", last_seen_at AS "lastSeenAt", expires_at AS "expiresAt", revoked_at AS "revokedAt", revoked_reason AS "revokedReason", created_at AS "createdAt", updated_at AS "updatedAt" FROM app.lookup_session_by_refresh_hash(${hash})`;
     return rows[0] ?? null;
   }
 
-  private async resolveTenantAccess(tenantId: string, companyId: string, roleIds: string[]): Promise<TenantAccess> {
-    if (!roleIds.length) return { permissions: [], crossCompany: false };
-    const rows = await this.prisma.withTenantContext(tenantId, companyId, async tx =>
-      tx.$queryRaw<TenantRolePermissionRow[]>`
-        SELECT r.company_id AS "companyId", p.key AS "permissionKey"
-        FROM roles r
-        LEFT JOIN role_permissions rp ON rp.role_id = r.id
-        LEFT JOIN permissions p ON p.id = rp.permission_id
-        WHERE r.id = ANY(${roleIds}::uuid[])
-          AND r.tenant_id = ${tenantId}::uuid
-          AND (r.company_id = ${companyId}::uuid OR r.company_id IS NULL)
-      `,
+  private async resolveTenantAccess(tenantId: string, userCompanyId: string, roleIds: string[]): Promise<TenantAccess> {
+    if (!roleIds.length) return { permissions: [], tenantWide: false, scopeCompanyId: userCompanyId, allowedCompanyIds: [userCompanyId] };
+    const rows = await this.prisma.withTenantContext(tenantId, userCompanyId, async tx =>
+      tx.$queryRaw<TenantRolePermissionRow[]>`SELECT r.company_id AS "companyId", p.key AS "permissionKey" FROM roles r LEFT JOIN role_permissions rp ON rp.role_id = r.id LEFT JOIN permissions p ON p.id = rp.permission_id WHERE r.id = ANY(${roleIds}::uuid[]) AND r.tenant_id = ${tenantId}::uuid AND (r.company_id = ${userCompanyId}::uuid OR r.company_id IS NULL)`
     );
     const perms = new Set<string>();
-    let crossCompany = false;
+    const companyIds = new Set<string>();
+    let tenantWide = false;
     for (const row of rows) {
-      if (row.companyId == null) crossCompany = true;
+      if (row.companyId == null) tenantWide = true;
+      else companyIds.add(String(row.companyId));
       if (row.permissionKey) perms.add(row.permissionKey);
     }
-    return { permissions: [...perms], crossCompany };
+    if (!tenantWide && companyIds.size === 0) companyIds.add(userCompanyId);
+    const scopeCompanyId = tenantWide ? null : (companyIds.size === 1 ? [...companyIds][0] : userCompanyId);
+    return { permissions: [...perms], tenantWide, scopeCompanyId, allowedCompanyIds: [...companyIds] };
   }
 
   private async resolveSystemPermissions(roleIds: string[]): Promise<string[]> {
     if (!roleIds.length) return [];
-    const rows: PermissionRow[] = await this.prisma.$queryRaw`
-      SELECT p.key AS "permissionKey"
-      FROM roles r
-      JOIN role_permissions rp ON rp.role_id = r.id
-      JOIN permissions p ON p.id = rp.permission_id
-      WHERE r.id = ANY(${roleIds}::uuid[])
-    `;
+    const rows: PermissionRow[] = await this.prisma.$queryRaw`SELECT p.key AS "permissionKey" FROM roles r JOIN role_permissions rp ON rp.role_id = r.id JOIN permissions p ON p.id = rp.permission_id WHERE r.id = ANY(${roleIds}::uuid[])`;
     return [...new Set(rows.map(row => row.permissionKey).filter((key): key is string => Boolean(key)))];
   }
 }
