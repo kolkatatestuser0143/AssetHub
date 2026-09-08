@@ -113,11 +113,11 @@ export class ScimService {
       else throw new BadRequestException(`Unsupported SCIM path: ${op.path}`);
     }
     try {
-      const user = await this.db.$transaction(async tx => {
+      const user = await this.db.withTenantContext(token.company.tenantId, token.companyId, async tx => {
         if (Object.keys(data).length) await tx.user.update({ where: { id }, data });
+        await tx.$executeRawUnsafe(`UPDATE external_identities SET status=CASE WHEN $1::boolean THEN 'active' ELSE 'inactive' END, last_seen_at=now(), updated_at=now() WHERE user_id=$2::uuid AND tenant_id=$3::uuid AND company_id=$4::uuid AND provider=$5`, data.isActive !== false, id, token.company.tenantId, token.companyId, this.providerName(token));
         return tx.user.findUniqueOrThrow({ where: { id } });
       });
-      await this.db.$executeRawUnsafe(`UPDATE external_identities SET status=CASE WHEN $1::boolean THEN 'active' ELSE 'inactive' END, last_seen_at=now(), updated_at=now() WHERE user_id=$2::uuid AND company_id=$3::uuid AND provider=$4`, data.isActive !== false, id, token.companyId, this.providerName(token));
       await this.recordLog(token, 'PATCH', id, body, true);
       return this.toScim(user);
     } catch (error) {
@@ -131,8 +131,10 @@ export class ScimService {
     if (!user) throw new NotFoundException('SCIM user not found');
     this.assertIfMatch(user, ifMatch);
     try {
-      await this.db.user.update({ where: { id }, data: { isActive: false } });
-      await this.db.$executeRawUnsafe(`UPDATE external_identities SET status='inactive', last_seen_at=now(), updated_at=now() WHERE user_id=$1::uuid AND company_id=$2::uuid AND provider=$3`, id, token.companyId, this.providerName(token));
+      await this.db.withTenantContext(token.company.tenantId, token.companyId, async tx => {
+        await tx.user.update({ where: { id }, data: { isActive: false } });
+        await tx.$executeRawUnsafe(`UPDATE external_identities SET status='inactive', last_seen_at=now(), updated_at=now() WHERE user_id=$1::uuid AND tenant_id=$2::uuid AND company_id=$3::uuid AND provider=$4`, id, token.company.tenantId, token.companyId, this.providerName(token));
+      });
       await this.recordLog(token, 'DELETE', id, undefined, true);
     } catch (error) {
       await this.recordLog(token, 'DELETE', id, undefined, false, this.errorMessage(error));
