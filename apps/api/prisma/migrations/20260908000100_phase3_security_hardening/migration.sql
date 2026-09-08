@@ -56,19 +56,30 @@ DECLARE
   ok boolean;
 BEGIN
   IF NEW.asset_type_id IS NOT NULL THEN
-    SELECT EXISTS (SELECT 1 FROM asset_types t WHERE t.id = NEW.asset_type_id AND t.company_id = NEW.company_id) INTO ok;
+    SELECT EXISTS (
+      SELECT 1 FROM asset_types t
+      WHERE t.id = NEW.asset_type_id
+        AND t.company_id = NEW.company_id
+    ) INTO ok;
     IF NOT ok THEN RAISE EXCEPTION 'Asset type is outside the asset company scope'; END IF;
   END IF;
 
   IF NEW.vendor_id IS NOT NULL THEN
-    SELECT EXISTS (SELECT 1 FROM vendors v WHERE v.id = NEW.vendor_id AND v.tenant_id = NEW.tenant_id AND v.company_id = NEW.company_id) INTO ok;
+    SELECT EXISTS (
+      SELECT 1 FROM vendors v
+      WHERE v.id = NEW.vendor_id
+        AND v.tenant_id = NEW.tenant_id
+        AND v.company_id = NEW.company_id
+    ) INTO ok;
     IF NOT ok THEN RAISE EXCEPTION 'Vendor is outside the asset company scope'; END IF;
   END IF;
 
   IF NEW.location_id IS NOT NULL THEN
     SELECT EXISTS (
       SELECT 1 FROM locations l JOIN plants p ON p.id=l.site_id
-      WHERE l.id=NEW.location_id AND p.tenant_id=NEW.tenant_id AND p.company_id=NEW.company_id
+      WHERE l.id=NEW.location_id
+        AND p.tenant_id=NEW.tenant_id
+        AND p.company_id=NEW.company_id
     ) INTO ok;
     IF NOT ok THEN RAISE EXCEPTION 'Asset location is outside the asset company scope'; END IF;
   END IF;
@@ -76,7 +87,9 @@ BEGIN
   IF NEW.department_id IS NOT NULL THEN
     SELECT EXISTS (
       SELECT 1 FROM departments d JOIN locations l ON l.id=d.location_id JOIN plants p ON p.id=l.site_id
-      WHERE d.id=NEW.department_id AND p.tenant_id=NEW.tenant_id AND p.company_id=NEW.company_id
+      WHERE d.id=NEW.department_id
+        AND p.tenant_id=NEW.tenant_id
+        AND p.company_id=NEW.company_id
     ) INTO ok;
     IF NOT ok THEN RAISE EXCEPTION 'Asset department is outside the asset company scope'; END IF;
   END IF;
@@ -125,28 +138,34 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_asset_assignments_one_active
 ON asset_assignments(asset_id)
 WHERE returned_at IS NULL;
 
--- Fail migration if existing data violates the new invariants.
+-- Validate existing data without PL/pgSQL comparisons between incompatible types.
 DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM users u
     WHERE (u.location_id IS NOT NULL AND NOT EXISTS (
       SELECT 1 FROM locations l JOIN plants p ON p.id=l.site_id
-      WHERE l.id=u.location_id AND p.tenant_id=u.tenant_id AND p.company_id=u.company_id
+      WHERE l.id=u.location_id
+        AND p.tenant_id=u.tenant_id
+        AND p.company_id=u.company_id
     ))
     OR (u.department_id IS NOT NULL AND NOT EXISTS (
       SELECT 1 FROM departments d JOIN locations l ON l.id=d.location_id JOIN plants p ON p.id=l.site_id
-      WHERE d.id=u.department_id AND p.tenant_id=u.tenant_id AND p.company_id=u.company_id
+      WHERE d.id=u.department_id
+        AND p.tenant_id=u.tenant_id
+        AND p.company_id=u.company_id
     ))
   ) THEN
     RAISE EXCEPTION 'Existing users contain cross-company location/department references';
   END IF;
 
   IF EXISTS (
-    SELECT 1 FROM asset_assignments aa
+    SELECT 1
+    FROM asset_assignments aa
     JOIN assets a ON a.id=aa.asset_id
     JOIN users u ON u.id=aa.user_id
-    WHERE a.tenant_id<>u.tenant_id OR a.company_id<>u.company_id
+    WHERE a.tenant_id::text <> u.tenant_id::text
+       OR a.company_id::text <> u.company_id::text
   ) THEN
     RAISE EXCEPTION 'Existing asset assignments contain cross-company references';
   END IF;
