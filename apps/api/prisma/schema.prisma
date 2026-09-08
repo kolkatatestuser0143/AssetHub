@@ -39,6 +39,7 @@ model Tenant {
   acknowledgementTemplates AssetAcknowledgementTemplate[]
   acknowledgements AssetAcknowledgement[]
   subscriptions Subscription[]
+  sessions Session[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   @@index([status])
