@@ -1,0 +1,76 @@
+name: PostgreSQL security hardening
+
+on:
+  pull_request:
+    branches: [Postgresql]
+  push:
+    branches: [hardening/postgresql-phase3-security]
+
+jobs:
+  api-postgresql-security:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: assethub
+          POSTGRES_PASSWORD: assethub
+          POSTGRES_DB: assethub_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U assethub -d assethub_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://assethub:assethub@localhost:5432/assethub_test?schema=public
+      DIRECT_URL: postgresql://assethub:assethub@localhost:5432/assethub_test?schema=public
+      JWT_SECRET: ci-only-jwt-secret-change-me
+      JWT_REFRESH_SECRET: ci-only-refresh-secret-change-me
+      WEB_APP_URL: http://localhost:3000
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate Prisma schema
+        working-directory: apps/api
+        run: pnpm prisma:validate
+
+      - name: Generate Prisma client
+        working-directory: apps/api
+        run: pnpm prisma:generate
+
+      - name: Deploy PostgreSQL migrations
+        working-directory: apps/api
+        run: pnpm prisma:deploy
+
+      - name: Run API unit tests
+        working-directory: apps/api
+        run: pnpm test -- --runInBand
+
+      - name: Run security tests
+        working-directory: apps/api
+        run: pnpm test:security
+
+      - name: Build API
+        working-directory: apps/api
+        run: pnpm build
