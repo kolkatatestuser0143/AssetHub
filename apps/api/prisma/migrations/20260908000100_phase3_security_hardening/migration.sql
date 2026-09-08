@@ -9,12 +9,15 @@ DECLARE
   location_ok boolean;
   department_ok boolean;
 BEGIN
+  -- users.location_id and users.department_id are legacy text UUID references.
+  -- Compare against the canonical UUID columns as text without changing the
+  -- existing column types in this hardening migration.
   IF NEW.location_id IS NOT NULL THEN
     SELECT EXISTS (
       SELECT 1
       FROM locations l
       JOIN plants p ON p.id = l.site_id
-      WHERE l.id = NEW.location_id
+      WHERE l.id::text = NEW.location_id
         AND p.tenant_id = NEW.tenant_id
         AND p.company_id = NEW.company_id
     ) INTO location_ok;
@@ -29,7 +32,7 @@ BEGIN
       FROM departments d
       JOIN locations l ON l.id = d.location_id
       JOIN plants p ON p.id = l.site_id
-      WHERE d.id = NEW.department_id
+      WHERE d.id::text = NEW.department_id
         AND p.tenant_id = NEW.tenant_id
         AND p.company_id = NEW.company_id
     ) INTO department_ok;
@@ -138,20 +141,20 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_asset_assignments_one_active
 ON asset_assignments(asset_id)
 WHERE returned_at IS NULL;
 
--- Validate existing data without PL/pgSQL comparisons between incompatible types.
+-- Validate existing data using the actual legacy column types.
 DO $$
 BEGIN
   IF EXISTS (
     SELECT 1 FROM users u
     WHERE (u.location_id IS NOT NULL AND NOT EXISTS (
       SELECT 1 FROM locations l JOIN plants p ON p.id=l.site_id
-      WHERE l.id=u.location_id
+      WHERE l.id::text=u.location_id
         AND p.tenant_id=u.tenant_id
         AND p.company_id=u.company_id
     ))
     OR (u.department_id IS NOT NULL AND NOT EXISTS (
       SELECT 1 FROM departments d JOIN locations l ON l.id=d.location_id JOIN plants p ON p.id=l.site_id
-      WHERE d.id=u.department_id
+      WHERE d.id::text=u.department_id
         AND p.tenant_id=u.tenant_id
         AND p.company_id=u.company_id
     ))
