@@ -76,6 +76,7 @@ export class SessionService {
       tx.session.create({
         data: {
           userId,
+          tenantId: user.tenantId,
           refreshTokenHash: this.hashToken(rawRefreshToken),
           familyId: tokenFamilyId,
           parentTokenHash,
