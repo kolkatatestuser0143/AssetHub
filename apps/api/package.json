@@ -18,6 +18,7 @@
     "prisma:validate": "pnpm prisma:normalize && prisma validate",
     "prisma:migrate": "pnpm prisma:normalize && prisma migrate dev",
     "prisma:deploy": "pnpm prisma:normalize && prisma migrate deploy",
+    "prisma:status": "pnpm prisma:normalize && prisma migrate status",
     "test": "jest",
     "test:security": "jest --config jest.security.config.js --runInBand"
   },
